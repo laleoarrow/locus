@@ -1,7 +1,15 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getPrefs, listForUrl } from '@/db/repo';
+import {
+  exportBackup as repoExportBackup,
+  getPrefs,
+  importBackup as repoImportBackup,
+  listForUrl,
+} from '@/db/repo';
+import { backupFileName, parseBackup } from '@/domain/backup';
 import { specFor } from '@/domain/colors';
+import type { SyncConfig, SyncState } from '@/domain/sync';
+import type { SyncConfigView } from '@/sync/store';
 import type {
   AnchorState,
   AnnotationWithAnchor,
@@ -326,7 +334,240 @@ export function App() {
             </div>
           </div>
         )}
+        <BackupRow />
+        <SyncRow />
       </footer>
+    </div>
+  );
+}
+
+/**
+ * Manual backup: export the library to a JSON file, import one back. Also the
+ * supported way to move annotations to another machine or another install
+ * (IndexedDB is scoped to the extension id).
+ */
+function BackupRow() {
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [status, setStatus] = useState('');
+
+  const exportBackup = async () => {
+    const file = await repoExportBackup(chrome.runtime.getManifest().version);
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }),
+    );
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = backupFileName(new Date());
+    link.click();
+    URL.revokeObjectURL(url);
+    setStatus(`Exported ${file.annotations.filter((a) => a.deletedAt === 0).length} annotations.`);
+  };
+
+  const importBackup = async (selected: File) => {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await selected.text());
+    } catch {
+      setStatus('That file is not valid JSON.');
+      return;
+    }
+    const result = parseBackup(parsed);
+    if ('error' in result) {
+      setStatus(result.error);
+      return;
+    }
+    const summary = await repoImportBackup(result.file);
+    setStatus(
+      `Imported: ${summary.annotationsAdded} added, ${summary.annotationsUpdated} updated, ` +
+        `${summary.annotationsSkipped} already present.`,
+    );
+  };
+
+  return (
+    <div className="pref-row backup-row">
+      <span className="pref-label">Backup</span>
+      <div className="backup-actions">
+        <button data-action="export" onClick={() => void exportBackup()}>
+          Export
+        </button>
+        <button data-action="import" onClick={() => fileInput.current?.click()}>
+          Import
+        </button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="application/json,.json"
+          data-locus-import-input
+          hidden
+          onChange={(event) => {
+            const selected = event.target.files?.[0];
+            event.target.value = '';
+            if (selected) void importBackup(selected);
+          }}
+        />
+      </div>
+      {status && (
+        <p className="backup-status" data-locus-backup-status>
+          {status}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function relativeTime(then: number): string {
+  if (then === 0) return 'never';
+  const seconds = Math.round((Date.now() - then) / 1000);
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} min ago`;
+  if (seconds < 86_400) return `${Math.floor(seconds / 3600)} h ago`;
+  return `${Math.floor(seconds / 86_400)} d ago`;
+}
+
+/**
+ * WebDAV sync: enter the collection URL and an app password once, and the
+ * background worker keeps this library and the remote file merged. Credentials
+ * stay in chrome.storage.local, so they never appear in a backup export.
+ */
+function SyncRow() {
+  const [config, setConfig] = useState<SyncConfigView | null>(null);
+  const [state, setState] = useState<SyncState | null>(null);
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    const result = await requestBg({ type: 'sync:status' });
+    if (result) {
+      setConfig(result.config);
+      setState(result.state);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+    const timer = setInterval(() => void load(), 15_000);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  if (!config) return null;
+
+  // Saving a field is a fast local write, so it must NOT flip `busy`: a field
+  // blurred by the very click that presses Test/Sync would otherwise disable
+  // the button between mousedown and click and swallow that first press.
+  const save = async (patch: Partial<SyncConfig>) => {
+    const result = await requestBg({ type: 'sync:save', patch });
+    if (result) {
+      setConfig(result.config);
+      setState(result.state);
+    }
+    if (patch.password) setPassword('');
+  };
+
+  const test = async () => {
+    setBusy(true);
+    setStatus('Checking…');
+    try {
+      if (password) await requestBg({ type: 'sync:save', patch: { password } });
+      const result = await requestBg({ type: 'sync:test' });
+      setStatus(result?.ok ? 'Connected.' : (result?.error ?? 'Could not connect.'));
+      if (password) setPassword('');
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const syncNow = async () => {
+    setBusy(true);
+    setStatus('Syncing…');
+    try {
+      const result = await requestBg({ type: 'sync:now' });
+      if (result) {
+        setState(result.state);
+        setStatus(
+          result.result.ok
+            ? result.result.pulled > 0
+              ? `Synced — ${result.result.pulled} pulled in.`
+              : 'Synced.'
+            : result.result.error,
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="pref-row sync-row">
+      <span className="pref-label">
+        Sync (WebDAV)
+        {config.enabled && state ? (
+          <em className="sync-when">
+            {state.lastError ? 'error' : `synced ${relativeTime(state.lastSyncAt)}`}
+          </em>
+        ) : null}
+      </span>
+      <div className="backup-actions">
+        <label className="switch">
+          <input
+            type="checkbox"
+            data-pref="sync-enabled"
+            checked={config.enabled}
+            onChange={(e) => void save({ enabled: e.target.checked })}
+          />
+          <span />
+        </label>
+        <button data-action="sync-settings" onClick={() => setOpen(!open)}>
+          {open ? 'Hide' : 'Setup'}
+        </button>
+      </div>
+      {open && (
+        <div className="sync-form">
+          <input
+            type="url"
+            data-sync="url"
+            placeholder="https://dav.jianguoyun.com/dav/locus/"
+            defaultValue={config.url}
+            onBlur={(e) => void save({ url: e.target.value })}
+          />
+          <input
+            type="text"
+            data-sync="username"
+            placeholder="Account (email)"
+            autoComplete="off"
+            defaultValue={config.username}
+            onBlur={(e) => void save({ username: e.target.value })}
+          />
+          <input
+            type="password"
+            data-sync="password"
+            placeholder={config.hasPassword ? 'App password (saved)' : 'App password'}
+            autoComplete="off"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onBlur={() => password && void save({ password })}
+          />
+          <div className="backup-actions">
+            <button data-action="sync-test" disabled={busy} onClick={() => void test()}>
+              Test
+            </button>
+            <button data-action="sync-now" disabled={busy} onClick={() => void syncNow()}>
+              Sync now
+            </button>
+          </div>
+          <p className="sync-hint">
+            Use your provider's <strong>app password</strong>, not the account password. Annotations
+            are merged, never overwritten — the newer edit of each note wins.
+          </p>
+        </div>
+      )}
+      {(status || state?.lastError) && (
+        <p className="backup-status" data-locus-sync-status>
+          {status || state?.lastError}
+        </p>
+      )}
     </div>
   );
 }

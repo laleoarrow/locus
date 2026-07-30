@@ -2,11 +2,77 @@ import { defineBackground } from 'wxt/utils/define-background';
 import * as repo from '@/db/repo';
 import { db } from '@/db/schema';
 import { toUrlKey } from '@/domain/url';
+import { isConfigComplete, type SyncState } from '@/domain/sync';
 import { isNewerVersion } from '@/domain/version';
 import type { BgRequest, BgResponseFor, ChangeBroadcast, TabMessage } from '@/messaging/protocol';
+import { runSync, testConnection, type SyncResult } from '@/sync/engine';
+import {
+  getSyncConfig,
+  getSyncState,
+  setSyncConfig,
+  setSyncState,
+  toConfigView,
+} from '@/sync/store';
 
 const RELEASES_API = 'https://api.github.com/repos/laleoarrow/locus/releases/latest';
 const UPDATE_ALARM = 'locus-update-check';
+const SYNC_ALARM = 'locus-sync';
+/** Coalesce bursts of edits into one push. */
+const SYNC_DEBOUNCE_MS = 4000;
+
+let syncTimer: ReturnType<typeof setTimeout> | undefined;
+/** Guard so an alarm and a debounced push cannot interleave two passes. */
+let syncing = false;
+
+async function syncNow(): Promise<{ result: SyncResult; state: SyncState }> {
+  const config = await getSyncConfig();
+  const state = await getSyncState();
+  if (!config.enabled || !isConfigComplete(config)) {
+    return { result: { ok: false, pulled: 0, pushed: false, error: 'Sync is off.' }, state };
+  }
+  if (syncing) {
+    return { result: { ok: false, pulled: 0, pushed: false, error: 'Already syncing.' }, state };
+  }
+  syncing = true;
+  try {
+    const outcome = await runSync(config, state, chrome.runtime.getManifest().version);
+    await setSyncState(outcome.state);
+    if (outcome.result.pulled > 0) {
+      // Pulled rows change what pages should render: refresh every tab.
+      const tabs = await chrome.tabs.query({});
+      await Promise.allSettled(
+        tabs
+          .filter((tab) => tab.id !== undefined && tab.url && /^https?:/.test(tab.url))
+          .map((tab) =>
+            chrome.tabs.sendMessage(tab.id as number, {
+              type: 'annotations:changed',
+              urlKey: toUrlKey(tab.url as string),
+            } satisfies TabMessage),
+          ),
+      );
+    }
+    return outcome;
+  } finally {
+    syncing = false;
+  }
+}
+
+/** Called after any local mutation; pushes once the edits settle. */
+function scheduleSync(): void {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => void syncNow(), SYNC_DEBOUNCE_MS);
+}
+
+async function rescheduleSyncAlarm(): Promise<void> {
+  const config = await getSyncConfig();
+  await chrome.alarms.clear(SYNC_ALARM);
+  if (config.enabled && isConfigComplete(config)) {
+    await chrome.alarms.create(SYNC_ALARM, {
+      periodInMinutes: config.intervalMinutes,
+      delayInMinutes: config.intervalMinutes,
+    });
+  }
+}
 
 /**
  * Update check: fetches release *metadata* from GitHub (nothing about the
@@ -102,6 +168,10 @@ async function broadcastChange(urlKey: string): Promise<void> {
       .filter((tab) => tab.id !== undefined && tab.url && toUrlKey(tab.url) === urlKey)
       .map((tab) => chrome.tabs.sendMessage(tab.id as number, toTab)),
   );
+  // Every local mutation funnels through here, so this is the one place that
+  // needs to nudge sync. (A pull inside syncNow notifies tabs directly instead,
+  // so merging remote rows cannot re-trigger a push.)
+  scheduleSync();
 }
 
 async function handleRequest<T extends BgRequest>(message: T): Promise<BgResponseFor<T>>;
@@ -181,6 +251,18 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
     }
     case 'update:status':
       return updateStatus();
+    case 'sync:status':
+      return { config: toConfigView(await getSyncConfig()), state: await getSyncState() };
+    case 'sync:save': {
+      const config = await setSyncConfig(message.patch);
+      await rescheduleSyncAlarm();
+      if (config.enabled && isConfigComplete(config)) scheduleSync();
+      return { config: toConfigView(config), state: await getSyncState() };
+    }
+    case 'sync:test':
+      return testConnection(await getSyncConfig());
+    case 'sync:now':
+      return syncNow();
   }
 }
 
@@ -196,13 +278,17 @@ export default defineBackground(() => {
     void syncRegistration();
     void chrome.alarms.create(UPDATE_ALARM, { periodInMinutes: 60 * 12, delayInMinutes: 1 });
     void checkForUpdates();
+    void rescheduleSyncAlarm();
   });
   chrome.runtime.onStartup.addListener(() => {
     void syncRegistration();
     void checkForUpdates();
+    void rescheduleSyncAlarm();
+    void syncNow();
   });
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === UPDATE_ALARM) void checkForUpdates();
+    if (alarm.name === SYNC_ALARM) void syncNow();
   });
   chrome.permissions.onAdded.addListener(() => void syncRegistration());
   chrome.permissions.onRemoved.addListener(() => void syncRegistration());

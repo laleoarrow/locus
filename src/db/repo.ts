@@ -1,6 +1,14 @@
+import {
+  BACKUP_FORMAT,
+  BACKUP_FORMAT_VERSION,
+  UNPORTABLE_SETTING_KEYS,
+  type BackupFile,
+  type ImportSummary,
+} from '@/domain/backup';
 import { DEFAULT_COLOR } from '@/domain/colors';
 import type {
   AnchorPayload,
+  AnchorRecord,
   AnnotationRecord,
   AnnotationWithAnchor,
   ColorKey,
@@ -172,6 +180,172 @@ export async function getUpdateInfo(): Promise<UpdateInfo | null> {
 
 export async function setUpdateInfo(info: UpdateInfo): Promise<void> {
   await db.settings.put({ key: UPDATE_INFO_KEY, value: info });
+}
+
+/** Snapshot the whole library into the portable backup format. */
+export async function exportBackup(appVersion: string): Promise<BackupFile> {
+  const [documents, sources, annotations, anchors, settings] = await Promise.all([
+    db.documents.toArray(),
+    db.sources.toArray(),
+    db.annotations.toArray(),
+    db.anchors.toArray(),
+    db.settings.toArray(),
+  ]);
+  return {
+    format: BACKUP_FORMAT,
+    formatVersion: BACKUP_FORMAT_VERSION,
+    exportedAt: Date.now(),
+    appVersion,
+    documents,
+    sources,
+    annotations,
+    anchors,
+    // Tombstones are exported on purpose: a deletion must travel too, or
+    // importing an older backup would resurrect deleted annotations.
+    settings: settings.filter((s) => !UNPORTABLE_SETTING_KEYS.has(s.key)),
+  };
+}
+
+/** True when two annotations are the same highlight in every meaningful field. */
+function isSameAnnotation(
+  a: AnnotationRecord,
+  b: AnnotationRecord,
+  anchorA: AnchorRecord | undefined,
+  anchorB: AnchorRecord | undefined,
+): boolean {
+  if (a.sourceId !== b.sourceId || a.color !== b.color || a.comment !== b.comment) return false;
+  if (a.exact !== b.exact || a.kind !== b.kind) return false;
+  if (!anchorA || !anchorB) return false;
+  if (anchorA.kind === 'image' || anchorB.kind === 'image') {
+    return anchorA.kind === 'image' && anchorB.kind === 'image' && anchorA.src === anchorB.src;
+  }
+  return anchorA.start === anchorB.start && anchorA.end === anchorB.end;
+}
+
+/**
+ * Merge a backup into the current library. Non-destructive and idempotent:
+ *
+ * - Pages are matched by `urlKey`, so annotations from another machine attach
+ *   to the local document/source instead of creating a duplicate page.
+ * - Rows are merged by id; the newer `updatedAt` wins, so a deletion made on
+ *   either side survives (tombstones are never resurrected by an older copy).
+ * - An incoming annotation identical to a local one in every meaningful field
+ *   is treated as already present rather than duplicated on the page.
+ */
+export async function importBackup(file: BackupFile): Promise<ImportSummary> {
+  const summary: ImportSummary = {
+    annotationsAdded: 0,
+    annotationsUpdated: 0,
+    annotationsSkipped: 0,
+    sourcesLinked: 0,
+    sourcesAdded: 0,
+  };
+  const incomingDocs = new Map(file.documents.map((d) => [d.id, d]));
+  const incomingAnchors = new Map(file.anchors.map((a) => [a.annotationId, a]));
+
+  await db.transaction(
+    'rw',
+    db.documents,
+    db.sources,
+    db.annotations,
+    db.anchors,
+    db.settings,
+    async () => {
+      const localSources = await db.sources.toArray();
+      const localByUrlKey = new Map(localSources.map((s) => [s.urlKey, s]));
+      const sourceIdMap = new Map<string, string>();
+      const documentIdMap = new Map<string, string>();
+
+      for (const source of file.sources) {
+        const local = localByUrlKey.get(source.urlKey);
+        if (local) {
+          sourceIdMap.set(source.id, local.id);
+          documentIdMap.set(source.documentId, local.documentId);
+          summary.sourcesLinked++;
+          // Backfill a DOI the local copy never detected.
+          const incomingDoc = incomingDocs.get(source.documentId);
+          if (incomingDoc?.doi) {
+            const localDoc = await db.documents.get(local.documentId);
+            if (localDoc && !localDoc.doi) {
+              await db.documents.update(local.documentId, { doi: incomingDoc.doi });
+            }
+          }
+          continue;
+        }
+        const incomingDoc = incomingDocs.get(source.documentId);
+        if (!incomingDoc) continue; // orphan source, nothing to attach it to
+        if (!(await db.documents.get(incomingDoc.id))) {
+          await db.documents.add({ ...incomingDoc, doi: incomingDoc.doi ?? '' });
+        }
+        await db.sources.add(source);
+        localByUrlKey.set(source.urlKey, source);
+        sourceIdMap.set(source.id, source.id);
+        documentIdMap.set(source.documentId, source.documentId);
+        summary.sourcesAdded++;
+      }
+
+      for (const incoming of file.annotations) {
+        const sourceId = sourceIdMap.get(incoming.sourceId);
+        const documentId = documentIdMap.get(incoming.documentId);
+        if (!sourceId || !documentId) continue; // its page never made it in
+        const annotation: AnnotationRecord = { ...incoming, sourceId, documentId };
+        const anchor = incomingAnchors.get(incoming.id);
+
+        const local = await db.annotations.get(annotation.id);
+        if (local) {
+          if (local.updatedAt >= annotation.updatedAt) {
+            summary.annotationsSkipped++;
+            continue;
+          }
+          await db.annotations.put(annotation);
+          if (anchor) {
+            await db.anchors.where('annotationId').equals(annotation.id).delete();
+            await db.anchors.put({ ...anchor, annotationId: annotation.id });
+          }
+          summary.annotationsUpdated++;
+          continue;
+        }
+
+        // No id match: check whether this is the same highlight recorded
+        // independently on the other machine before adding a duplicate.
+        const siblings = await db.annotations.where('sourceId').equals(sourceId).toArray();
+        let duplicate = false;
+        for (const sibling of siblings) {
+          const siblingAnchor = await db.anchors.where('annotationId').equals(sibling.id).first();
+          if (isSameAnnotation(sibling, annotation, siblingAnchor, anchor)) {
+            duplicate = true;
+            break;
+          }
+        }
+        if (duplicate) {
+          summary.annotationsSkipped++;
+          continue;
+        }
+        await db.annotations.add(annotation);
+        if (anchor) await db.anchors.put({ ...anchor, annotationId: annotation.id });
+        summary.annotationsAdded++;
+      }
+
+      // Settings: union list-valued prefs, fill in scalars we do not have yet.
+      for (const setting of file.settings) {
+        const local = await db.settings.get(setting.key);
+        if (!local) {
+          await db.settings.put(setting);
+          continue;
+        }
+        if (Array.isArray(local.value) && Array.isArray(setting.value)) {
+          const merged = [...local.value];
+          for (const item of setting.value) {
+            const known = merged.some((existing) => JSON.stringify(existing) === JSON.stringify(item));
+            if (!known) merged.push(item);
+          }
+          await db.settings.put({ key: setting.key, value: merged });
+        }
+      }
+    },
+  );
+
+  return summary;
 }
 
 export async function getLastColor(): Promise<ColorKey> {

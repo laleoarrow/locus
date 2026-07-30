@@ -1,11 +1,39 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, test as base, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import {
+  chromium,
+  expect as baseExpect,
+  test as base,
+  type BrowserContext,
+  type Page,
+  type Worker,
+} from '@playwright/test';
 
-const EXTENSION_PATH = path.resolve(
+export const EXTENSION_PATH = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '../.output/chrome-mv3-e2e',
 );
+
+/** Launch a second, fully independent install — used to test device-to-device sync. */
+export async function launchSeparateProfile(): Promise<{
+  context: BrowserContext;
+  worker: Worker;
+  extensionId: string;
+}> {
+  const context = await chromium.launchPersistentContext('', {
+    channel: 'chromium',
+    args: [
+      `--disable-extensions-except=${EXTENSION_PATH}`,
+      `--load-extension=${EXTENSION_PATH}`,
+    ],
+  });
+  const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
+  await expectPoll(async () => {
+    const scripts = await worker.evaluate(() => chrome.scripting.getRegisteredContentScripts());
+    return scripts.length > 0;
+  });
+  return { context, worker, extensionId: new URL(worker.url()).host };
+}
 
 export const BASE_URL = 'http://localhost:8137';
 
@@ -88,10 +116,22 @@ export async function selectText(page: Page, selector: string, text: string): Pr
   await page.evaluate(() => document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })));
 }
 
-/** Create a highlight over `text` using the floating toolbar. */
+/**
+ * Create a highlight over `text` using the floating toolbar, and wait until it
+ * is actually persisted. Without the wait, a follow-up action can race the
+ * create round-trip (e.g. reading the remembered last-used colour before the
+ * content script has been told about it).
+ */
 export async function highlight(page: Page, selector: string, text: string, color = 'yellow'): Promise<void> {
+  const before = Number((await page.locator('html').getAttribute('data-locus-anchored')) ?? '0');
   await selectText(page, selector, text);
   await page.locator(`[data-locus-toolbar] .swatch[data-color="${color}"]`).click();
+  await baseExpect
+    .poll(
+      async () => Number((await page.locator('html').getAttribute('data-locus-anchored')) ?? '0'),
+      { timeout: 10_000 },
+    )
+    .toBeGreaterThan(before);
 }
 
 /** Real mouse click on the middle of `text` inside `selector` (hits highlights). */

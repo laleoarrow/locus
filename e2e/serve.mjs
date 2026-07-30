@@ -1,4 +1,5 @@
-// Tiny static server for fixture pages (no dependencies).
+// Tiny static server for fixture pages, plus a minimal in-memory WebDAV
+// endpoint under /dav/ so sync can be exercised end to end (no dependencies).
 import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { extname, join, normalize, sep } from 'node:path';
@@ -16,10 +17,130 @@ const MIME = {
   '.json': 'application/json',
 };
 
+// --- WebDAV mock -----------------------------------------------------------
+// Supports exactly what the sync engine uses: Basic auth, MKCOL, GET, PUT,
+// HEAD, ETags and If-Match / If-None-Match preconditions.
+const DAV_USER = 'tester';
+const DAV_PASS = 'app-password';
+const davFiles = new Map(); // path -> { body, etag }
+const davCollections = new Set(['/dav/']);
+let etagCounter = 0;
+
+function davAuthorized(req) {
+  const header = req.headers.authorization ?? '';
+  if (!header.startsWith('Basic ')) return false;
+  const [user, pass] = Buffer.from(header.slice(6), 'base64').toString('utf8').split(':');
+  return user === DAV_USER && pass === DAV_PASS;
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (chunk) => (data += chunk));
+    req.on('end', () => resolve(data));
+    req.on('error', reject);
+  });
+}
+
+async function handleDav(req, res, pathname) {
+  if (!davAuthorized(req)) {
+    res.writeHead(401, { 'www-authenticate': 'Basic realm="dav"' });
+    res.end('unauthorized');
+    return;
+  }
+
+  const isCollection = pathname.endsWith('/');
+  const existing = davFiles.get(pathname);
+
+  switch (req.method) {
+    case 'MKCOL': {
+      if (davCollections.has(pathname)) {
+        res.writeHead(405);
+        res.end('exists');
+        return;
+      }
+      davCollections.add(pathname);
+      res.writeHead(201);
+      res.end();
+      return;
+    }
+    case 'HEAD':
+    case 'GET': {
+      if (isCollection) {
+        if (!davCollections.has(pathname)) {
+          res.writeHead(404);
+          res.end();
+          return;
+        }
+        res.writeHead(200, { 'content-type': 'text/plain' });
+        res.end(req.method === 'HEAD' ? undefined : 'collection');
+        return;
+      }
+      if (!existing) {
+        res.writeHead(404);
+        res.end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'application/json', etag: existing.etag });
+      res.end(req.method === 'HEAD' ? undefined : existing.body);
+      return;
+    }
+    case 'PUT': {
+      const ifMatch = req.headers['if-match'];
+      const ifNoneMatch = req.headers['if-none-match'];
+      if (ifNoneMatch === '*' && existing) {
+        res.writeHead(412);
+        res.end('exists');
+        return;
+      }
+      if (ifMatch && ifMatch !== '*' && existing && ifMatch !== existing.etag) {
+        res.writeHead(412);
+        res.end('etag mismatch');
+        return;
+      }
+      if (ifMatch && !existing) {
+        res.writeHead(412);
+        res.end('missing');
+        return;
+      }
+      const etag = `"v${++etagCounter}"`;
+      davFiles.set(pathname, { body: await readBody(req), etag });
+      res.writeHead(existing ? 204 : 201, { etag });
+      res.end();
+      return;
+    }
+    default: {
+      res.writeHead(405);
+      res.end();
+    }
+  }
+}
+
+// --- Server ----------------------------------------------------------------
 createServer(async (req, res) => {
+  const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
+  const pathname = decodeURIComponent(url.pathname);
+
+  if (pathname.startsWith('/dav/')) {
+    try {
+      await handleDav(req, res, pathname);
+    } catch {
+      res.writeHead(500);
+      res.end('dav error');
+    }
+    return;
+  }
+
+  // Test hook: wipe the mock server between e2e cases.
+  if (pathname === '/__dav-reset') {
+    davFiles.clear();
+    res.writeHead(200);
+    res.end('reset');
+    return;
+  }
+
   try {
-    const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
-    const relative = normalize(decodeURIComponent(url.pathname)).replace(/^([/\\])+/, '');
+    const relative = normalize(pathname).replace(/^([/\\])+/, '');
     const filePath = join(ROOT, relative);
     if (!filePath.startsWith(ROOT.endsWith(sep) ? ROOT : ROOT + sep)) throw new Error('forbidden');
     const body = await readFile(filePath);
@@ -30,5 +151,5 @@ createServer(async (req, res) => {
     res.end('not found');
   }
 }).listen(PORT, () => {
-  console.log(`fixture server on http://localhost:${PORT}`);
+  console.log(`fixture server on http://localhost:${PORT} (WebDAV mock at /dav/)`);
 });

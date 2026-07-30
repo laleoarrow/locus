@@ -1,9 +1,13 @@
+import { readFile, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import type { Page, Worker } from '@playwright/test';
 import {
   BASE_URL,
   clickText,
   expect,
   highlight,
+  launchSeparateProfile,
   readAnnotationRow,
   selectText,
   test,
@@ -458,6 +462,202 @@ test('E20: DOI match prompts jumping to the annotated version', async ({
   await page.goto(DOI_B);
   await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
   await expect(page.locator('[data-locus-version-toast]')).toBeHidden();
+});
+
+test('E22: backup round-trips through a real exported file', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  await highlight(page, '#probe-4', 'Quotation blocks');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+
+  // Attach a note so the export has to carry Markdown too.
+  await clickText(page, '#probe-4', 'Quotation blocks');
+  await page.locator('[data-locus-note] textarea').fill('**backup me**');
+  await page.locator('[data-locus-note-save]').click();
+
+  const panel = await openPanelFor(page, serviceWorker, extensionId, NESTED);
+  await expect(panel.locator('.annotation-item')).toHaveCount(1);
+  const annotationId = (await panel
+    .locator('.annotation-item')
+    .getAttribute('data-annotation-id')) as string;
+
+  // Export → a real browser download.
+  const download = await Promise.all([
+    panel.waitForEvent('download'),
+    panel.locator('.backup-actions button[data-action="export"]').click(),
+  ]).then(([event]) => event);
+  expect(download.suggestedFilename()).toMatch(/^locus-backup-\d{4}-\d{2}-\d{2}\.json$/);
+  const savedTo = path.join(os.tmpdir(), `locus-e2e-${Date.now()}.json`);
+  await download.saveAs(savedTo);
+  const parsed = JSON.parse(await readFile(savedTo, 'utf8'));
+  expect(parsed.format).toBe('locus-backup');
+  expect(parsed.annotations).toHaveLength(1);
+  expect(parsed.annotations[0].comment).toBe('**backup me**');
+
+  // Wipe the library, then import the file back.
+  await panel.evaluate(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.deleteDatabase('locus');
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+        request.onblocked = () => resolve();
+      }),
+  );
+  await panel.reload();
+  await expect(panel.locator('.annotation-item')).toHaveCount(0);
+
+  await panel.locator('input[data-locus-import-input]').setInputFiles(savedTo);
+  await expect(panel.locator('[data-locus-backup-status]')).toContainText('1 added');
+  await expect(panel.locator('.annotation-item')).toHaveCount(1);
+  await expect(panel.locator('.annotation-item')).toHaveAttribute(
+    'data-annotation-id',
+    annotationId,
+  );
+  await expect(panel.locator('.annotation-comment strong')).toHaveText('backup me');
+
+  // The restored anchor still resolves on the page.
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-detached', '0');
+
+  // Importing the same file again changes nothing.
+  await panel.locator('input[data-locus-import-input]').setInputFiles(savedTo);
+  await expect(panel.locator('[data-locus-backup-status]')).toContainText('0 added');
+  await expect(panel.locator('.annotation-item')).toHaveCount(1);
+  await rm(savedTo, { force: true });
+});
+
+const DAV_URL = `${BASE_URL}/dav/locus/`;
+const DAV_USER = 'tester';
+const DAV_PASS = 'app-password';
+
+test('E23: two independent installs converge through WebDAV sync', async ({
+  context,
+  serviceWorker,
+  extensionId,
+  request,
+}) => {
+  await request.get(`${BASE_URL}/__dav-reset`);
+
+  // ── Device A: annotate, then set sync up through the real settings form.
+  const pageA = await context.newPage();
+  await pageA.goto(NESTED);
+  await highlight(pageA, '#probe-2', 'footnote marker');
+  await expect(pageA.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+
+  const panelA = await openPanelFor(pageA, serviceWorker, extensionId, NESTED);
+  await panelA.locator('button[data-action="sync-settings"]').click();
+  await panelA.locator('input[data-sync="url"]').fill(DAV_URL);
+  await panelA.locator('input[data-sync="username"]').fill(DAV_USER);
+  await panelA.locator('input[data-sync="password"]').fill(DAV_PASS);
+  await panelA.locator('input[data-sync="username"]').click(); // blur the password field
+  await panelA.locator('button[data-action="sync-test"]').click();
+  await expect(panelA.locator('[data-locus-sync-status]')).toHaveText('Connected.');
+  await panelA.locator('input[data-pref="sync-enabled"] + span').click();
+  await panelA.locator('button[data-action="sync-now"]').click();
+  await expect(panelA.locator('[data-locus-sync-status]')).toContainText('Synced');
+
+  // Credentials live in chrome.storage.local, so a real export must not leak
+  // them into a file the user might share.
+  const dump = await Promise.all([
+    panelA.waitForEvent('download'),
+    panelA.locator('.backup-actions button[data-action="export"]').click(),
+  ]).then(([event]) => event);
+  const dumpPath = path.join(os.tmpdir(), `locus-sync-export-${Date.now()}.json`);
+  await dump.saveAs(dumpPath);
+  const dumpText = await readFile(dumpPath, 'utf8');
+  expect(dumpText).not.toContain(DAV_PASS);
+  expect(dumpText).not.toContain(DAV_USER);
+  await rm(dumpPath, { force: true });
+
+  // ── Device B: a separate profile, own IndexedDB, same WebDAV folder.
+  const b = await launchSeparateProfile();
+  try {
+    const panelB = await b.context.newPage();
+    await panelB.goto(
+      `chrome-extension://${b.extensionId}/sidepanel.html?url=${encodeURIComponent(NESTED)}`,
+    );
+    await expect(panelB.locator('.annotation-item')).toHaveCount(0);
+
+    const configure = (panel: Page) =>
+      panel.evaluate(
+        (cfg) =>
+          chrome.runtime.sendMessage({
+            type: 'sync:save',
+            patch: { ...cfg, enabled: true },
+          }),
+        { url: DAV_URL, username: DAV_USER, password: DAV_PASS },
+      );
+    await configure(panelB);
+    const pulled = await panelB.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:now' }));
+    expect(pulled.result.ok).toBe(true);
+    expect(pulled.result.pulled).toBe(1);
+
+    // A's highlight is now in B's library, attached to the same page…
+    await expect(panelB.locator('.annotation-item')).toHaveCount(1);
+    // …and it re-anchors on B's copy of the page.
+    const pageB = await b.context.newPage();
+    await pageB.goto(NESTED);
+    await expect(pageB.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+    await expect(pageB.locator('html')).toHaveAttribute('data-locus-detached', '0');
+
+    // ── B adds its own note and pushes; A pulls and ends up with both.
+    await highlight(pageB, '#probe-3', 'triple-wrapped');
+    await expect(pageB.locator('html')).toHaveAttribute('data-locus-anchored', '2');
+    const pushed = await panelB.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:now' }));
+    expect(pushed.result.ok).toBe(true);
+
+    const back = await panelA.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:now' }));
+    expect(back.result.ok).toBe(true);
+    expect(back.result.pulled).toBe(1);
+    await expect(panelA.locator('.annotation-item')).toHaveCount(2);
+    await expect(pageA.locator('html')).toHaveAttribute('data-locus-anchored', '2');
+
+    // ── A deletion on B propagates to A rather than coming back to life.
+    const target = (await panelB
+      .locator('.annotation-item')
+      .first()
+      .getAttribute('data-annotation-id')) as string;
+    await panelB.evaluate(
+      (id) => chrome.runtime.sendMessage({ type: 'annotation:delete', id }),
+      target,
+    );
+    await expect(panelB.locator('.annotation-item')).toHaveCount(1);
+    await panelB.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:now' }));
+    await panelA.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:now' }));
+    await expect(panelA.locator('.annotation-item')).toHaveCount(1);
+    // Syncing again must not resurrect it.
+    await panelA.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:now' }));
+    await panelB.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:now' }));
+    await expect(panelA.locator('.annotation-item')).toHaveCount(1);
+    await expect(panelB.locator('.annotation-item')).toHaveCount(1);
+  } finally {
+    await b.context.close();
+  }
+});
+
+test('E24: sync reports a bad password instead of failing silently', async ({
+  context,
+  serviceWorker,
+  extensionId,
+  request,
+}) => {
+  await request.get(`${BASE_URL}/__dav-reset`);
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  const panel = await openPanelFor(page, serviceWorker, extensionId, NESTED);
+  await panel.evaluate(
+    (cfg) => chrome.runtime.sendMessage({ type: 'sync:save', patch: { ...cfg, enabled: true } }),
+    { url: DAV_URL, username: DAV_USER, password: 'wrong-password' },
+  );
+  const outcome = await panel.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:now' }));
+  expect(outcome.result.ok).toBe(false);
+  expect(outcome.result.error).toContain('app password');
 });
 
 test('E12: svg and mathjax pages anchor across reload; iframe selection is ignored', async ({

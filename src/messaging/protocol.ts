@@ -1,4 +1,7 @@
 import type { AltVersion } from '@/db/repo';
+import type { SyncConfig, SyncState } from '@/domain/sync';
+import type { SyncResult } from '@/sync/engine';
+import type { SyncConfigView } from '@/sync/store';
 import type {
   AnchorPayload,
   AnchorState,
@@ -52,7 +55,11 @@ export type BgRequest =
   | { type: 'prefs:toggle-site'; origin: string; disabled: boolean }
   | { type: 'prefs:set-detect-doi'; on: boolean }
   | { type: 'prefs:set-check-updates'; on: boolean }
-  | { type: 'update:status' };
+  | { type: 'update:status' }
+  | { type: 'sync:status' }
+  | { type: 'sync:save'; patch: Partial<SyncConfig> }
+  | { type: 'sync:test' }
+  | { type: 'sync:now' };
 
 export interface BgResponseMap {
   'source:bootstrap': BootstrapResult;
@@ -68,6 +75,10 @@ export interface BgResponseMap {
   'prefs:set-detect-doi': { prefs: Prefs };
   'prefs:set-check-updates': { prefs: Prefs };
   'update:status': { current: string; info: UpdateInfo | null; hasUpdate: boolean };
+  'sync:status': { config: SyncConfigView; state: SyncState };
+  'sync:save': { config: SyncConfigView; state: SyncState };
+  'sync:test': { ok: boolean; error: string };
+  'sync:now': { result: SyncResult; state: SyncState };
 }
 
 export type BgResponseFor<T extends BgRequest> = BgResponseMap[T['type']];
