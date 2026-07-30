@@ -32,7 +32,3 @@ export function toUrlKey(raw: string): string {
   if (key.endsWith('?')) key = key.slice(0, -1);
   return key;
 }
-
-export function originPattern(origin: string): string {
-  return `${origin}/*`;
-}

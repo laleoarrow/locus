@@ -233,7 +233,12 @@ Typed request/response pairs in `src/messaging/protocol.ts`; a single
   carrying `urlKey`.
 - `annotation:reveal` (panel → bg → tab), `annotations:anchor-state`
   (content → bg → panel): anchored/detached status per annotation id.
-- `site:enable` / `site:disable` / `site:status` (popup → bg).
+- `prefs:set-placement`, `prefs:add-color`, `prefs:remove-color`,
+  `prefs:toggle-site`, `prefs:set-detect-doi`, `prefs:set-check-updates`
+  (popup/panel/content → bg), each answering with the new `Prefs` and
+  broadcasting `prefs:changed` to every tab.
+- `update:status` (popup → bg): current version, last check result, and
+  whether a newer release exists.
 
 ## 7. Source layout
 
