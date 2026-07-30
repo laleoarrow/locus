@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fixture: SVG content</title>
+  <style>
+    body { max-width: 640px; margin: 40px auto; font: 16px/1.6 Georgia, serif; }
+    svg { display: block; margin: 16px 0; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1 id="probe-1">Figures rendered as inline SVG</h1>
+    <p id="probe-2">Text before the figure describes the experimental setup in enough words to annotate.</p>
+    <figure>
+      <svg width="360" height="120" viewBox="0 0 360 120" role="img" aria-label="demo chart">
+        <rect x="10" y="20" width="80" height="80" fill="#4caf50"></rect>
+        <circle cx="180" cy="60" r="40" fill="#2196f3"></circle>
+        <text x="260" y="66" font-size="14">svg label text</text>
+      </svg>
+      <figcaption id="probe-3">Figure 1. A caption under the SVG that is normal HTML text.</figcaption>
+    </figure>
+    <p id="probe-4">Text after the figure confirms that anchoring around foreign content stays stable.</p>
+  </article>
+</body>
+</html>

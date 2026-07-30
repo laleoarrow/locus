@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fixture: nested text nodes</title>
+  <style>
+    body { max-width: 640px; margin: 40px auto; font: 16px/1.6 Georgia, serif; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1 id="probe-1">Deeply nested inline structure</h1>
+    <p id="probe-2">
+      This paragraph contains <em>emphasized <strong>and strongly <span class="x">nested</span></strong>
+      fragments</em> of text, including a footnote marker<sup id="fn-1"><a href="#n1">1</a></sup> and
+      a <a href="#somewhere">hyperlink that spans <code>inline code</code> inside it</a>, so that
+      selections can start and end in different depths of the tree.
+    </p>
+    <p id="probe-3">A second paragraph exists so anchors can cross
+      <span><span><span>triple-wrapped</span></span></span> boundaries between block elements.</p>
+    <blockquote id="probe-4">
+      <p>Quotation blocks add another level of nesting for the walker to traverse correctly.</p>
+    </blockquote>
+    <ol>
+      <li id="n1">A footnote definition with <i>italic</i> content.</li>
+    </ol>
+  </article>
+</body>
+</html>

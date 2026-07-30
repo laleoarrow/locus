@@ -1,0 +1,52 @@
+:root {
+  --locus-fg: #1f2328;
+  --locus-fg-muted: #57606a;
+  --locus-border: #d0d7de;
+  --locus-bg-subtle: #f6f8fa;
+  --locus-accent: #1f6feb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  width: 280px;
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  color: var(--locus-fg);
+}
+
+.popup { padding: 12px; }
+.popup h1 { margin: 0 0 2px; font-size: 14px; }
+.tagline { margin: 0 0 10px; font-size: 12px; color: var(--locus-fg-muted); }
+
+.origin {
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  background: var(--locus-bg-subtle);
+  border: 1px solid var(--locus-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.action {
+  width: 100%;
+  border: 1px solid var(--locus-border);
+  border-radius: 6px;
+  background: var(--locus-bg-subtle);
+  padding: 6px 10px;
+  font: inherit;
+  cursor: pointer;
+  margin-bottom: 6px;
+}
+button.action.primary {
+  background: var(--locus-accent);
+  border-color: var(--locus-accent);
+  color: #fff;
+}
+button.action:disabled { opacity: 0.5; cursor: default; }
+
+.hint { font-size: 12px; color: var(--locus-fg-muted); margin: 6px 0 0; }

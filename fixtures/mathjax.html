@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fixture: MathJax-like markup</title>
+  <style>
+    body { max-width: 640px; margin: 40px auto; font: 16px/1.6 Georgia, serif; }
+    .MathJax { display: inline-block; font-style: italic; }
+    .MJX-assistive { position: absolute; clip: rect(1px, 1px, 1px, 1px); }
+  </style>
+</head>
+<body>
+  <article>
+    <h1 id="probe-1">Equations typeset like MathJax</h1>
+    <p id="probe-2">
+      The loss is defined as
+      <span class="MathJax" id="eq-1">
+        <span class="mjx-chtml"><span class="mjx-mrow"><span class="mjx-mi">L</span><span class="mjx-mo">=</span><span class="mjx-msub"><span class="mjx-mi">E</span><span class="mjx-sub">q</span></span></span></span>
+        <span class="MJX-assistive">L = E_q</span>
+      </span>
+      where the expectation runs over the variational distribution, and prose continues after the
+      equation so selections can span across it.
+    </p>
+    <p id="probe-3">A follow-up paragraph mentions the derivation once more for anchoring nearby.</p>
+    <script type="math/tex" id="tex-src">L = \mathbb{E}_q[\log p(x|z)]</script>
+  </article>
+  <script>
+    // Fake late typesetting: MathJax-like libraries re-render equations after
+    // load, replacing the equation subtree.
+    setTimeout(function () {
+      var eq = document.getElementById('eq-1');
+      var replacement = document.createElement('span');
+      replacement.className = 'MathJax';
+      replacement.id = 'eq-1';
+      replacement.innerHTML = '<span class="mjx-chtml re-typeset"><span class="mjx-mi">L</span><span class="mjx-mo">=</span><span class="mjx-mi">E</span></span>';
+      eq.replaceWith(replacement);
+      document.documentElement.setAttribute('data-fixture-typeset', '1');
+    }, 300);
+  </script>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{
+  "name": "locus",
+  "displayName": "Locus / 文迹",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A minimal, local-first annotation layer for academic reading.",
+  "scripts": {
+    "dev": "wxt",
+    "dev:edge": "wxt -b edge",
+    "build": "wxt build -b chrome",
+    "build:edge": "wxt build -b edge",
+    "build:e2e": "wxt build -b chrome --mode e2e",
+    "typecheck": "wxt prepare && tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "pnpm build:e2e && playwright test",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "dexie": "^4.4.4",
+    "dexie-react-hooks": "^4.4.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.62.0",
+    "@types/chrome": "^0.2.2",
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@wxt-dev/module-react": "^1.2.2",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^30.0.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10",
+    "wxt": "^0.21.2"
+  }
+}

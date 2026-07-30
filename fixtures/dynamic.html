@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fixture: dynamic DOM changes</title>
+  <style>
+    body { max-width: 640px; margin: 40px auto; font: 16px/1.6 Georgia, serif; }
+  </style>
+</head>
+<body>
+  <article id="root">
+    <h1 id="probe-1">Content that changes after load</h1>
+    <p id="intro">Static introduction paragraph that never changes.</p>
+    <div id="late-slot"><p>Loading placeholder…</p></div>
+    <p id="target-holder">The annotated sentence lives in this paragraph with stable wording.</p>
+    <p id="probe-2">A trailing static paragraph for layout probes.</p>
+  </article>
+  <script>
+    // ~500ms after load the page "hydrates": the placeholder is replaced and
+    // the target paragraph is re-created (new nodes, same text) inside a new
+    // wrapper — DOM paths break, text positions shift, quotes survive.
+    setTimeout(function () {
+      var slot = document.getElementById('late-slot');
+      slot.innerHTML = '<section><h2>Injected section</h2><p>Freshly injected content pushes everything below it.</p></section>';
+      var holder = document.getElementById('target-holder');
+      if (location.hash === '#remove-target') {
+        holder.remove();
+      } else {
+        var wrapper = document.createElement('div');
+        wrapper.className = 'rewrapped';
+        var p = document.createElement('p');
+        p.id = 'target-holder-v2';
+        p.textContent = holder.textContent;
+        wrapper.appendChild(p);
+        holder.replaceWith(wrapper);
+      }
+      document.documentElement.setAttribute('data-fixture-hydrated', '1');
+    }, 500);
+  </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fixture: iframes</title>
+  <style>
+    body { max-width: 640px; margin: 40px auto; font: 16px/1.6 Georgia, serif; }
+    iframe { width: 100%; height: 160px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1 id="probe-1">A page that embeds an iframe</h1>
+    <p id="probe-2">Top-document text before the frame is annotatable as usual.</p>
+    <iframe src="./iframe-child.html" title="embedded child"></iframe>
+    <p id="probe-3">Top-document text after the frame is also annotatable.</p>
+  </article>
+</body>
+</html>
