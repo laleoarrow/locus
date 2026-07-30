@@ -240,6 +240,38 @@ Typed request/response pairs in `src/messaging/protocol.ts`; a single
 - `update:status` (popup → bg): current version, last check result, and
   whether a newer release exists.
 
+## 6b. Backup & sync
+
+**Backup format** (`src/domain/backup.ts`): a versioned JSON snapshot
+(`formatVersion`, independent of the DB schema version) holding documents,
+sources, annotations, anchors and portable settings. Import validates every row
+defensively — it runs on a user-supplied file — and drops malformed rows rather
+than trusting them. `updateInfo` is excluded as volatile.
+
+**Merge** (`repo.importBackup`) is the one algorithm both backup-import and sync
+rely on, so it must be convergent and non-destructive:
+
+- Pages are matched by `urlKey`, and incoming `documentId`/`sourceId` are
+  remapped to the local ones. Two machines that annotated the same URL keep one
+  document, not two.
+- Rows merge by id, newer `updatedAt` wins. Tombstones travel, so a deletion on
+  either side survives and an older copy can never resurrect it.
+- An incoming annotation identical to a local one in every meaningful field
+  (source, colour, comment, kind, anchor position) counts as already present, so
+  syncing does not accumulate duplicate highlights.
+
+These properties make it idempotent: syncing twice equals syncing once.
+
+**Sync** (`src/sync/`, driven from the background): pull the remote file, merge,
+push the result back with `If-Match` on the ETag; a 412 means another device
+pushed first, so the pass restarts from the pull (up to 3 attempts). Pushes are
+debounced ~4 s after local edits and pulls run on a configurable alarm. A remote
+file that fails validation is reported, never overwritten.
+
+Credentials live in `chrome.storage.local`, not the Dexie settings table — that
+keeps them structurally out of export files (asserted by E23). The UI is only
+handed a view with `hasPassword: boolean`.
+
 ## 7. Source layout
 
 ```

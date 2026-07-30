@@ -194,6 +194,10 @@ const SHADOW_CSS = `
   border-radius: 16px;
   padding: 12px;
   animation: locus-in 0.14s ease-out;
+  /* Never taller than the viewport, so the actions stay reachable. */
+  max-height: calc(100vh - 24px);
+  display: flex;
+  flex-direction: column;
 }
 .note-head {
   display: flex;
@@ -232,7 +236,12 @@ const SHADOW_CSS = `
   font-size: 12.5px;
   max-height: 140px;
   overflow-y: auto;
+  /* Lets the preview shrink instead of pushing the actions off the card. */
+  flex: 0 1 auto;
+  min-height: 0;
 }
+.note-card textarea { flex: 0 0 auto; }
+.note-actions { flex: 0 0 auto; }
 .note-preview:empty { display: none; }
 .note-preview h1, .note-preview h2, .note-preview h3 { margin: 4px 0; font-size: 13.5px; }
 .note-preview p, .note-preview ul, .note-preview ol, .note-preview blockquote { margin: 4px 0; }
@@ -480,6 +489,8 @@ export class LocusUI {
     preview.setAttribute('data-locus-note-preview', '');
     const renderPreview = () => {
       preview.innerHTML = markdownToHtml(textarea.value.trim());
+      // The card grows as the preview fills in; keep it inside the viewport.
+      if (!this.noteCard.classList.contains('hidden')) this.positionNoteCard(options.rect);
     };
     renderPreview();
     textarea.addEventListener('input', renderPreview);
@@ -534,12 +545,25 @@ export class LocusUI {
 
     this.noteCard.append(head, textarea, preview, actions);
     this.noteCard.classList.remove('hidden');
-    const view = this.doc.defaultView;
-    const maxLeft = (view?.innerWidth ?? 0) - 308;
-    const maxTop = (view?.innerHeight ?? 0) - 200;
-    this.noteCard.style.left = `${clamp(options.rect.left, 8, maxLeft)}px`;
-    this.noteCard.style.top = `${clamp(options.rect.bottom + 10, 8, maxTop)}px`;
+    this.positionNoteCard(options.rect);
     textarea.focus();
+  }
+
+  /**
+   * Keep the note card fully on screen, measuring its real size (it grows with
+   * the Markdown preview) and flipping above the selection when there is not
+   * enough room below.
+   */
+  private positionNoteCard(rect: DOMRect): void {
+    const view = this.doc.defaultView;
+    const viewWidth = view?.innerWidth ?? 0;
+    const viewHeight = view?.innerHeight ?? 0;
+    const cardWidth = this.noteCard.offsetWidth;
+    const cardHeight = this.noteCard.offsetHeight;
+    this.noteCard.style.left = `${clamp(rect.left, 8, Math.max(8, viewWidth - cardWidth - 8))}px`;
+    const below = rect.bottom + 10;
+    const wanted = below + cardHeight + 8 > viewHeight ? rect.top - cardHeight - 10 : below;
+    this.noteCard.style.top = `${clamp(wanted, 8, Math.max(8, viewHeight - cardHeight - 8))}px`;
   }
 
   closeNoteEditor(): void {

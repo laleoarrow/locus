@@ -40,10 +40,15 @@ bring them back reliably — even when the page shifts under you.
   (they get the next shortcut digits; manage them in the side panel). The
   toolbar shows below the selection by default, or set it to *above* /
   *auto* — auto dodges other extensions' floating toolbars.
-- **Local only.** Everything lives in IndexedDB. No accounts, no sync, no
-  telemetry, nothing about your pages leaves the machine. The only network
-  call is an optional update check (GitHub release metadata; badge + one-click
-  download link, switchable off in the side panel).
+- **Sync through storage you own.** Point Locus at a WebDAV folder (坚果云 /
+  Nutstore, Nextcloud, anything WebDAV) once, and every device keeps itself
+  merged — no account, no server of ours. Or just use **Export / Import** for a
+  plain JSON backup you can carry around.
+- **Local only.** Everything lives in IndexedDB. No accounts, no telemetry,
+  nothing about your pages leaves the machine. Only two features touch the
+  network, both switchable off: the WebDAV sync you configure, and an update
+  check that reads GitHub release metadata (no data about you is sent). Sync
+  credentials are stored locally and never included in an exported backup.
 - **Resilient anchors.** Each annotation stores the exact text, surrounding
   context, character positions, and DOM paths; recovery tries them in order.
   An annotation that can't be re-anchored shows as *detached* in the side
@@ -95,5 +100,41 @@ below). To build from source instead:
    click **Load unpacked**, and pick the `.output/edge-mv3` folder.
    Chrome: `chrome://extensions` → Developer mode → *Load unpacked* →
    `.output/chrome-mv3`.
-3. Open any article, click the Locus toolbar icon, and *Enable on this site*.
-   Select text (or click a figure) and highlight away.
+3. Open any article, select text (or click a figure), and highlight away.
+
+The manifest pins a public `key`, so the extension ID no longer depends on where
+the folder lives — updating by replacing the folder keeps your annotations.
+
+**Coming from v0.3.0 or earlier?** Those builds had a path-derived ID, so the new
+build starts with an empty library. To carry your annotations across, run
+`node scripts/migrate-bridge.mjs`, reload, export a backup from the side panel,
+then `pnpm build:edge`, reload again and import it. (The script prints these
+steps.) Skip this if you have nothing worth keeping yet.
+
+## Sync between devices
+
+Side panel → **Sync (WebDAV)** → *Setup*:
+
+| Field | 坚果云 / Nutstore example |
+|---|---|
+| Address | `https://dav.jianguoyun.com/dav/locus/` |
+| Account | your account email |
+| App password | 坚果云 → 账户信息 → 安全选项 → 添加应用密码 |
+
+Hit *Test*, flip the switch on, and Locus keeps that folder and this browser
+merged — pushing a few seconds after you annotate and pulling on a timer. Point
+a second device at the same folder and both converge. Any WebDAV host works
+(Nextcloud, ownCloud, a self-hosted server); use an **app password**, not your
+account password.
+
+Prefer files? **Backup → Export** writes the whole library to JSON, and
+**Import** merges one back in — the same merge as sync, so it is safe to import
+the same file twice.
+
+## Publishing to the stores
+
+Store-installed extensions auto-update; sideloaded ones never do. See
+[docs/STORE-SUBMISSION.md](docs/STORE-SUBMISSION.md) for the prepared listing
+copy, permission justifications, assets, and step-by-step submission for both
+Edge Add-ons and the Chrome Web Store. Privacy policy:
+[docs/PRIVACY.md](docs/PRIVACY.md).

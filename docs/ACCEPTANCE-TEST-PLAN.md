@@ -28,6 +28,12 @@ bypassed while still exercising the dynamic registration code path).
 | U16 | doi | normalize/extract DOIs from citation meta and URL paths (ovid-style tilde suffixes, case folding) |
 | U17 | version | dotted version comparison for the update check |
 | U18 | doi/repo | recordDoi + findAltVersion return the annotated sibling version only |
+| U19 | backup/parse | rejects foreign JSON and newer formats; drops malformed rows; strips volatile settings |
+| U20 | backup/round trip | export→wipe→import restores annotations, anchors and notes; importing twice adds nothing |
+| U21 | backup/tombstones | an older backup never resurrects a deleted annotation; a newer deletion propagates |
+| U22 | backup/merge | another machine's rows attach to the local page by urlKey (one document, no duplicates); unseen pages are added; DOI backfilled; list prefs unioned |
+| U23 | sync/config | collection URL normalization (trailing slash, query/fragment stripped, non-http rejected); completeness check |
+| U24 | sync/auth | Basic auth survives non-ASCII credentials; HTTP statuses map to actionable messages |
 
 ## E2E (Playwright, loaded extension)
 
@@ -57,7 +63,10 @@ for observability without page-world coupling.
 | E18 | placement | position pref: below (default) / above / auto — auto flips above when another floating UI overlaps the below band |
 | E19 | site off | ⌘-hover on the toolbar's right edge reveals ✕; clicking disables Locus for the origin (dormant, re-enable is live) |
 | E20 | doi | annotating version A then opening same-DOI version B shows the jump toast; the DOI pref switch silences it |
-| E21 | builds | `wxt build -b chrome` and `-b edge` both produce a loadable MV3 bundle from the same source |
+| E22 | backup | Export produces a real download; wiping the DB and importing that file restores the annotation, its Markdown note and a working anchor; re-importing adds nothing |
+| E23 | sync | two independent installs (separate profiles) converge in both directions through a mock WebDAV server; a deletion on one propagates and repeated syncs never resurrect it; a real export contains neither the sync username nor password |
+| E24 | sync/errors | a wrong app password surfaces an actionable message instead of failing silently |
+| E25 | builds | `wxt build -b chrome` and `-b edge` both produce a loadable MV3 bundle from the same source; `--mode store` omits the manifest key while sideload builds keep it |
 
 ## Manual checklist (pre-release)
 
