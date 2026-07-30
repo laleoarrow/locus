@@ -2,7 +2,50 @@ import { defineBackground } from 'wxt/utils/define-background';
 import * as repo from '@/db/repo';
 import { db } from '@/db/schema';
 import { toUrlKey } from '@/domain/url';
+import { isNewerVersion } from '@/domain/version';
 import type { BgRequest, BgResponseFor, ChangeBroadcast, TabMessage } from '@/messaging/protocol';
+
+const RELEASES_API = 'https://api.github.com/repos/laleoarrow/locus/releases/latest';
+const UPDATE_ALARM = 'locus-update-check';
+
+/**
+ * Update check: fetches release *metadata* from GitHub (nothing about the
+ * user or their pages is sent) and badges the action icon when a newer
+ * version exists. Sideloaded extensions cannot self-install updates, so the
+ * popup links to the release download instead.
+ */
+async function checkForUpdates(): Promise<void> {
+  const prefs = await repo.getPrefs();
+  if (!prefs.checkUpdates) return;
+  try {
+    const response = await fetch(RELEASES_API, {
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+    if (!response.ok) return;
+    const release = (await response.json()) as { tag_name?: string; html_url?: string };
+    if (!release.tag_name || !release.html_url) return;
+    await repo.setUpdateInfo({
+      latestVersion: release.tag_name.replace(/^v/, ''),
+      releaseUrl: release.html_url,
+      checkedAt: Date.now(),
+    });
+    await syncUpdateBadge();
+  } catch {
+    // offline etc. — try again on the next alarm
+  }
+}
+
+async function updateStatus(): Promise<BgResponseFor<{ type: 'update:status' }>> {
+  const current = chrome.runtime.getManifest().version;
+  const info = await repo.getUpdateInfo();
+  return { current, info, hasUpdate: !!info && isNewerVersion(info.latestVersion, current) };
+}
+
+async function syncUpdateBadge(): Promise<void> {
+  const { hasUpdate } = await updateStatus();
+  await chrome.action.setBadgeBackgroundColor({ color: '#0a84ff' });
+  await chrome.action.setBadgeText({ text: hasUpdate ? '1' : '' });
+}
 
 const CONTENT_SCRIPT_ID = 'locus-content';
 const CONTENT_SCRIPT_FILE = 'content-scripts/content.js';
@@ -67,11 +110,18 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
     case 'source:bootstrap': {
       const source = await repo.ensureSource(message.url, message.title);
       const items = await repo.listForSource(source.id);
+      const prefs = await repo.getPrefs();
+      let altVersion = null;
+      if (prefs.detectDoi && message.doi) {
+        await repo.recordDoi(source.documentId, message.doi);
+        altVersion = await repo.findAltVersion(message.doi, source.documentId);
+      }
       return {
         source,
         items,
         lastColor: await repo.getLastColor(),
-        prefs: await repo.getPrefs(),
+        prefs,
+        altVersion,
       };
     }
     case 'annotations:list':
@@ -103,26 +153,6 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
       await broadcastForAnnotation(message.id);
       return { ok: true };
     }
-    case 'site:registered-status': {
-      const { origins = [] } = await chrome.permissions.getAll();
-      return { origins };
-    }
-    case 'site:enable': {
-      // The popup already obtained the grant (permissions.request needs its
-      // user gesture); register and inject into the requesting tab now.
-      await syncRegistration();
-      if (message.tabId !== undefined) {
-        try {
-          await chrome.scripting.executeScript({
-            target: { tabId: message.tabId },
-            files: [CONTENT_SCRIPT_FILE],
-          });
-        } catch {
-          return { ok: false };
-        }
-      }
-      return { ok: true };
-    }
     case 'prefs:set-placement': {
       await repo.setPlacement(message.placement);
       return broadcastPrefs();
@@ -135,6 +165,22 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
       await repo.removeCustomColor(message.key);
       return broadcastPrefs();
     }
+    case 'prefs:toggle-site': {
+      await repo.setSiteDisabled(message.origin, message.disabled);
+      return broadcastPrefs();
+    }
+    case 'prefs:set-detect-doi': {
+      await repo.setDetectDoi(message.on);
+      return broadcastPrefs();
+    }
+    case 'prefs:set-check-updates': {
+      await repo.setCheckUpdates(message.on);
+      if (message.on) void checkForUpdates();
+      else await chrome.action.setBadgeText({ text: '' });
+      return broadcastPrefs();
+    }
+    case 'update:status':
+      return updateStatus();
   }
 }
 
@@ -146,8 +192,18 @@ async function broadcastForAnnotation(id: string): Promise<void> {
 }
 
 export default defineBackground(() => {
-  chrome.runtime.onInstalled.addListener(() => void syncRegistration());
-  chrome.runtime.onStartup.addListener(() => void syncRegistration());
+  chrome.runtime.onInstalled.addListener(() => {
+    void syncRegistration();
+    void chrome.alarms.create(UPDATE_ALARM, { periodInMinutes: 60 * 12, delayInMinutes: 1 });
+    void checkForUpdates();
+  });
+  chrome.runtime.onStartup.addListener(() => {
+    void syncRegistration();
+    void checkForUpdates();
+  });
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === UPDATE_ALARM) void checkForUpdates();
+  });
   chrome.permissions.onAdded.addListener(() => void syncRegistration());
   chrome.permissions.onRemoved.addListener(() => void syncRegistration());
 

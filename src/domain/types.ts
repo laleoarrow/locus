@@ -19,12 +19,27 @@ export type ToolbarPlacement = 'below' | 'above' | 'auto';
 export interface Prefs {
   placement: ToolbarPlacement;
   customColors: CustomColor[];
+  /** Origins where Locus is switched off (it is on everywhere by default). */
+  disabledSites: string[];
+  /** Detect the page's DOI to link versions of the same paper. */
+  detectDoi: boolean;
+  /** Periodically check GitHub releases for a newer version (metadata only). */
+  checkUpdates: boolean;
+}
+
+/** Result of the last update check, persisted in settings. */
+export interface UpdateInfo {
+  latestVersion: string;
+  releaseUrl: string;
+  checkedAt: number;
 }
 
 /** A logical document being read. */
 export interface DocumentRecord {
   id: string;
   title: string;
+  /** Normalized DOI when detected ('' = unknown); links versions of a paper. */
+  doi: string;
   createdAt: number;
   updatedAt: number;
 }

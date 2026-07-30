@@ -41,23 +41,24 @@ Rules enforced by this topology:
   inside a closed Shadow DOM on a single host element appended to
   `<html>`. Page CSS cannot leak in; our CSS cannot leak out.
 
-## 2. Runtime host access
+## 2. Host access & per-site control
 
-- Manifest requests **no host permissions at install**. It declares
-  `optional_host_permissions: ["http://*/*", "https://*/*"]`.
-- The popup shows the current origin with an *Enable on this site* toggle.
-  Clicking it calls `chrome.permissions.request({ origins: [origin + "/*"] })`
-  inside the popup's user gesture.
-- On grant, the background (re)registers a single dynamic content script
-  (`chrome.scripting.registerContentScripts`, `persistAcrossSessions: true`)
-  whose `matches` is the set of granted origins, and injects into the current
-  tab immediately with `chrome.scripting.executeScript`.
-- On revoke (`permissions.onRemoved` or the popup toggle), the registration is
-  updated; open tabs simply stop at next navigation.
-- The e2e build mode (`--mode e2e`) additionally grants
-  `http://localhost/*` / `http://127.0.0.1/*` at install so Playwright can
-  exercise the same registration code path without the native prompt (which
-  cannot be automated). Production builds contain no install-time host access.
+Product decision (v0.3): Locus is **on everywhere by default** — the manifest
+grants `http://*/*` / `https://*/*` at install (this is a sideloaded personal
+tool; one grant beats a per-site prompt on every publisher domain). The
+original per-site runtime-grant model is preserved in git history (≤ v0.2).
+
+- The background still registers one dynamic content script from the granted
+  origins at startup (`chrome.scripting.registerContentScripts`,
+  `persistAcrossSessions: true`), so the mechanism is unchanged.
+- Per-site control is now a **preference**: `prefs.disabledSites` is an
+  origin blacklist. The popup toggles it, and the toolbar's ⌘-hover ✕ zone
+  adds the current origin. A disabled origin's content script stays dormant
+  (no listeners act, nothing renders) and flips back on live when the origin
+  is re-enabled — no reload needed.
+- Nothing about the page ever leaves the machine. The only network call in
+  the extension is the optional update check (release metadata from the
+  GitHub API, off-switchable, no user data attached).
 
 ## 3. Domain model
 
@@ -197,6 +198,17 @@ fixtures) without a permanent observer cost.
   `elementsFromPoint` and flips to the other side when another extension's
   floating UI (fixed/sticky high-z elements, shadow hosts mounted on
   `<body>`/`<html>`) already renders there.
+- **⌘/Ctrl-hover** on the toolbar's right edge slides out a ✕ zone that
+  disables Locus on the current site (see §2).
+- **DOI version linking** (optional, on by default): the content script reads
+  the page's DOI from citation meta tags or the URL path — locally, nothing
+  fetched — and the background records it on the document. When a page's DOI
+  matches a *different* annotated document, a glass toast offers jumping to
+  the annotated version. Requires DB v2 (`documents.doi` index).
+- **Update check** (optional, on by default): a 12-hour alarm fetches release
+  metadata from the GitHub API and badges the action icon when a newer
+  version exists; the popup links to the release. Sideloaded extensions
+  cannot self-install updates, so installation stays manual by design.
 - Clicking an existing highlight (hit-tested against rendered ranges — the
   Custom Highlight API has no DOM elements to click) opens the Markdown note
   editor with live preview. **Enter** saves (Shift+Enter inserts a newline);

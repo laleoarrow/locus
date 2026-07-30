@@ -64,15 +64,54 @@ describe('repo (U8–U10)', () => {
     expect(await repo.getLastColor()).toBe('teal');
   });
 
-  it('persists prefs: placement and custom colors (U15)', async () => {
-    expect(await repo.getPrefs()).toEqual({ placement: 'below', customColors: [] });
+  it('persists prefs: placement, custom colors, site list, toggles (U15)', async () => {
+    expect(await repo.getPrefs()).toEqual({
+      placement: 'below',
+      customColors: [],
+      disabledSites: [],
+      detectDoi: true,
+      checkUpdates: true,
+    });
     await repo.setPlacement('auto');
     const color = { key: 'c336699', label: '#336699', swatch: '#336699', bg: 'rgba(51, 102, 153, 0.45)' };
     await repo.addCustomColor(color);
     await repo.addCustomColor(color); // dedupe
-    expect(await repo.getPrefs()).toEqual({ placement: 'auto', customColors: [color] });
+    await repo.setSiteDisabled('https://example.com', true);
+    await repo.setSiteDisabled('https://example.com', true); // dedupe
+    await repo.setDetectDoi(false);
+    const prefs = await repo.getPrefs();
+    expect(prefs).toEqual({
+      placement: 'auto',
+      customColors: [color],
+      disabledSites: ['https://example.com'],
+      detectDoi: false,
+      checkUpdates: true,
+    });
+    await repo.setSiteDisabled('https://example.com', false);
     await repo.removeCustomColor('c336699');
     expect((await repo.getPrefs()).customColors).toEqual([]);
+    expect((await repo.getPrefs()).disabledSites).toEqual([]);
+  });
+
+  it('records DOIs and finds annotated alternate versions (U18)', async () => {
+    const a = await repo.ensureSource('https://publisher.example/paper', 'Paper (publisher)');
+    const b = await repo.ensureSource('https://mirror.example/pmc/1', 'Paper (mirror)');
+    await repo.recordDoi(a.documentId, '10.1097/aln.0000000000002960');
+    await repo.recordDoi(b.documentId, '10.1097/aln.0000000000002960');
+    // No annotations on A yet → no alt version for B.
+    expect(await repo.findAltVersion('10.1097/aln.0000000000002960', b.documentId)).toBeNull();
+    await repo.createAnnotation({
+      sourceId: a.id,
+      documentId: a.documentId,
+      color: 'yellow',
+      comment: '',
+      anchor,
+    });
+    const alt = await repo.findAltVersion('10.1097/aln.0000000000002960', b.documentId);
+    expect(alt?.url).toBe('https://publisher.example/paper');
+    expect(alt?.count).toBe(1);
+    // A sees no alternate (B has no annotations).
+    expect(await repo.findAltVersion('10.1097/aln.0000000000002960', a.documentId)).toBeNull();
   });
 
   it('stores image annotations with kind and alt as exact (U11)', async () => {

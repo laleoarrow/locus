@@ -324,7 +324,7 @@ test('E17: a custom color can be added and used with the next shortcut digit', a
     const shadow = document.getElementById('locus-host')?.shadowRoot;
     const input = shadow?.querySelector('input[type="color"]') as HTMLInputElement;
     input.value = '#8e44ad';
-    input.dispatchEvent(new Event('input'));
+    input.dispatchEvent(new Event('change'));
   });
   const newSwatch = page.locator('[data-locus-toolbar] .swatch[data-color="c8e44ad"]');
   await expect(newSwatch).toBeVisible();
@@ -378,6 +378,86 @@ test('E18: toolbar placement can be set to above, and auto dodges other floating
   await page.evaluate(() => document.getElementById('fake-other-extension')?.remove());
   await selectText(page, '#probe-2', 'footnote marker');
   await expect(page.locator('[data-locus-toolbar]')).toHaveAttribute('data-placement', 'below');
+});
+
+test('E19: ⌘-hover reveals the site-off switch; ✕ disables Locus on this site', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  await selectText(page, '#probe-2', 'footnote marker');
+  const toolbar = page.locator('[data-locus-toolbar]');
+  await expect(toolbar).toBeVisible();
+  const siteOff = page.locator('[data-locus-site-off]');
+  await expect(toolbar).not.toHaveClass(/extended/);
+
+  // Hold ⌘ and glide to the toolbar's right edge → the ✕ zone slides out.
+  const box = await toolbar.boundingBox();
+  await page.keyboard.down('ControlOrMeta');
+  await page.mouse.move((box?.x ?? 0) + (box?.width ?? 0) - 6, (box?.y ?? 0) + (box?.height ?? 0) / 2, { steps: 6 });
+  await page.keyboard.up('ControlOrMeta');
+  await expect(toolbar).toHaveClass(/extended/);
+
+  await siteOff.click();
+  await expect(page.locator('html')).toHaveAttribute('data-locus-disabled', '1');
+  await expect(toolbar).toBeHidden();
+  // Selection no longer offers the toolbar while disabled.
+  await page.evaluate(() => {
+    const p = document.querySelector('#probe-3');
+    const range = document.createRange();
+    range.selectNodeContents(p as Node);
+    const sel = getSelection();
+    sel?.removeAllRanges();
+    sel?.addRange(range);
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  });
+  await page.waitForTimeout(300);
+  await expect(toolbar).toBeHidden();
+
+  // Re-enable from the extension (popup path uses the same message).
+  const panel = await openPanelFor(page, serviceWorker, extensionId, NESTED);
+  await panel.evaluate(
+    (origin) => chrome.runtime.sendMessage({ type: 'prefs:toggle-site', origin, disabled: false }),
+    new URL(NESTED).origin,
+  );
+  await expect(page.locator('html')).not.toHaveAttribute('data-locus-disabled', '1');
+  await selectText(page, '#probe-2', 'footnote marker');
+  await expect(toolbar).toBeVisible();
+});
+
+test('E20: DOI match prompts jumping to the annotated version', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const DOI_A = `${BASE_URL}/fixtures/doi-a.html`;
+  const DOI_B = `${BASE_URL}/fixtures/doi-b.html`;
+  const page = await context.newPage();
+
+  // Annotate version A.
+  await page.goto(DOI_A);
+  await highlight(page, '#probe-3', 'distinctive sentence');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+  await expect(page.locator('[data-locus-version-toast]')).toBeHidden();
+
+  // Open version B (same DOI, different case & URL) → jump prompt.
+  await page.goto(DOI_B);
+  const toast = page.locator('[data-locus-version-toast]');
+  await expect(toast).toBeVisible();
+  await expect(toast).toContainText('1 note');
+  await page.locator('[data-locus-version-open]').click();
+  await page.waitForURL(DOI_A);
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+
+  // Switching the DOI pref off silences the prompt.
+  const panel = await openPanelFor(page, serviceWorker, extensionId, DOI_A);
+  await panel.locator('input[data-pref="detect-doi"] + span').click();
+  await page.waitForTimeout(300);
+  await page.goto(DOI_B);
+  await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
+  await expect(page.locator('[data-locus-version-toast]')).toBeHidden();
 });
 
 test('E12: svg and mathjax pages anchor across reload; iframe selection is ignored', async ({

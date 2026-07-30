@@ -1,3 +1,4 @@
+import type { AltVersion } from '@/db/repo';
 import type {
   AnchorPayload,
   AnchorState,
@@ -7,6 +8,7 @@ import type {
   Prefs,
   SourceRecord,
   ToolbarPlacement,
+  UpdateInfo,
 } from '@/domain/types';
 
 /**
@@ -22,6 +24,8 @@ export interface BootstrapResult {
   items: AnnotationWithAnchor[];
   lastColor: ColorKey;
   prefs: Prefs;
+  /** Another annotated version of the same paper (DOI match), if any. */
+  altVersion: AltVersion | null;
 }
 
 export interface CreateResult {
@@ -29,7 +33,7 @@ export interface CreateResult {
 }
 
 export type BgRequest =
-  | { type: 'source:bootstrap'; url: string; title: string }
+  | { type: 'source:bootstrap'; url: string; title: string; doi?: string }
   | { type: 'annotations:list'; url: string }
   | {
       type: 'annotation:create';
@@ -42,11 +46,13 @@ export type BgRequest =
   | { type: 'annotation:set-comment'; id: string; comment: string }
   | { type: 'annotation:delete'; id: string }
   | { type: 'annotation:undelete'; id: string }
-  | { type: 'site:registered-status' }
-  | { type: 'site:enable'; origin: string; tabId?: number }
   | { type: 'prefs:set-placement'; placement: ToolbarPlacement }
   | { type: 'prefs:add-color'; color: CustomColor }
-  | { type: 'prefs:remove-color'; key: string };
+  | { type: 'prefs:remove-color'; key: string }
+  | { type: 'prefs:toggle-site'; origin: string; disabled: boolean }
+  | { type: 'prefs:set-detect-doi'; on: boolean }
+  | { type: 'prefs:set-check-updates'; on: boolean }
+  | { type: 'update:status' };
 
 export interface BgResponseMap {
   'source:bootstrap': BootstrapResult;
@@ -55,11 +61,13 @@ export interface BgResponseMap {
   'annotation:set-comment': { ok: true };
   'annotation:delete': { ok: true };
   'annotation:undelete': { ok: true };
-  'site:registered-status': { origins: string[] };
-  'site:enable': { ok: boolean };
   'prefs:set-placement': { prefs: Prefs };
   'prefs:add-color': { prefs: Prefs };
   'prefs:remove-color': { prefs: Prefs };
+  'prefs:toggle-site': { prefs: Prefs };
+  'prefs:set-detect-doi': { prefs: Prefs };
+  'prefs:set-check-updates': { prefs: Prefs };
+  'update:status': { current: string; info: UpdateInfo | null; hasUpdate: boolean };
 }
 
 export type BgResponseFor<T extends BgRequest> = BgResponseMap[T['type']];

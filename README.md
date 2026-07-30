@@ -1,14 +1,32 @@
-# Locus / 文迹
+<p align="center">
+  <img src="assets/logo.svg" alt="Locus / 文迹" width="680" />
+</p>
+
+<p align="center">
+  <a href="https://github.com/laleoarrow/locus/releases"><img src="https://img.shields.io/github/v/release/laleoarrow/locus?label=release&color=0a84ff" alt="latest release"></a>
+  <img src="https://img.shields.io/badge/manifest-v3-34c759" alt="Manifest V3">
+  <img src="https://img.shields.io/badge/local--first-no%20cloud%2C%20no%20telemetry-ffe600" alt="local-first">
+  <img src="https://img.shields.io/badge/Chrome%20%7C%20Edge-supported-6d7390" alt="browsers">
+</p>
 
 A minimal, **local-first annotation layer for academic reading**, shipped as a
 Manifest V3 extension for Chrome and Microsoft Edge.
+
+| Liquid-glass toolbar | Markdown notes | Image rings |
+|---|---|---|
+| ![Selection toolbar](assets/shot-toolbar.png) | ![Note editor](assets/shot-note.png) | ![Image ring](assets/shot-ring.png) |
 
 Locus is not a reference manager. It does one thing: let you highlight and
 annotate the HTML pages you read, keep those annotations on your machine, and
 bring them back reliably — even when the page shifts under you.
 
-- **Per-site, at runtime.** No host access at install; you enable Locus per
-  site from the toolbar popup.
+- **On everywhere, off anywhere.** Works on every page out of the box.
+  Don't want it somewhere? ⌘-hover the toolbar's right edge and click ✕, or
+  flip the switch in the popup — per-site, instantly reversible.
+- **Same paper, different site?** Locus reads the page's DOI (locally) and,
+  when you open another version of a paper you annotated — publisher page,
+  PMC mirror, preprint — offers a one-click jump back to your annotated
+  version. Toggle in the side panel.
 - **Select → highlight → note.** Selecting text pops a liquid-glass toolbar
   with three colors (fluorescent yellow, teal, pink). Press **1/2/3** to pick
   a color from the keyboard; the last-used color is remembered. Clicking a
@@ -23,7 +41,9 @@ bring them back reliably — even when the page shifts under you.
   toolbar shows below the selection by default, or set it to *above* /
   *auto* — auto dodges other extensions' floating toolbars.
 - **Local only.** Everything lives in IndexedDB. No accounts, no sync, no
-  telemetry, nothing leaves the machine.
+  telemetry, nothing about your pages leaves the machine. The only network
+  call is an optional update check (GitHub release metadata; badge + one-click
+  download link, switchable off in the side panel).
 - **Resilient anchors.** Each annotation stores the exact text, surrounding
   context, character positions, and DOM paths; recovery tries them in order.
   An annotation that can't be re-anchored shows as *detached* in the side

@@ -24,7 +24,10 @@ bypassed while still exercising the dynamic registration code path).
 | U12 | markdown | renderer covers headings/lists/quotes/code/links; escapes raw HTML; rejects non-http(s) URLs |
 | U13 | image anchor | capture stores src/alt/index/path; resolves via path, falls back to src+index, detaches when gone |
 | U14 | palette | custom colors build from hex, order after builtins (shortcut digits), unknown keys fall back to yellow |
-| U15 | prefs | placement and custom colors persist; add dedupes; remove works |
+| U15 | prefs | placement, custom colors, disabled sites, and toggles persist; adds dedupe |
+| U16 | doi | normalize/extract DOIs from citation meta and URL paths (ovid-style tilde suffixes, case folding) |
+| U17 | version | dotted version comparison for the update check |
+| U18 | doi/repo | recordDoi + findAltVersion return the annotated sibling version only |
 
 ## E2E (Playwright, loaded extension)
 
@@ -52,7 +55,9 @@ for observability without page-world coupling.
 | E16 | note keys | Enter saves the note (Shift+Enter = newline); Delete with an empty note (or ⌘/Ctrl+Delete anytime) removes the highlight |
 | E17 | custom color | the toolbar "+" adds a picker color; it appears with the next shortcut digit, highlights, and survives reload |
 | E18 | placement | position pref: below (default) / above / auto — auto flips above when another floating UI overlaps the below band |
-| E19 | builds | `wxt build -b chrome` and `-b edge` both produce a loadable MV3 bundle from the same source |
+| E19 | site off | ⌘-hover on the toolbar's right edge reveals ✕; clicking disables Locus for the origin (dormant, re-enable is live) |
+| E20 | doi | annotating version A then opening same-DOI version B shows the jump toast; the DOI pref switch silences it |
+| E21 | builds | `wxt build -b chrome` and `-b edge` both produce a loadable MV3 bundle from the same source |
 
 ## Manual checklist (pre-release)
 

@@ -5,6 +5,7 @@ import { captureAnchor } from '@/domain/anchor/capture';
 import { captureImageAnchor, resolveImageAnchor } from '@/domain/anchor/image';
 import { resolveAnchor } from '@/domain/anchor/resolve';
 import { buildTextIndex, LOCUS_HOST_ID, type TextIndex } from '@/domain/anchor/textIndex';
+import { extractDoi } from '@/domain/doi';
 import {
   buildPalette,
   colorForDigit,
@@ -45,8 +46,17 @@ class LocusContent {
   private lastColor: ColorKey = DEFAULT_COLOR;
   private urlKey = '';
   private pending: PendingTarget | null = null;
-  private prefs: Prefs = { placement: 'below', customColors: [] };
+  private prefs: Prefs = {
+    placement: 'below',
+    customColors: [],
+    disabledSites: [],
+    detectDoi: true,
+    checkUpdates: true,
+  };
   private palette: PaletteEntry[] = buildPalette([]);
+  /** Locus is on everywhere by default; false while this origin is switched off. */
+  private active = true;
+  private readonly origin = location.origin;
   /** Per-tab undo stack for Cmd/Ctrl+Z (creates and note-editor deletes). */
   private readonly undoStack: UndoAction[] = [];
 
@@ -54,6 +64,7 @@ class LocusContent {
     this.ui = new LocusUI(this.doc, {
       onHighlight: (color) => void this.createFromPending(color),
       onAddColor: (hex) => void this.addColor(hex),
+      onDisableSite: () => void this.disableSite(),
     });
   }
 
@@ -62,6 +73,37 @@ class LocusContent {
     this.palette = buildPalette(prefs.customColors);
     this.renderer.setPalette(this.palette);
     this.ui.setPalette(this.palette);
+    const disabled = prefs.disabledSites.includes(this.origin);
+    if (disabled && this.active) this.deactivate();
+    else if (!disabled && !this.active) this.activate();
+  }
+
+  private deactivate(): void {
+    this.active = false;
+    this.pending = null;
+    this.renderer.clearAll();
+    this.ui.hideToolbar();
+    this.ui.closeNoteEditor();
+    this.ui.hideVersionToast();
+    const html = this.doc.documentElement;
+    html.setAttribute('data-locus-disabled', '1');
+    html.removeAttribute('data-locus-anchored');
+    html.removeAttribute('data-locus-detached');
+  }
+
+  private activate(): void {
+    this.active = true;
+    this.doc.documentElement.removeAttribute('data-locus-disabled');
+    this.anchorAll();
+  }
+
+  private async disableSite(): Promise<void> {
+    const result = await requestBg({
+      type: 'prefs:toggle-site',
+      origin: this.origin,
+      disabled: true,
+    });
+    if (result) this.applyPrefs(result.prefs);
   }
 
   private async addColor(hex: string): Promise<void> {
@@ -79,17 +121,27 @@ class LocusContent {
   }
 
   async start(): Promise<void> {
+    const doi = extractDoi(this.doc, location.href);
     const bootstrap = await requestBg({
       type: 'source:bootstrap',
       url: location.href,
       title: this.doc.title,
+      ...(doi ? { doi } : {}),
     });
     if (!bootstrap) return;
     this.lastColor = bootstrap.lastColor;
     this.urlKey = bootstrap.source.urlKey;
-    this.applyPrefs(bootstrap.prefs);
     this.setItems(bootstrap.items);
-    this.anchorAll();
+    this.applyPrefs(bootstrap.prefs);
+    if (this.active) {
+      this.anchorAll();
+      const alt = bootstrap.altVersion;
+      if (alt) {
+        this.ui.showVersionToast(alt, () => {
+          location.href = alt.url;
+        });
+      }
+    }
     this.wirePointer();
     this.wireKeyboard();
     this.wireMessages();
@@ -229,16 +281,17 @@ class LocusContent {
 
   private wirePointer(): void {
     this.doc.addEventListener('mouseup', (event) => {
-      if (this.ui.containsEvent(event)) return;
+      if (!this.active || this.ui.containsEvent(event)) return;
       setTimeout(() => this.handlePointerUp(event), 0);
     });
     this.doc.addEventListener('mousedown', (event) => {
-      if (!this.ui.containsEvent(event)) {
+      if (this.active && !this.ui.containsEvent(event)) {
         this.ui.hideToolbar();
         this.ui.closeNoteEditor();
       }
     });
     this.doc.addEventListener('keyup', (event) => {
+      if (!this.active) return;
       if (event.key.startsWith('Arrow') || event.key === 'Shift') {
         if (!this.ui.containsEvent(event)) setTimeout(() => this.showToolbarForSelection(), 0);
       }
@@ -328,7 +381,7 @@ class LocusContent {
 
   private wireKeyboard(): void {
     this.doc.addEventListener('keydown', (event) => {
-      if (this.ui.containsEvent(event)) return;
+      if (!this.active || this.ui.containsEvent(event)) return;
       const target = event.target;
       if (
         target instanceof HTMLElement &&
@@ -376,17 +429,17 @@ class LocusContent {
       (message: TabMessage, _sender, sendResponse: (reply?: AnchorStateReply) => void) => {
         switch (message.type) {
           case 'annotations:changed':
-            if (message.urlKey === this.urlKey) void this.refresh();
+            if (this.active && message.urlKey === this.urlKey) void this.refresh();
             return false;
           case 'annotation:reveal':
-            this.reveal(message.id);
+            if (this.active) this.reveal(message.id);
             return false;
           case 'anchor-state:query':
-            sendResponse({ url: location.href, states: this.states() });
+            sendResponse({ url: location.href, states: this.active ? this.states() : {} });
             return false;
           case 'prefs:changed':
             this.applyPrefs(message.prefs);
-            this.anchorAll();
+            if (this.active) this.anchorAll();
             return false;
           default:
             return false;
@@ -399,7 +452,7 @@ class LocusContent {
     const startedAt = Date.now();
     let timer: ReturnType<typeof setTimeout> | undefined;
     const observer = new MutationObserver(() => {
-      if (this.renderer.isSelfMutation()) return;
+      if (!this.active || this.renderer.isSelfMutation()) return;
       if (Date.now() - startedAt > MUTATION_WATCH_MS) {
         observer.disconnect();
         return;

@@ -31,6 +31,19 @@ export class LocusDB extends Dexie {
       anchors: 'id, annotationId',
       settings: 'key',
     });
+    // v2: DOI index for cross-version paper matching; backfill ''.
+    this.version(2)
+      .stores({
+        documents: 'id, updatedAt, doi',
+      })
+      .upgrade((tx) =>
+        tx
+          .table('documents')
+          .toCollection()
+          .modify((doc: { doi?: string }) => {
+            doc.doi ??= '';
+          }),
+      );
   }
 }
 

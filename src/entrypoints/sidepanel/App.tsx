@@ -205,7 +205,13 @@ export function App() {
     setUndo(null);
   };
 
-  const prefs = useLiveQuery(() => getPrefs(), []) ?? { placement: 'below' as ToolbarPlacement, customColors: [] };
+  const prefs = useLiveQuery(() => getPrefs(), []) ?? {
+    placement: 'below' as ToolbarPlacement,
+    customColors: [],
+    disabledSites: [],
+    detectDoi: true,
+    checkUpdates: true,
+  };
   const items = data?.items ?? [];
   const supported = target !== null && /^https?:/.test(target.url);
 
@@ -271,6 +277,32 @@ export function App() {
               </button>
             ))}
           </div>
+        </div>
+        <div className="pref-row">
+          <span className="pref-label">Detect DOI (link paper versions)</span>
+          <label className="switch">
+            <input
+              type="checkbox"
+              data-pref="detect-doi"
+              checked={prefs.detectDoi}
+              onChange={(e) => void requestBg({ type: 'prefs:set-detect-doi', on: e.target.checked })}
+            />
+            <span />
+          </label>
+        </div>
+        <div className="pref-row">
+          <span className="pref-label">Check for updates</span>
+          <label className="switch">
+            <input
+              type="checkbox"
+              data-pref="check-updates"
+              checked={prefs.checkUpdates}
+              onChange={(e) =>
+                void requestBg({ type: 'prefs:set-check-updates', on: e.target.checked })
+              }
+            />
+            <span />
+          </label>
         </div>
         {prefs.customColors.length > 0 && (
           <div className="pref-row">

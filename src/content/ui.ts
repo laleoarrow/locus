@@ -6,6 +6,13 @@ import { markdownToHtml } from '@/lib/markdown';
 export interface ToolbarActions {
   onHighlight(color: ColorKey): void;
   onAddColor(hex: string): void;
+  onDisableSite(): void;
+}
+
+export interface VersionToastInfo {
+  count: number;
+  title: string;
+  url: string;
 }
 
 export interface NoteEditorOptions {
@@ -96,20 +103,91 @@ const SHADOW_CSS = `
 }
 .swatch[data-shortcut=""]::after { display: none; }
 
-.add-color {
+.add-wrap {
   position: relative;
   width: 24px;
   height: 24px;
-  padding: 0;
+  flex: none;
+  transition: transform 0.12s ease;
+}
+.add-wrap:hover { transform: scale(1.12); }
+.add-color {
+  width: 100%;
+  height: 100%;
   border: 1.5px dashed rgba(120, 120, 128, 0.55);
   border-radius: 50%;
-  cursor: pointer;
   background: transparent;
   color: inherit;
   font: 600 14px/1 inherit;
-  transition: transform 0.12s ease, border-color 0.12s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: border-color 0.12s ease;
 }
-.add-color:hover { transform: scale(1.12); border-color: #0a84ff; color: #0a84ff; }
+.add-wrap:hover .add-color { border-color: #0a84ff; color: #0a84ff; }
+/* The real native color input sits invisibly on top: the user's own click
+   opens the picker, which programmatic clicks cannot always do. */
+.add-wrap input[type='color'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  padding: 0;
+  border: none;
+}
+
+/* ⌘-hover the toolbar's right edge → this zone slides out. */
+.site-off {
+  flex: none;
+  width: 0;
+  height: 24px;
+  padding: 0;
+  margin-left: 0;
+  border: none;
+  border-radius: 50%;
+  background: rgba(120, 120, 128, 0.16);
+  color: inherit;
+  font: 600 12px/1 inherit;
+  cursor: pointer;
+  opacity: 0;
+  overflow: hidden;
+  transition: width 0.18s ease, opacity 0.18s ease, margin-left 0.18s ease;
+}
+.toolbar.extended .site-off { width: 24px; opacity: 1; margin-left: 4px; }
+.site-off:hover { background: rgba(255, 69, 58, 0.2); color: #ff453a; }
+
+.version-toast {
+  top: 16px;
+  right: 16px;
+  width: 300px;
+  border-radius: 14px;
+  padding: 12px;
+  animation: locus-in 0.16s ease-out;
+}
+.version-toast .vt-text { margin: 0 0 10px; font-size: 12.5px; }
+.version-toast .vt-title {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.version-toast .vt-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.version-toast button {
+  border: none;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font: 600 12px/1.3 inherit;
+  font-family: inherit;
+  cursor: pointer;
+  color: inherit;
+  background: rgba(120, 120, 128, 0.16);
+}
+.version-toast button.open { background: #0a84ff; color: #fff; }
 
 .note-card {
   width: 300px;
@@ -237,14 +315,23 @@ export class LocusUI {
     this.toolbar.className = 'glass toolbar hidden';
     this.toolbar.setAttribute('data-locus-toolbar', '');
     this.shadow.appendChild(this.toolbar);
+    // ⌘/Ctrl + hovering the right edge slides out the per-site off switch;
+    // it stays out (so the key can be released to click) until the pointer
+    // leaves the toolbar.
+    this.toolbar.addEventListener('mousemove', (event) => {
+      if (!(event.metaKey || event.ctrlKey)) return;
+      const rect = this.toolbar.getBoundingClientRect();
+      if (rect.right - event.clientX <= 30) this.toolbar.classList.add('extended');
+    });
+    this.toolbar.addEventListener('mouseleave', () => this.toolbar.classList.remove('extended'));
 
-    // Hidden native color picker backing the "+" orb.
+    // Native color picker for the "+" orb: 'change' fires once the user
+    // confirms ('input' would fire for every drag inside the picker).
     this.colorInput = doc.createElement('input');
     this.colorInput.type = 'color';
     this.colorInput.value = '#8e6fe8';
-    this.colorInput.style.cssText = 'position:fixed;width:0;height:0;opacity:0;pointer-events:none;';
-    this.colorInput.addEventListener('input', () => this.actions.onAddColor(this.colorInput.value));
-    this.shadow.appendChild(this.colorInput);
+    this.colorInput.setAttribute('data-locus-color-input', '');
+    this.colorInput.addEventListener('change', () => this.actions.onAddColor(this.colorInput.value));
 
     this.noteCard = doc.createElement('div');
     this.noteCard.className = 'glass note-card hidden';
@@ -269,13 +356,25 @@ export class LocusUI {
       swatch.addEventListener('click', () => this.actions.onHighlight(entry.key));
       this.toolbar.appendChild(swatch);
     });
-    const add = this.doc.createElement('button');
+    const addWrap = this.doc.createElement('span');
+    addWrap.className = 'add-wrap';
+    addWrap.title = 'Add a custom color';
+    const add = this.doc.createElement('span');
     add.className = 'add-color';
     add.textContent = '+';
-    add.title = 'Add a custom color';
     add.setAttribute('data-locus-add-color', '');
-    add.addEventListener('click', () => this.colorInput.click());
-    this.toolbar.appendChild(add);
+    addWrap.append(add, this.colorInput);
+    this.toolbar.appendChild(addWrap);
+    const siteOff = this.doc.createElement('button');
+    siteOff.className = 'site-off';
+    siteOff.textContent = '✕';
+    siteOff.title = 'Disable Locus on this site';
+    siteOff.setAttribute('data-locus-site-off', '');
+    siteOff.addEventListener('click', () => {
+      this.hideToolbar();
+      this.actions.onDisableSite();
+    });
+    this.toolbar.appendChild(siteOff);
     // Keep the toolbar in place when the palette changes while it is open.
     if (this.isToolbarVisible() && this.lastAnchor) {
       this.showToolbar(this.lastAnchor, this.lastColorShown, this.lastPlacement);
@@ -311,6 +410,47 @@ export class LocusUI {
 
   hideToolbar(): void {
     this.toolbar.classList.add('hidden');
+    this.toolbar.classList.remove('extended');
+  }
+
+  /** "You annotated another version of this paper" prompt (DOI match). */
+  showVersionToast(info: VersionToastInfo, onOpen: () => void): void {
+    this.hideVersionToast();
+    const toast = this.doc.createElement('div');
+    toast.className = 'glass version-toast';
+    toast.setAttribute('data-locus-version-toast', '');
+    const text = this.doc.createElement('p');
+    text.className = 'vt-text';
+    const title = this.doc.createElement('span');
+    title.className = 'vt-title';
+    title.textContent = info.title;
+    text.appendChild(title);
+    text.appendChild(
+      this.doc.createTextNode(
+        `You annotated another version of this paper (${info.count} note${info.count === 1 ? '' : 's'}).`,
+      ),
+    );
+    const actions = this.doc.createElement('div');
+    actions.className = 'vt-actions';
+    const dismiss = this.doc.createElement('button');
+    dismiss.textContent = 'Dismiss';
+    dismiss.addEventListener('click', () => toast.remove());
+    const open = this.doc.createElement('button');
+    open.className = 'open';
+    open.textContent = 'Open that version';
+    open.setAttribute('data-locus-version-open', '');
+    open.addEventListener('click', () => {
+      toast.remove();
+      onOpen();
+    });
+    actions.append(dismiss, open);
+    toast.append(text, actions);
+    this.shadow.appendChild(toast);
+    setTimeout(() => toast.remove(), 20_000);
+  }
+
+  hideVersionToast(): void {
+    this.shadow.querySelector('[data-locus-version-toast]')?.remove();
   }
 
   isNoteOpen(): boolean {

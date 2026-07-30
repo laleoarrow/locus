@@ -5,17 +5,13 @@ export default defineConfig({
   srcDir: 'src',
   modules: ['@wxt-dev/module-react'],
   imports: false,
-  manifest: ({ mode }) => ({
+  manifest: {
     name: 'Locus / 文迹',
     description: 'A minimal, local-first annotation layer for academic reading.',
-    permissions: ['storage', 'sidePanel', 'scripting', 'tabs'],
-    // No host access at install; per-site grants are requested at runtime.
-    optional_host_permissions: ['http://*/*', 'https://*/*'],
-    // The e2e build pre-grants localhost so Playwright can skip the native
-    // permission prompt (not automatable) while testing the same
-    // registration code path. Never present in production builds.
-    ...(mode === 'e2e'
-      ? { host_permissions: ['http://localhost/*', 'http://127.0.0.1/*'] }
-      : {}),
-  }),
+    permissions: ['storage', 'sidePanel', 'scripting', 'tabs', 'alarms'],
+    // Product decision (v0.3): Locus is on everywhere by default, with a
+    // per-site off list in prefs. Content scripts are still registered
+    // dynamically from granted origins at startup.
+    host_permissions: ['http://*/*', 'https://*/*'],
+  },
 });

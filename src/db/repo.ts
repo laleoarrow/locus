@@ -9,6 +9,7 @@ import type {
   Prefs,
   SourceRecord,
   ToolbarPlacement,
+  UpdateInfo,
 } from '@/domain/types';
 import { toUrlKey } from '@/domain/url';
 import { db } from './schema';
@@ -30,7 +31,7 @@ export async function ensureSource(url: string, title: string): Promise<SourceRe
       await db.sources.update(existing.id, patch);
       return { ...existing, ...patch };
     }
-    const document: DocumentRecord = { id: uuid(), title, createdAt: now, updatedAt: now };
+    const document: DocumentRecord = { id: uuid(), title, doi: '', createdAt: now, updatedAt: now };
     const source: SourceRecord = {
       id: uuid(),
       documentId: document.id,
@@ -126,6 +127,53 @@ export async function getAnnotation(id: string): Promise<AnnotationRecord | unde
   return db.annotations.get(id);
 }
 
+/** Attach a detected DOI to a document (first detection wins). */
+export async function recordDoi(documentId: string, doi: string): Promise<void> {
+  const document = await db.documents.get(documentId);
+  if (document && !document.doi && doi) {
+    await db.documents.update(documentId, { doi, updatedAt: Date.now() });
+  }
+}
+
+export interface AltVersion {
+  url: string;
+  title: string;
+  count: number;
+}
+
+/**
+ * Another annotated version of the same paper (same DOI, different
+ * document/URL), if one exists — used for the "jump to your annotated
+ * version" prompt.
+ */
+export async function findAltVersion(doi: string, currentDocumentId: string): Promise<AltVersion | null> {
+  if (!doi) return null;
+  const siblings = (await db.documents.where('doi').equals(doi).toArray()).filter(
+    (doc) => doc.id !== currentDocumentId,
+  );
+  for (const doc of siblings.sort((a, b) => b.updatedAt - a.updatedAt)) {
+    const count = await db.annotations
+      .where('documentId')
+      .equals(doc.id)
+      .filter((a) => a.deletedAt === 0)
+      .count();
+    if (count === 0) continue;
+    const sources = await db.sources.where('documentId').equals(doc.id).toArray();
+    const source = sources.sort((a, b) => b.lastSeenAt - a.lastSeenAt)[0];
+    if (source) return { url: source.url, title: doc.title || source.title, count };
+  }
+  return null;
+}
+
+export async function getUpdateInfo(): Promise<UpdateInfo | null> {
+  const record = await db.settings.get(UPDATE_INFO_KEY);
+  return (record?.value as UpdateInfo | undefined) ?? null;
+}
+
+export async function setUpdateInfo(info: UpdateInfo): Promise<void> {
+  await db.settings.put({ key: UPDATE_INFO_KEY, value: info });
+}
+
 export async function getLastColor(): Promise<ColorKey> {
   const record = await db.settings.get(LAST_COLOR_KEY);
   return record && typeof record.value === 'string' && record.value ? record.value : DEFAULT_COLOR;
@@ -133,20 +181,47 @@ export async function getLastColor(): Promise<ColorKey> {
 
 const PLACEMENT_KEY = 'toolbarPlacement';
 const CUSTOM_COLORS_KEY = 'customColors';
+const DISABLED_SITES_KEY = 'disabledSites';
+const DETECT_DOI_KEY = 'detectDoi';
+const CHECK_UPDATES_KEY = 'checkUpdates';
+const UPDATE_INFO_KEY = 'updateInfo';
 
 function isPlacement(value: unknown): value is ToolbarPlacement {
   return value === 'below' || value === 'above' || value === 'auto';
 }
 
 export async function getPrefs(): Promise<Prefs> {
-  const [placement, colors] = await Promise.all([
+  const [placement, colors, disabled, detectDoi, checkUpdates] = await Promise.all([
     db.settings.get(PLACEMENT_KEY),
     db.settings.get(CUSTOM_COLORS_KEY),
+    db.settings.get(DISABLED_SITES_KEY),
+    db.settings.get(DETECT_DOI_KEY),
+    db.settings.get(CHECK_UPDATES_KEY),
   ]);
   return {
     placement: placement && isPlacement(placement.value) ? placement.value : 'below',
     customColors: Array.isArray(colors?.value) ? (colors.value as CustomColor[]) : [],
+    disabledSites: Array.isArray(disabled?.value) ? (disabled.value as string[]) : [],
+    detectDoi: detectDoi?.value !== false,
+    checkUpdates: checkUpdates?.value !== false,
   };
+}
+
+/** Locus is on everywhere by default; this toggles the per-origin off list. */
+export async function setSiteDisabled(origin: string, disabled: boolean): Promise<void> {
+  const prefs = await getPrefs();
+  const next = disabled
+    ? [...new Set([...prefs.disabledSites, origin])]
+    : prefs.disabledSites.filter((o) => o !== origin);
+  await db.settings.put({ key: DISABLED_SITES_KEY, value: next });
+}
+
+export async function setDetectDoi(on: boolean): Promise<void> {
+  await db.settings.put({ key: DETECT_DOI_KEY, value: on });
+}
+
+export async function setCheckUpdates(on: boolean): Promise<void> {
+  await db.settings.put({ key: CHECK_UPDATES_KEY, value: on });
 }
 
 export async function setPlacement(placement: ToolbarPlacement): Promise<void> {

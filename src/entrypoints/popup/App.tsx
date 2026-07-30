@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { originPattern } from '@/domain/url';
+import { getPrefs } from '@/db/repo';
+import type { Prefs, UpdateInfo } from '@/domain/types';
 import { requestBg } from '@/messaging/protocol';
 
 interface TabInfo {
@@ -28,40 +29,26 @@ function useActiveTab(): TabInfo | null {
 
 export function App() {
   const tab = useActiveTab();
-  const [granted, setGranted] = useState<boolean | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [prefs, setPrefs] = useState<Prefs | null>(null);
+  const [update, setUpdate] = useState<{ current: string; info: UpdateInfo | null; hasUpdate: boolean } | null>(null);
 
   useEffect(() => {
-    if (!tab?.origin) return;
-    void chrome.permissions
-      .contains({ origins: [originPattern(tab.origin)] })
-      .then(setGranted);
-  }, [tab?.origin]);
+    void getPrefs().then(setPrefs);
+    void requestBg({ type: 'update:status' }).then((status) => {
+      if (status) setUpdate(status);
+    });
+  }, []);
 
-  const enable = async () => {
-    if (!tab?.origin) return;
-    setBusy(true);
-    try {
-      // permissions.request must run here: it needs the popup's user gesture.
-      const ok = await chrome.permissions.request({ origins: [originPattern(tab.origin)] });
-      if (ok) {
-        await requestBg({ type: 'site:enable', origin: tab.origin, tabId: tab.tabId ?? undefined });
-        setGranted(true);
-      }
-    } finally {
-      setBusy(false);
-    }
-  };
+  const disabled = !!(tab?.origin && prefs?.disabledSites.includes(tab.origin));
 
-  const disable = async () => {
+  const toggleSite = async () => {
     if (!tab?.origin) return;
-    setBusy(true);
-    try {
-      await chrome.permissions.remove({ origins: [originPattern(tab.origin)] });
-      setGranted(false);
-    } finally {
-      setBusy(false);
-    }
+    const result = await requestBg({
+      type: 'prefs:toggle-site',
+      origin: tab.origin,
+      disabled: !disabled,
+    });
+    if (result) setPrefs(result.prefs);
   };
 
   const openSidePanel = async () => {
@@ -75,21 +62,21 @@ export function App() {
     <div className="popup">
       <h1>Locus · 文迹</h1>
       <p className="tagline">Local-first annotations for academic reading.</p>
+      {update?.hasUpdate && update.info && (
+        <button
+          className="action update"
+          onClick={() => void chrome.tabs.create({ url: update.info?.releaseUrl ?? '' })}
+        >
+          ↑ Update available: v{update.info.latestVersion} — download
+        </button>
+      )}
       {tab?.origin ? (
         <>
           <div className="origin">{tab.origin}</div>
-          {granted ? (
-            <>
-              <button className="action" onClick={() => void disable()} disabled={busy}>
-                Disable on this site
-              </button>
-              <p className="hint">Select text on the page to highlight it.</p>
-            </>
-          ) : (
-            <button className="action primary" onClick={() => void enable()} disabled={busy}>
-              Enable on this site
-            </button>
-          )}
+          <button className={`action${disabled ? ' primary' : ''}`} onClick={() => void toggleSite()}>
+            {disabled ? 'Enable on this site' : 'Disable on this site'}
+          </button>
+          {!disabled && <p className="hint">Select text on the page to highlight it.</p>}
           <button className="action" onClick={() => void openSidePanel()}>
             Open annotation panel
           </button>
@@ -97,6 +84,10 @@ export function App() {
       ) : (
         <p className="hint">This page cannot be annotated.</p>
       )}
+      <p className="version">
+        v{update?.current ?? chrome.runtime.getManifest().version}
+        {update && !update.hasUpdate ? ' · up to date' : ''}
+      </p>
     </div>
   );
 }
