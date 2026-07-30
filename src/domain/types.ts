@@ -1,6 +1,6 @@
 /** All timestamps are epoch milliseconds. */
 
-export type ColorKey = 'yellow' | 'green' | 'blue' | 'pink' | 'orange';
+export type ColorKey = 'yellow' | 'teal' | 'pink';
 
 /** A logical document being read. */
 export interface DocumentRecord {
@@ -23,14 +23,18 @@ export interface SourceRecord {
   lastSeenAt: number;
 }
 
-/** One highlight with an optional plain-text comment. */
+export type AnnotationKind = 'text' | 'image';
+
+/** One highlight (text run or image ring) with an optional Markdown note. */
 export interface AnnotationRecord {
   id: string;
   documentId: string;
   sourceId: string;
+  kind: AnnotationKind;
   color: ColorKey;
+  /** Markdown source of the note ('' = none). Rendered by lib/markdown.ts. */
   comment: string;
-  /** Snapshot of the annotated text at creation time. */
+  /** Snapshot of the annotated text (text) or alt text (image) at creation. */
   exact: string;
   createdAt: number;
   updatedAt: number;
@@ -51,8 +55,9 @@ export interface DomPoint {
   offset: number;
 }
 
-/** Everything needed to re-locate an annotation (milestone item 9). */
+/** Everything needed to re-locate a text annotation (milestone item 9). */
 export interface AnchorData {
+  kind?: 'text';
   exact: string;
   prefix: string;
   suffix: string;
@@ -63,10 +68,24 @@ export interface AnchorData {
   endPoint: DomPoint;
 }
 
-export interface AnchorRecord extends AnchorData {
+/** Everything needed to re-locate an image annotation. */
+export interface ImageAnchorData {
+  kind: 'image';
+  /** Absolute image URL at capture time. */
+  src: string;
+  alt: string;
+  /** Index among the document's images sharing this src. */
+  imgIndex: number;
+  /** Element path from <body> to the <img>. */
+  path: DomPathStep[];
+}
+
+export type AnchorPayload = AnchorData | ImageAnchorData;
+
+export type AnchorRecord = AnchorPayload & {
   id: string;
   annotationId: string;
-}
+};
 
 export interface SettingRecord {
   key: string;

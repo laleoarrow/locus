@@ -68,9 +68,15 @@ Defined in `src/domain/types.ts`. All timestamps are epoch milliseconds.
 |---|---|---|
 | `DocumentRecord` | A logical document being read | `id`, `title`, `createdAt`, `updatedAt` |
 | `SourceRecord` | A concrete URL where the document lives | `id`, `documentId`, `urlKey`, `url`, `title`, `firstSeenAt`, `lastSeenAt` |
-| `AnnotationRecord` | One highlight + optional plain-text comment | `id`, `documentId`, `sourceId`, `color`, `comment`, `exact`, `createdAt`, `updatedAt`, `deletedAt` |
-| `AnchorRecord` | Everything needed to re-locate the annotation | `id`, `annotationId`, `exact`, `prefix`, `suffix`, `start`, `end`, `startPath`, `endPath` |
+| `AnnotationRecord` | One highlight (`kind: text \| image`) + optional Markdown note | `id`, `documentId`, `sourceId`, `kind`, `color`, `comment`, `exact`, `createdAt`, `updatedAt`, `deletedAt` |
+| `AnchorRecord` | Everything needed to re-locate the annotation | text: `exact`, `prefix`, `suffix`, `start`, `end`, `startPoint`, `endPoint` · image: `src`, `alt`, `imgIndex`, `path` |
 | `SettingRecord` | Key/value app state (e.g. `lastUsedColor`) | `key`, `value` |
+
+Notes are Markdown source strings rendered by `src/lib/markdown.ts` — a
+dependency-free renderer whose output is built only from escaped text
+(headings, lists, quotes, code, bold/italic, http(s) links), so it is safe in
+both the shadow-DOM note editor and the side panel. Three highlight colors
+(fluorescent yellow, teal, pink) map to keyboard shortcuts 1/2/3.
 
 In this milestone a document has exactly one source (`urlKey` 1:1), but the
 split is kept so future work (same paper on publisher + mirror) does not need
@@ -151,6 +157,11 @@ means: the resolved range's text equals `exact`.
    it renders nowhere on the page but stays fully visible in the side panel
    with a detached badge, and is never deleted by the system.
 
+**Image anchors** (`src/domain/anchor/image.ts`) follow the same shape with
+two strategies: DOM path (verified against `src`), then `src` + index among
+same-src images; otherwise detached. Images wrapped in links are never
+offered for annotation (clicking them must keep navigating).
+
 Re-anchoring is retried for detached annotations on DOM mutations
 (MutationObserver, debounced 300 ms) for the first 15 seconds after load,
 which covers late-hydrating readers (MathJax-style typesetting, dynamic
@@ -165,10 +176,29 @@ fixtures) without a permanent observer cost.
 - **Fallback** (API unavailable): wrap each text-node slice of the range in
   `<mark class="locus-mark" data-locus-id>` with margin/padding/border zeroed
   so no layout shift occurs. Marks are unwrapped on removal.
+- **Image rings:** an image annotation renders as a glowing ring in a
+  dedicated shadow overlay layer, absolutely positioned in document
+  coordinates over the `<img>` (repositioned on resize and re-anchor).
+  The image element itself is never touched.
 - **Reveal/pulse:** side-panel click sends `annotation:reveal`; the content
   script scrolls the range to center and flashes absolutely-positioned
   overlay boxes (inside the shadow host) over the range's client rects.
   Article DOM is untouched.
+
+### 5.4 Interaction model
+
+- Selecting text (or clicking a non-linked image) pops a liquid-glass pill
+  toolbar with the three color orbs; the last-used color is ringed and is
+  also what shortcut keys map to: **1/2/3** pick a color, **Esc/click-away**
+  dismisses.
+- Clicking an existing highlight (hit-tested against rendered ranges — the
+  Custom Highlight API has no DOM elements to click) opens the Markdown note
+  editor with live preview; Cmd/Ctrl+Enter saves, and *Remove highlight*
+  tombstones.
+- **Cmd+Z (macOS) / Ctrl+Z (Windows)** undoes the most recent Locus action
+  in the tab (create → tombstone, note-editor delete → restore), via a
+  per-tab action stack. The shortcut is ignored inside editable page
+  elements so it never fights the page's own undo.
 
 ## 6. Messaging protocol
 

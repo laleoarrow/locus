@@ -20,6 +20,9 @@ bypassed while still exercising the dynamic registration code path).
 | U8 | repo | create writes annotation+anchor atomically; list filters tombstones |
 | U9 | repo | delete sets `deletedAt`; undelete restores; rows are never removed |
 | U10 | repo | last-used color persists in settings |
+| U11 | repo | image annotations store `kind: image` with alt text as `exact` |
+| U12 | markdown | renderer covers headings/lists/quotes/code/links; escapes raw HTML; rejects non-http(s) URLs |
+| U13 | image anchor | capture stores src/alt/index/path; resolves via path, falls back to src+index, detaches when gone |
 
 ## E2E (Playwright, loaded extension)
 
@@ -30,10 +33,10 @@ for observability without page-world coupling.
 | ID | Flow | Assertion |
 |----|------|-----------|
 | E1 | load | extension service worker starts; fixture page gets content script |
-| E2 | highlight | selecting text on `nested.html` shows the floating toolbar inside a shadow root; clicking a color creates a highlight (`data-locus-anchored="1"`) |
+| E2 | highlight | selecting text on `nested.html` shows the floating 3-color toolbar inside a shadow root; clicking a color creates a highlight (`data-locus-anchored="1"`) |
 | E3 | persist/restore | reload restores the highlight via anchors (E2 page) |
 | E4 | last color | second highlight defaults to the last-used color |
-| E5 | comment | attaching a plain-text comment persists and shows in the side panel |
+| E5 | note | clicking a highlight opens the Markdown note editor; the note live-previews, persists, and renders as Markdown in the side panel |
 | E6 | repeated text | highlighting the 2nd of 3 identical strings on `repeated.html` restores onto the same occurrence after reload (verified by bounding-box vs the occurrence's container) |
 | E7 | dynamic | `dynamic.html` re-writes its DOM ~500 ms after load; annotation re-anchors (observer retry) |
 | E8 | detached | `dynamic.html#remove-target` removes the annotated paragraph; annotation shows as detached in the side panel, still listed, never deleted |
@@ -41,7 +44,10 @@ for observability without page-world coupling.
 | E10 | delete/undo | panel delete shows an undo affordance; undo restores; after timeout the row remains in IndexedDB as a tombstone |
 | E11 | layout | creating highlights on every fixture causes zero movement of probe elements (bounding boxes before/after are identical) |
 | E12 | svg/mathjax/iframe | fixtures load without errors; annotating HTML text near SVG/MathJax-like markup works; selection inside a cross-frame iframe is ignored gracefully |
-| E13 | builds | `wxt build -b chrome` and `-b edge` both produce a loadable MV3 bundle from the same source |
+| E13 | shortcuts | with the toolbar open, pressing 2 highlights in the second color and dismisses the toolbar |
+| E14 | undo | Cmd/Ctrl+Z tombstones the most recent highlight |
+| E15 | image | clicking a plain image offers the toolbar and shortcut 1 rings it (ring tracks the image box, survives reload, lists in the panel); linked images are ignored |
+| E16 | builds | `wxt build -b chrome` and `-b edge` both produce a loadable MV3 bundle from the same source |
 
 ## Manual checklist (pre-release)
 

@@ -94,6 +94,30 @@ export async function highlight(page: Page, selector: string, text: string, colo
   await page.locator(`[data-locus-toolbar] .swatch[data-color="${color}"]`).click();
 }
 
+/** Real mouse click on the middle of `text` inside `selector` (hits highlights). */
+export async function clickText(page: Page, selector: string, text: string): Promise<void> {
+  const point = await page.evaluate(
+    ({ selector, text }) => {
+      const scope = document.querySelector(selector);
+      if (!scope) throw new Error(`no element for ${selector}`);
+      const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const data = (node as Text).data;
+        const at = data.indexOf(text);
+        if (at === -1) continue;
+        const range = document.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + text.length);
+        const rect = range.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      }
+      throw new Error(`text not found: ${text}`);
+    },
+    { selector, text },
+  );
+  await page.mouse.click(point.x, point.y);
+}
+
 /** Read an annotation row straight from the extension-origin IndexedDB. */
 export async function readAnnotationRow(
   extensionPage: Page,

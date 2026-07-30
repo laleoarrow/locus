@@ -1,53 +1,185 @@
 import { LOCUS_HOST_ID } from '@/domain/anchor/textIndex';
 import { COLOR_KEYS, COLORS } from '@/domain/colors';
 import type { ColorKey } from '@/domain/types';
+import { markdownToHtml } from '@/lib/markdown';
 
 export interface ToolbarActions {
   onHighlight(color: ColorKey): void;
-  onHighlightWithComment(color: ColorKey): void;
 }
 
+export interface NoteEditorOptions {
+  rect: DOMRect;
+  color: ColorKey;
+  initial: string;
+  onSave(text: string): void;
+  onDelete(): void;
+}
+
+/** macOS-style liquid-glass surfaces; light/dark aware. */
 const SHADOW_CSS = `
 :host { all: initial; }
 * { box-sizing: border-box; }
-.toolbar, .comment-box {
+
+.glass {
   position: fixed;
   z-index: 2147483647;
-  background: #ffffff;
-  color: #1f2328;
-  border: 1px solid #d0d7de;
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(31, 35, 40, 0.16);
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1d1d1f;
+  background: rgba(252, 252, 253, 0.6);
+  -webkit-backdrop-filter: blur(28px) saturate(1.9);
+  backdrop-filter: blur(28px) saturate(1.9);
+  border: 0.5px solid rgba(255, 255, 255, 0.7);
+  box-shadow:
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.85),
+    0 1px 2px rgba(0, 0, 0, 0.06),
+    0 12px 32px rgba(0, 0, 0, 0.18);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
 }
-.toolbar { display: flex; align-items: center; gap: 4px; padding: 5px 6px; }
+@media (prefers-color-scheme: dark) {
+  .glass {
+    color: #f5f5f7;
+    background: rgba(44, 44, 48, 0.55);
+    border-color: rgba(255, 255, 255, 0.14);
+    box-shadow:
+      inset 0 0.5px 0 rgba(255, 255, 255, 0.12),
+      0 1px 2px rgba(0, 0, 0, 0.3),
+      0 12px 32px rgba(0, 0, 0, 0.5);
+  }
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  animation: locus-in 0.14s ease-out;
+}
+@keyframes locus-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
 .swatch {
-  width: 20px; height: 20px; border-radius: 50%;
-  border: 2px solid transparent; padding: 0; cursor: pointer;
+  position: relative;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.95), var(--c) 62%);
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.12s ease;
 }
-.swatch[data-last="true"] { border-color: #1f2328; }
-.swatch:hover { transform: scale(1.12); }
-.divider { width: 1px; height: 18px; background: #d0d7de; margin: 0 2px; }
-.comment-btn {
-  border: 0; background: transparent; cursor: pointer; padding: 2px 4px;
-  font-size: 14px; line-height: 1; color: #57606a;
+.swatch:hover { transform: scale(1.14); }
+.swatch:active { transform: scale(1.02); }
+.swatch[data-last="true"] {
+  box-shadow: inset 0 -2px 4px rgba(0, 0, 0, 0.14), 0 1px 3px rgba(0, 0, 0, 0.2),
+    0 0 0 2px rgba(255, 255, 255, 0.95), 0 0 0 3.5px var(--c);
 }
-.comment-btn:hover { color: #1f2328; }
-.comment-box { padding: 8px; width: 240px; }
-.comment-box textarea {
-  width: 100%; min-height: 64px; resize: vertical;
-  border: 1px solid #d0d7de; border-radius: 6px; padding: 6px;
-  font: inherit; color: inherit; background: #fff;
+.swatch::after {
+  content: attr(data-shortcut);
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 13px;
+  text-align: center;
+  color: #3a3a3c;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.25);
 }
-.comment-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
-.comment-actions button {
-  border: 1px solid #d0d7de; border-radius: 6px; background: #f6f8fa;
-  padding: 3px 10px; cursor: pointer; font: inherit;
+
+.note-card {
+  width: 300px;
+  border-radius: 16px;
+  padding: 12px;
+  animation: locus-in 0.14s ease-out;
 }
-.comment-actions button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+.note-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 8px;
+  font-weight: 600;
+  font-size: 12.5px;
+}
+.note-head .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 32% 28%, rgba(255, 255, 255, 0.95), var(--c) 62%);
+  box-shadow: inset 0 -1px 2px rgba(0, 0, 0, 0.15);
+}
+.note-card textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  border: 0.5px solid rgba(120, 120, 128, 0.28);
+  border-radius: 10px;
+  padding: 8px;
+  font: 12.5px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.5);
+  outline: none;
+}
+.note-card textarea:focus { border-color: rgba(10, 132, 255, 0.8); box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.18); }
+@media (prefers-color-scheme: dark) {
+  .note-card textarea { background: rgba(0, 0, 0, 0.25); }
+}
+.note-preview {
+  margin-top: 8px;
+  padding: 2px 4px;
+  font-size: 12.5px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.note-preview:empty { display: none; }
+.note-preview h1, .note-preview h2, .note-preview h3 { margin: 4px 0; font-size: 13.5px; }
+.note-preview p, .note-preview ul, .note-preview ol, .note-preview blockquote { margin: 4px 0; }
+.note-preview ul, .note-preview ol { padding-left: 18px; }
+.note-preview blockquote {
+  border-left: 3px solid rgba(120, 120, 128, 0.4);
+  padding-left: 8px;
+  opacity: 0.85;
+}
+.note-preview code {
+  font: 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+  background: rgba(120, 120, 128, 0.16);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+.note-preview pre { background: rgba(120, 120, 128, 0.16); border-radius: 8px; padding: 8px; overflow-x: auto; }
+.note-preview pre code { background: none; padding: 0; }
+.note-preview a { color: #0a84ff; }
+
+.note-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.note-actions .spacer { flex: 1; }
+.note-actions button {
+  border: none;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font: 600 12px/1.3 inherit;
+  font-family: inherit;
+  cursor: pointer;
+  color: inherit;
+  background: rgba(120, 120, 128, 0.16);
+  transition: filter 0.1s ease;
+}
+.note-actions button:hover { filter: brightness(1.06); }
+.note-actions button.save { background: #0a84ff; color: #fff; }
+.note-actions button.remove { background: none; color: #ff453a; padding-left: 0; }
+
 .pulse {
-  position: fixed; z-index: 2147483646; pointer-events: none;
-  background: rgba(31, 111, 235, 0.35); border-radius: 2px;
+  position: fixed;
+  z-index: 2147483646;
+  pointer-events: none;
+  background: rgba(10, 132, 255, 0.32);
+  border-radius: 3px;
   animation: locus-pulse 1.2s ease-out forwards;
 }
 @keyframes locus-pulse {
@@ -65,8 +197,7 @@ export class LocusUI {
   private readonly host: HTMLDivElement;
   private readonly shadow: ShadowRoot;
   private readonly toolbar: HTMLDivElement;
-  private readonly commentBox: HTMLDivElement;
-  private commentSave: ((text: string) => void) | null = null;
+  private readonly noteCard: HTMLDivElement;
 
   constructor(
     private readonly doc: Document,
@@ -80,42 +211,34 @@ export class LocusUI {
     this.shadow.appendChild(style);
 
     this.toolbar = doc.createElement('div');
-    this.toolbar.className = 'toolbar hidden';
+    this.toolbar.className = 'glass toolbar hidden';
     this.toolbar.setAttribute('data-locus-toolbar', '');
-    for (const key of COLOR_KEYS) {
+    COLOR_KEYS.forEach((key, i) => {
       const swatch = doc.createElement('button');
       swatch.className = 'swatch';
       swatch.dataset['color'] = key;
-      swatch.title = `Highlight (${COLORS[key].label})`;
-      swatch.style.background = COLORS[key].swatch;
+      swatch.dataset['shortcut'] = String(i + 1);
+      swatch.title = `${COLORS[key].label} — press ${i + 1}`;
+      swatch.style.setProperty('--c', COLORS[key].swatch);
       swatch.addEventListener('click', () => actions.onHighlight(key));
       this.toolbar.appendChild(swatch);
-    }
-    const divider = doc.createElement('div');
-    divider.className = 'divider';
-    this.toolbar.appendChild(divider);
-    const commentBtn = doc.createElement('button');
-    commentBtn.className = 'comment-btn';
-    commentBtn.textContent = '✎';
-    commentBtn.title = 'Highlight & comment';
-    commentBtn.setAttribute('data-locus-comment-btn', '');
-    commentBtn.addEventListener('click', () => {
-      const last = this.toolbar.querySelector<HTMLButtonElement>('.swatch[data-last="true"]');
-      actions.onHighlightWithComment((last?.dataset['color'] as ColorKey | undefined) ?? 'yellow');
     });
-    this.toolbar.appendChild(commentBtn);
     this.shadow.appendChild(this.toolbar);
 
-    this.commentBox = doc.createElement('div');
-    this.commentBox.className = 'comment-box hidden';
-    this.commentBox.setAttribute('data-locus-comment-box', '');
-    this.shadow.appendChild(this.commentBox);
+    this.noteCard = doc.createElement('div');
+    this.noteCard.className = 'glass note-card hidden';
+    this.noteCard.setAttribute('data-locus-note', '');
+    this.shadow.appendChild(this.noteCard);
 
     doc.documentElement.appendChild(this.host);
   }
 
   containsEvent(event: Event): boolean {
     return event.composedPath().includes(this.host);
+  }
+
+  isToolbarVisible(): boolean {
+    return !this.toolbar.classList.contains('hidden');
   }
 
   showToolbar(anchor: DOMRect, lastColor: ColorKey): void {
@@ -129,46 +252,87 @@ export class LocusUI {
     const maxLeft = (view?.innerWidth ?? 0) - width - 8;
     const maxTop = (view?.innerHeight ?? 0) - height - 8;
     this.toolbar.style.left = `${clamp(anchor.left + anchor.width / 2 - width / 2, 8, maxLeft)}px`;
-    this.toolbar.style.top = `${clamp(anchor.bottom + 8, 8, maxTop)}px`;
+    this.toolbar.style.top = `${clamp(anchor.bottom + 10, 8, maxTop)}px`;
   }
 
   hideToolbar(): void {
     this.toolbar.classList.add('hidden');
   }
 
-  openCommentBox(anchor: DOMRect, onSave: (text: string) => void): void {
-    this.commentSave = onSave;
-    this.commentBox.textContent = '';
-    const textarea = this.doc.createElement('textarea');
-    textarea.placeholder = 'Add a note…';
-    const actions = this.doc.createElement('div');
-    actions.className = 'comment-actions';
-    const cancel = this.doc.createElement('button');
-    cancel.textContent = 'Cancel';
-    cancel.addEventListener('click', () => this.closeCommentBox());
-    const save = this.doc.createElement('button');
-    save.className = 'primary';
-    save.textContent = 'Save';
-    save.setAttribute('data-locus-comment-save', '');
-    save.addEventListener('click', () => {
-      this.commentSave?.(textarea.value.trim());
-      this.closeCommentBox();
+  isNoteOpen(): boolean {
+    return !this.noteCard.classList.contains('hidden');
+  }
+
+  /** Markdown note editor with live preview (open on highlight click). */
+  openNoteEditor(options: NoteEditorOptions): void {
+    const { doc } = this;
+    this.noteCard.textContent = '';
+    this.noteCard.style.setProperty('--c', COLORS[options.color].swatch);
+
+    const head = doc.createElement('div');
+    head.className = 'note-head';
+    const dot = doc.createElement('span');
+    dot.className = 'dot';
+    const title = doc.createElement('span');
+    title.textContent = 'Note';
+    head.append(dot, title);
+
+    const textarea = doc.createElement('textarea');
+    textarea.placeholder = 'Write a note… Markdown supported';
+    textarea.value = options.initial;
+    const preview = doc.createElement('div');
+    preview.className = 'note-preview';
+    preview.setAttribute('data-locus-note-preview', '');
+    const renderPreview = () => {
+      preview.innerHTML = markdownToHtml(textarea.value.trim());
+    };
+    renderPreview();
+    textarea.addEventListener('input', renderPreview);
+    textarea.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') this.closeNoteEditor();
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') save();
+      event.stopPropagation();
     });
-    actions.append(cancel, save);
-    this.commentBox.append(textarea, actions);
-    this.commentBox.classList.remove('hidden');
+
+    const actions = doc.createElement('div');
+    actions.className = 'note-actions';
+    const remove = doc.createElement('button');
+    remove.className = 'remove';
+    remove.textContent = 'Remove highlight';
+    remove.setAttribute('data-locus-note-delete', '');
+    remove.addEventListener('click', () => {
+      this.closeNoteEditor();
+      options.onDelete();
+    });
+    const spacer = doc.createElement('div');
+    spacer.className = 'spacer';
+    const cancel = doc.createElement('button');
+    cancel.textContent = 'Cancel';
+    cancel.addEventListener('click', () => this.closeNoteEditor());
+    const saveBtn = doc.createElement('button');
+    saveBtn.className = 'save';
+    saveBtn.textContent = 'Save';
+    saveBtn.setAttribute('data-locus-note-save', '');
+    const save = () => {
+      this.closeNoteEditor();
+      options.onSave(textarea.value.trim());
+    };
+    saveBtn.addEventListener('click', save);
+    actions.append(remove, spacer, cancel, saveBtn);
+
+    this.noteCard.append(head, textarea, preview, actions);
+    this.noteCard.classList.remove('hidden');
     const view = this.doc.defaultView;
-    const maxLeft = (view?.innerWidth ?? 0) - 248;
-    const maxTop = (view?.innerHeight ?? 0) - 140;
-    this.commentBox.style.left = `${clamp(anchor.left, 8, maxLeft)}px`;
-    this.commentBox.style.top = `${clamp(anchor.bottom + 8, 8, maxTop)}px`;
+    const maxLeft = (view?.innerWidth ?? 0) - 308;
+    const maxTop = (view?.innerHeight ?? 0) - 200;
+    this.noteCard.style.left = `${clamp(options.rect.left, 8, maxLeft)}px`;
+    this.noteCard.style.top = `${clamp(options.rect.bottom + 10, 8, maxTop)}px`;
     textarea.focus();
   }
 
-  closeCommentBox(): void {
-    this.commentSave = null;
-    this.commentBox.classList.add('hidden');
-    this.commentBox.textContent = '';
+  closeNoteEditor(): void {
+    this.noteCard.classList.add('hidden');
+    this.noteCard.textContent = '';
   }
 
   /** Flash overlay boxes over the given viewport rects (reveal pulse). */

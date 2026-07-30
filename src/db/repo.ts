@@ -1,6 +1,6 @@
 import { DEFAULT_COLOR, isColorKey } from '@/domain/colors';
 import type {
-  AnchorData,
+  AnchorPayload,
   AnnotationRecord,
   AnnotationWithAnchor,
   ColorKey,
@@ -52,19 +52,21 @@ export interface CreateAnnotationInput {
   documentId: string;
   color: ColorKey;
   comment: string;
-  anchor: AnchorData;
+  anchor: AnchorPayload;
 }
 
 /** Create an annotation and its anchor atomically; remembers the color as last-used. */
 export async function createAnnotation(input: CreateAnnotationInput): Promise<AnnotationWithAnchor> {
   const now = Date.now();
+  const isImage = input.anchor.kind === 'image';
   const annotation: AnnotationRecord = {
     id: uuid(),
     documentId: input.documentId,
     sourceId: input.sourceId,
+    kind: isImage ? 'image' : 'text',
     color: input.color,
     comment: input.comment,
-    exact: input.anchor.exact,
+    exact: input.anchor.kind === 'image' ? input.anchor.alt : input.anchor.exact,
     createdAt: now,
     updatedAt: now,
     deletedAt: 0,

@@ -9,8 +9,13 @@ bring them back reliably — even when the page shifts under you.
 
 - **Per-site, at runtime.** No host access at install; you enable Locus per
   site from the toolbar popup.
-- **Select → highlight → note.** A compact floating toolbar appears after
-  selection; highlights use your last color; notes are plain text.
+- **Select → highlight → note.** Selecting text pops a liquid-glass toolbar
+  with three colors (fluorescent yellow, teal, pink). Press **1/2/3** to pick
+  a color from the keyboard; the last-used color is remembered. Clicking a
+  highlight opens a **Markdown** note editor with live preview. **Cmd+Z /
+  Ctrl+Z** undoes your last highlight.
+- **Images too.** Clicking a figure (not wrapped in a link) offers the same
+  toolbar and draws a glowing ring around the image.
 - **Local only.** Everything lives in IndexedDB. No accounts, no sync, no
   telemetry, nothing leaves the machine.
 - **Resilient anchors.** Each annotation stores the exact text, surrounding
@@ -48,10 +53,13 @@ The e2e build pre-grants `http://localhost/*` only so Playwright can bypass
 the (un-automatable) native permission prompt; production builds request no
 host access at install.
 
-## Loading a build
+## Installing in Edge (or Chrome)
 
-1. `pnpm build` (or `pnpm build:edge`)
-2. Chrome: `chrome://extensions` → Developer mode → *Load unpacked* →
-   `.output/chrome-mv3`. Edge: `edge://extensions` → *Load unpacked* →
-   `.output/edge-mv3`.
+1. `pnpm build:edge` (or `pnpm build` for Chrome). `pnpm zip:edge` also
+   produces a distributable archive under `.output/`.
+2. Edge: open `edge://extensions`, turn on **Developer mode** (left sidebar),
+   click **Load unpacked**, and pick the `.output/edge-mv3` folder.
+   Chrome: `chrome://extensions` → Developer mode → *Load unpacked* →
+   `.output/chrome-mv3`.
 3. Open any article, click the Locus toolbar icon, and *Enable on this site*.
+   Select text (or click a figure) and highlight away.

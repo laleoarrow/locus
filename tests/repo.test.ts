@@ -16,7 +16,7 @@ const anchor: AnchorData = {
 
 const URL_A = 'https://example.com/paper?id=1';
 
-async function createOne(color: 'yellow' | 'blue' = 'yellow') {
+async function createOne(color: 'yellow' | 'teal' = 'yellow') {
   const source = await repo.ensureSource(URL_A, 'A Paper');
   return repo.createAnnotation({
     sourceId: source.id,
@@ -44,7 +44,7 @@ describe('repo (U8–U10)', () => {
     const { items } = await repo.listForUrl(URL_A);
     expect(items).toHaveLength(1);
     expect(items[0]?.annotation.id).toBe(created.annotation.id);
-    expect(items[0]?.anchor.exact).toBe('selected words');
+    expect(items[0]?.anchor).toMatchObject({ exact: 'selected words' });
   });
 
   it('tombstones on delete and restores on undelete; never removes rows (U9)', async () => {
@@ -60,7 +60,28 @@ describe('repo (U8–U10)', () => {
 
   it('remembers the last-used color (U10)', async () => {
     expect(await repo.getLastColor()).toBe('yellow');
-    await createOne('blue');
-    expect(await repo.getLastColor()).toBe('blue');
+    await createOne('teal');
+    expect(await repo.getLastColor()).toBe('teal');
+  });
+
+  it('stores image annotations with kind and alt as exact (U11)', async () => {
+    const source = await repo.ensureSource(URL_A, 'A Paper');
+    const created = await repo.createAnnotation({
+      sourceId: source.id,
+      documentId: source.documentId,
+      color: 'yellow',
+      comment: '',
+      anchor: {
+        kind: 'image',
+        src: 'https://example.com/fig1.png',
+        alt: 'study diagram',
+        imgIndex: 0,
+        path: [{ tag: 'ARTICLE', index: 0 }, { tag: 'IMG', index: 0 }],
+      },
+    });
+    expect(created.annotation.kind).toBe('image');
+    expect(created.annotation.exact).toBe('study diagram');
+    const { items } = await repo.listForUrl(URL_A);
+    expect(items[0]?.anchor.kind).toBe('image');
   });
 });

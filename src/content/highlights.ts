@@ -52,7 +52,22 @@ interface Entry {
   range: Range | null;
   /** Wrapper elements (fallback mode). */
   marks: HTMLElement[];
+  /** Image annotation target + its overlay ring. */
+  image: HTMLImageElement | null;
+  ring: HTMLElement | null;
 }
+
+const RING_CSS = `
+:host { all: initial; }
+.ring {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 6px;
+  border: 3px solid var(--ring-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring-color) 35%, transparent),
+              0 2px 12px color-mix(in srgb, var(--ring-color) 45%, transparent);
+}
+`;
 
 /**
  * Renders highlights. Primary path is the CSS Custom Highlight API (no DOM
@@ -63,6 +78,8 @@ export class HighlightRenderer {
   private readonly useApi: boolean;
   private readonly highlights = new Map<ColorKey, Highlight>();
   private readonly entries = new Map<string, Entry>();
+  /** Shadow layer holding image rings, isolated from page CSS. */
+  private readonly ringLayer: ShadowRoot;
   /** Observers can ignore mutations we caused ourselves (fallback mode). */
   private selfMutationUntil = 0;
 
@@ -76,6 +93,14 @@ export class HighlightRenderer {
         CSS.highlights.set(`locus-${key}`, highlight);
       }
     }
+    const ringHost = doc.createElement('div');
+    ringHost.id = 'locus-ring-host';
+    ringHost.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;z-index:2147483645;';
+    this.ringLayer = ringHost.attachShadow({ mode: 'open' });
+    const style = doc.createElement('style');
+    style.textContent = RING_CSS;
+    this.ringLayer.appendChild(style);
+    doc.documentElement.appendChild(ringHost);
   }
 
   isSelfMutation(): boolean {
@@ -90,7 +115,7 @@ export class HighlightRenderer {
     this.clear(id);
     if (this.useApi) {
       this.highlights.get(color)?.add(range);
-      this.entries.set(id, { color, range, marks: [] });
+      this.entries.set(id, { color, range, marks: [], image: null, ring: null });
       return;
     }
     this.markSelfMutation();
@@ -109,17 +134,54 @@ export class HighlightRenderer {
       mark.appendChild(middle);
       marks.push(mark);
     }
-    this.entries.set(id, { color, range: null, marks });
+    this.entries.set(id, { color, range: null, marks, image: null, ring: null });
+  }
+
+  /** Render an image annotation as a glowing ring overlay around the img. */
+  setImage(id: string, color: ColorKey, image: HTMLImageElement): void {
+    this.clear(id);
+    const ring = this.doc.createElement('div');
+    ring.className = 'ring';
+    ring.setAttribute('data-locus-ring', id);
+    ring.style.setProperty('--ring-color', COLORS[color].swatch);
+    this.ringLayer.appendChild(ring);
+    const entry: Entry = { color, range: null, marks: [], image, ring };
+    this.entries.set(id, entry);
+    this.positionRing(entry);
+  }
+
+  private positionRing(entry: Entry): void {
+    if (!entry.image || !entry.ring) return;
+    const view = this.doc.defaultView;
+    if (!view) return;
+    const rect = entry.image.getBoundingClientRect();
+    entry.ring.style.left = `${rect.left + view.scrollX - 4}px`;
+    entry.ring.style.top = `${rect.top + view.scrollY - 4}px`;
+    entry.ring.style.width = `${rect.width + 2}px`;
+    entry.ring.style.height = `${rect.height + 2}px`;
+    entry.ring.style.display = rect.width === 0 && rect.height === 0 ? 'none' : '';
+  }
+
+  /** Re-align rings with their images (after layout/DOM changes). */
+  repositionRings(): void {
+    for (const entry of this.entries.values()) this.positionRing(entry);
+  }
+
+  /** The image element an annotation is ringed around, if any. */
+  getImage(id: string): HTMLImageElement | null {
+    return this.entries.get(id)?.image ?? null;
   }
 
   clear(id: string): void {
     const entry = this.entries.get(id);
     if (!entry) return;
     this.entries.delete(id);
+    entry.ring?.remove();
     if (entry.range) {
       this.highlights.get(entry.color)?.delete(entry.range);
       return;
     }
+    if (entry.marks.length === 0) return;
     this.markSelfMutation();
     for (const mark of entry.marks) {
       const parent = mark.parentNode;
@@ -133,11 +195,16 @@ export class HighlightRenderer {
     for (const id of [...this.entries.keys()]) this.clear(id);
   }
 
-  /** Current on-page range for an id, or null if not rendered. */
+  /** Current on-page range for an id (text or image), or null if not rendered. */
   getRange(id: string): Range | null {
     const entry = this.entries.get(id);
     if (!entry) return null;
     if (entry.range) return entry.range;
+    if (entry.image) {
+      const range = this.doc.createRange();
+      range.selectNode(entry.image);
+      return range;
+    }
     const first = entry.marks[0];
     const last = entry.marks[entry.marks.length - 1];
     if (!first || !last) return null;
@@ -145,5 +212,17 @@ export class HighlightRenderer {
     range.setStartBefore(first);
     range.setEndAfter(last);
     return range;
+  }
+
+  /** Hit-test a viewport point against all rendered annotations. */
+  annotationAtPoint(x: number, y: number): string | null {
+    for (const [id, entry] of this.entries) {
+      const range = this.getRange(id);
+      if (!range) continue;
+      for (const rect of range.getClientRects()) {
+        if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return id;
+      }
+    }
+    return null;
   }
 }

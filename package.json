@@ -15,7 +15,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "pnpm build:e2e && playwright test",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "zip": "wxt zip -b chrome",
+    "zip:edge": "wxt zip -b edge"
   },
   "dependencies": {
     "dexie": "^4.4.4",

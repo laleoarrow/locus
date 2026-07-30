@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fixture: images</title>
+  <style>
+    body { max-width: 640px; margin: 40px auto; font: 16px/1.6 Georgia, serif; }
+    img { display: block; margin: 16px 0; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1 id="probe-1">A page with annotatable figures</h1>
+    <p id="probe-2">Prose before the first figure gives text anchors something to hold onto.</p>
+    <img id="figure-1" width="240" height="120" alt="green study diagram"
+         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='120'%3E%3Crect width='240' height='120' fill='%234caf50'/%3E%3C/svg%3E" />
+    <p id="probe-3">Between the figures sits another paragraph of running text.</p>
+    <a href="#somewhere"><img id="figure-linked" width="240" height="80" alt="linked banner"
+         src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='80'%3E%3Crect width='240' height='80' fill='%232196f3'/%3E%3C/svg%3E" /></a>
+    <p id="probe-4">Trailing prose closes the article after the linked image.</p>
+  </article>
+</body>
+</html>

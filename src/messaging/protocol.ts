@@ -1,5 +1,5 @@
 import type {
-  AnchorData,
+  AnchorPayload,
   AnchorState,
   AnnotationWithAnchor,
   ColorKey,
@@ -33,7 +33,7 @@ export type BgRequest =
       title: string;
       color: ColorKey;
       comment: string;
-      anchor: AnchorData;
+      anchor: AnchorPayload;
     }
   | { type: 'annotation:set-comment'; id: string; comment: string }
   | { type: 'annotation:delete'; id: string }

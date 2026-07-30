@@ -1,5 +1,13 @@
 import type { Page, Worker } from '@playwright/test';
-import { BASE_URL, expect, highlight, readAnnotationRow, selectText, test } from './extension';
+import {
+  BASE_URL,
+  clickText,
+  expect,
+  highlight,
+  readAnnotationRow,
+  selectText,
+  test,
+} from './extension';
 
 const NESTED = `${BASE_URL}/fixtures/nested.html`;
 const REPEATED = `${BASE_URL}/fixtures/repeated.html`;
@@ -7,6 +15,7 @@ const DYNAMIC = `${BASE_URL}/fixtures/dynamic.html`;
 const SVG = `${BASE_URL}/fixtures/svg.html`;
 const MATHJAX = `${BASE_URL}/fixtures/mathjax.html`;
 const IFRAME = `${BASE_URL}/fixtures/iframe.html`;
+const IMAGES = `${BASE_URL}/fixtures/images.html`;
 
 async function openPanelFor(page: Page, worker: Worker, extensionId: string, url: string): Promise<Page> {
   const tabId = await worker.evaluate(async (tabUrl) => {
@@ -33,7 +42,7 @@ test('E2+E3: selection toolbar creates a highlight that survives reload', async 
   await page.goto(NESTED);
   await selectText(page, '#probe-2', 'footnote marker');
   await expect(page.locator('[data-locus-toolbar]')).toBeVisible();
-  await page.locator('[data-locus-toolbar] .swatch[data-color="green"]').click();
+  await page.locator('[data-locus-toolbar] .swatch[data-color="teal"]').click();
   await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
@@ -49,21 +58,27 @@ test('E4: second highlight defaults to the last-used color', async ({ context, s
   await expect(lastSwatch).toHaveAttribute('data-color', 'pink');
 });
 
-test('E5: a plain-text comment persists and shows in the side panel', async ({
+test('E5: clicking a highlight opens a Markdown note that persists to the panel', async ({
   context,
   serviceWorker,
   extensionId,
 }) => {
   const page = await context.newPage();
   await page.goto(NESTED);
-  await selectText(page, '#probe-3', 'triple-wrapped');
-  await page.locator('[data-locus-comment-btn]').click();
+  await highlight(page, '#probe-3', 'triple-wrapped');
   await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
-  await page.locator('[data-locus-comment-box] textarea').fill('key claim, re-check derivation');
-  await page.locator('[data-locus-comment-save]').click();
+  // Click the highlighted text itself to open the note editor.
+  await clickText(page, '#probe-3', 'triple-wrapped');
+  const note = page.locator('[data-locus-note]');
+  await expect(note).toBeVisible();
+  await note.locator('textarea').fill('**key claim** — re-check `derivation`');
+  // Live preview renders the markdown.
+  await expect(note.locator('[data-locus-note-preview] strong')).toHaveText('key claim');
+  await note.locator('[data-locus-note-save]').click();
   const panel = await openPanelFor(page, serviceWorker, extensionId, NESTED);
   await expect(panel.locator('.annotation-item')).toHaveCount(1);
-  await expect(panel.locator('.annotation-comment')).toHaveText('key claim, re-check derivation');
+  await expect(panel.locator('.annotation-comment strong')).toHaveText('key claim');
+  await expect(panel.locator('.annotation-comment code')).toHaveText('derivation');
 });
 
 test('E6: repeated text re-anchors onto the same occurrence', async ({ context, serviceWorker }) => {
@@ -75,7 +90,7 @@ test('E6: repeated text re-anchors onto the same occurrence', async ({ context, 
   await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
   // The highlight range must sit inside #occurrence-2, not 1 or 3.
   const section = await page.evaluate(() => {
-    const highlightNames = ['locus-yellow', 'locus-green', 'locus-blue', 'locus-pink', 'locus-orange'];
+    const highlightNames = ['locus-yellow', 'locus-teal', 'locus-pink'];
     for (const name of highlightNames) {
       const registered = CSS.highlights.get(name);
       if (!registered) continue;
@@ -202,6 +217,69 @@ test('E11: creating highlights causes no layout shift', async ({ context, servic
     await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
     expect(await probes(), `layout must not move on ${url}`).toEqual(before);
   }
+});
+
+test('E13: keyboard 1/2/3 pick a color for the pending selection', async ({
+  context,
+  serviceWorker,
+}) => {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  await selectText(page, '#probe-2', 'hyperlink that spans');
+  await expect(page.locator('[data-locus-toolbar]')).toBeVisible();
+  await page.keyboard.press('2');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+  const tealCount = await page.evaluate(() => {
+    const teal = CSS.highlights.get('locus-teal');
+    return teal ? [...(teal as unknown as Iterable<Range>)].length : 0;
+  });
+  expect(tealCount).toBe(1);
+  await expect(page.locator('[data-locus-toolbar]')).toBeHidden();
+});
+
+test('E14: Cmd/Ctrl+Z undoes the last highlight', async ({ context, serviceWorker }) => {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  await highlight(page, '#probe-2', 'footnote marker');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '0');
+});
+
+test('E15: clicking an image rings it; the ring and panel entry survive reload', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await page.goto(IMAGES);
+  await expect(page.locator('html')).toHaveAttribute('data-locus-ready', '1');
+  await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
+
+  // A linked image must be left alone.
+  await page.click('#figure-linked');
+  await expect(page.locator('[data-locus-toolbar]')).toBeHidden();
+
+  // A plain image offers the toolbar; shortcut 1 = fluorescent yellow ring.
+  await page.click('#figure-1');
+  await expect(page.locator('[data-locus-toolbar]')).toBeVisible();
+  await page.keyboard.press('1');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+  const ring = page.locator('[data-locus-ring]');
+  await expect(ring).toBeVisible();
+  const imgBox = await page.locator('#figure-1').boundingBox();
+  const ringBox = await ring.boundingBox();
+  expect(Math.abs((ringBox?.x ?? 0) - ((imgBox?.x ?? 0) - 4))).toBeLessThan(2);
+  expect(Math.abs((ringBox?.y ?? 0) - ((imgBox?.y ?? 0) - 4))).toBeLessThan(2);
+
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+  await expect(page.locator('[data-locus-ring]')).toBeVisible();
+
+  const panel = await openPanelFor(page, serviceWorker, extensionId, IMAGES);
+  const item = panel.locator('.annotation-item');
+  await expect(item).toHaveCount(1);
+  await expect(item.locator('.annotation-image img')).toBeVisible();
 });
 
 test('E12: svg and mathjax pages anchor across reload; iframe selection is ignored', async ({

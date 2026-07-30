@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { listForUrl } from '@/db/repo';
 import { COLORS } from '@/domain/colors';
 import type { AnchorState, AnnotationWithAnchor } from '@/domain/types';
+import { markdownToHtml } from '@/lib/markdown';
 import {
   requestBg,
   sendToTab,
@@ -101,10 +102,11 @@ function AnnotationItem({
   onReveal: () => void;
   onDelete: () => void;
 }) {
-  const { annotation } = item;
+  const { annotation, anchor } = item;
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(annotation.comment);
   const detached = state === 'detached';
+  const isImage = anchor.kind === 'image';
 
   const saveComment = async () => {
     await requestBg({ type: 'annotation:set-comment', id: annotation.id, comment: draft.trim() });
@@ -120,13 +122,34 @@ function AnnotationItem({
     >
       <div className="annotation-top">
         <span className="color-dot" style={{ background: COLORS[annotation.color].swatch }} />
-        <span className="annotation-exact">{annotation.exact}</span>
+        {isImage ? (
+          <span className="annotation-image">
+            <img src={anchor.kind === 'image' ? anchor.src : ''} alt={annotation.exact || 'annotated image'} />
+            <span className="annotation-exact">{annotation.exact || 'Image'}</span>
+          </span>
+        ) : (
+          <span className="annotation-exact">{annotation.exact}</span>
+        )}
         {detached && <span className="detached-badge">detached</span>}
       </div>
-      {!editing && annotation.comment && <p className="annotation-comment">{annotation.comment}</p>}
+      {!editing && annotation.comment && (
+        <div
+          className="annotation-comment md"
+          // Safe: markdownToHtml escapes all source text (see lib/markdown.ts).
+          dangerouslySetInnerHTML={{ __html: markdownToHtml(annotation.comment) }}
+        />
+      )}
       {editing ? (
         <div className="comment-editor" onClick={(e) => e.stopPropagation()}>
-          <textarea value={draft} onChange={(e) => setDraft(e.target.value)} autoFocus />
+          <textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder="Markdown supported"
+            autoFocus
+          />
+          {draft.trim() && (
+            <div className="md preview" dangerouslySetInnerHTML={{ __html: markdownToHtml(draft.trim()) }} />
+          )}
           <div className="row">
             <button onClick={() => setEditing(false)}>Cancel</button>
             <button className="primary" onClick={() => void saveComment()}>
