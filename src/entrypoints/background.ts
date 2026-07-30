@@ -35,6 +35,18 @@ async function syncRegistration(): Promise<string[]> {
   return matches;
 }
 
+async function broadcastPrefs(): Promise<{ prefs: Awaited<ReturnType<typeof repo.getPrefs>> }> {
+  const prefs = await repo.getPrefs();
+  const message: TabMessage = { type: 'prefs:changed', prefs };
+  const tabs = await chrome.tabs.query({});
+  await Promise.allSettled(
+    tabs
+      .filter((tab) => tab.id !== undefined)
+      .map((tab) => chrome.tabs.sendMessage(tab.id as number, message)),
+  );
+  return { prefs };
+}
+
 async function broadcastChange(urlKey: string): Promise<void> {
   const toRuntime: ChangeBroadcast = { type: 'annotations:changed', urlKey };
   chrome.runtime.sendMessage(toRuntime).catch(() => {
@@ -55,7 +67,12 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
     case 'source:bootstrap': {
       const source = await repo.ensureSource(message.url, message.title);
       const items = await repo.listForSource(source.id);
-      return { source, items, lastColor: await repo.getLastColor() };
+      return {
+        source,
+        items,
+        lastColor: await repo.getLastColor(),
+        prefs: await repo.getPrefs(),
+      };
     }
     case 'annotations:list':
       return repo.listForUrl(message.url);
@@ -105,6 +122,18 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
         }
       }
       return { ok: true };
+    }
+    case 'prefs:set-placement': {
+      await repo.setPlacement(message.placement);
+      return broadcastPrefs();
+    }
+    case 'prefs:add-color': {
+      await repo.addCustomColor(message.color);
+      return broadcastPrefs();
+    }
+    case 'prefs:remove-color': {
+      await repo.removeCustomColor(message.key);
+      return broadcastPrefs();
     }
   }
 }

@@ -23,6 +23,8 @@ bypassed while still exercising the dynamic registration code path).
 | U11 | repo | image annotations store `kind: image` with alt text as `exact` |
 | U12 | markdown | renderer covers headings/lists/quotes/code/links; escapes raw HTML; rejects non-http(s) URLs |
 | U13 | image anchor | capture stores src/alt/index/path; resolves via path, falls back to src+index, detaches when gone |
+| U14 | palette | custom colors build from hex, order after builtins (shortcut digits), unknown keys fall back to yellow |
+| U15 | prefs | placement and custom colors persist; add dedupes; remove works |
 
 ## E2E (Playwright, loaded extension)
 
@@ -47,7 +49,10 @@ for observability without page-world coupling.
 | E13 | shortcuts | with the toolbar open, pressing 2 highlights in the second color and dismisses the toolbar |
 | E14 | undo | Cmd/Ctrl+Z tombstones the most recent highlight |
 | E15 | image | clicking a plain image offers the toolbar and shortcut 1 rings it (ring tracks the image box, survives reload, lists in the panel); linked images are ignored |
-| E16 | builds | `wxt build -b chrome` and `-b edge` both produce a loadable MV3 bundle from the same source |
+| E16 | note keys | Enter saves the note (Shift+Enter = newline); Delete with an empty note (or ⌘/Ctrl+Delete anytime) removes the highlight |
+| E17 | custom color | the toolbar "+" adds a picker color; it appears with the next shortcut digit, highlights, and survives reload |
+| E18 | placement | position pref: below (default) / above / auto — auto flips above when another floating UI overlaps the below band |
+| E19 | builds | `wxt build -b chrome` and `-b edge` both produce a loadable MV3 bundle from the same source |
 
 ## Manual checklist (pre-release)
 

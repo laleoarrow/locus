@@ -4,9 +4,21 @@ import { LocusUI } from '@/content/ui';
 import { captureAnchor } from '@/domain/anchor/capture';
 import { captureImageAnchor, resolveImageAnchor } from '@/domain/anchor/image';
 import { resolveAnchor } from '@/domain/anchor/resolve';
-import { buildTextIndex, type TextIndex } from '@/domain/anchor/textIndex';
-import { colorForDigit, DEFAULT_COLOR } from '@/domain/colors';
-import type { AnchorPayload, AnchorState, AnnotationWithAnchor, ColorKey } from '@/domain/types';
+import { buildTextIndex, LOCUS_HOST_ID, type TextIndex } from '@/domain/anchor/textIndex';
+import {
+  buildPalette,
+  colorForDigit,
+  customColorFromHex,
+  DEFAULT_COLOR,
+  type PaletteEntry,
+} from '@/domain/colors';
+import type {
+  AnchorPayload,
+  AnchorState,
+  AnnotationWithAnchor,
+  ColorKey,
+  Prefs,
+} from '@/domain/types';
 import { requestBg, type AnchorStateReply, type TabMessage } from '@/messaging/protocol';
 
 /** How long after load we keep retrying detached anchors on DOM mutations. */
@@ -33,13 +45,37 @@ class LocusContent {
   private lastColor: ColorKey = DEFAULT_COLOR;
   private urlKey = '';
   private pending: PendingTarget | null = null;
+  private prefs: Prefs = { placement: 'below', customColors: [] };
+  private palette: PaletteEntry[] = buildPalette([]);
   /** Per-tab undo stack for Cmd/Ctrl+Z (creates and note-editor deletes). */
   private readonly undoStack: UndoAction[] = [];
 
   constructor() {
     this.ui = new LocusUI(this.doc, {
       onHighlight: (color) => void this.createFromPending(color),
+      onAddColor: (hex) => void this.addColor(hex),
     });
+  }
+
+  private applyPrefs(prefs: Prefs): void {
+    this.prefs = prefs;
+    this.palette = buildPalette(prefs.customColors);
+    this.renderer.setPalette(this.palette);
+    this.ui.setPalette(this.palette);
+  }
+
+  private async addColor(hex: string): Promise<void> {
+    const color = customColorFromHex(hex);
+    if (!color) return;
+    const result = await requestBg({ type: 'prefs:add-color', color });
+    if (result) this.applyPrefs(result.prefs);
+  }
+
+  /** Toolbar default: last-used color if it still exists, else yellow. */
+  private effectiveLastColor(): ColorKey {
+    return this.palette.some((entry) => entry.key === this.lastColor)
+      ? this.lastColor
+      : DEFAULT_COLOR;
   }
 
   async start(): Promise<void> {
@@ -51,6 +87,7 @@ class LocusContent {
     if (!bootstrap) return;
     this.lastColor = bootstrap.lastColor;
     this.urlKey = bootstrap.source.urlKey;
+    this.applyPrefs(bootstrap.prefs);
     this.setItems(bootstrap.items);
     this.anchorAll();
     this.wirePointer();
@@ -95,17 +132,18 @@ class LocusContent {
   private anchorOne(id: string, entry: Entry): boolean {
     const { anchor } = entry.item;
     const color = entry.item.annotation.color;
+    const renderColor = this.renderer.effectiveColor(color);
     if (anchor.kind === 'image') {
       const image = resolveImageAnchor(anchor, this.doc.body);
       if (image) {
-        this.renderer.setImage(id, color, image);
+        this.renderer.setImage(id, renderColor, image);
         entry.state = 'anchored';
         return true;
       }
     } else {
       const resolved = resolveAnchor(anchor, this.index, this.doc.body);
       if (resolved) {
-        this.renderer.set(id, color, resolved.range);
+        this.renderer.set(id, renderColor, resolved.range);
         entry.state = 'anchored';
         return true;
       }
@@ -220,9 +258,54 @@ class LocusContent {
     }
     const target = event.target;
     if (target instanceof HTMLImageElement && !target.closest('a')) {
+      const rect = target.getBoundingClientRect();
       this.pending = { type: 'image', image: target };
-      this.ui.showToolbar(target.getBoundingClientRect(), this.lastColor);
+      this.ui.showToolbar(rect, this.effectiveLastColor(), this.resolvePlacement(rect));
     }
+  }
+
+  /** Something (likely another extension's floating UI) already renders here? */
+  private isSpotOccupied(x: number, y: number): boolean {
+    const view = this.doc.defaultView;
+    if (!view) return false;
+    for (const el of this.doc.elementsFromPoint(x, y)) {
+      if (el === this.doc.documentElement || el === this.doc.body) continue;
+      if (el.id === LOCUS_HOST_ID || el.id === 'locus-ring-host') continue;
+      const style = view.getComputedStyle(el);
+      const z = Number.parseInt(style.zIndex, 10);
+      if ((style.position === 'fixed' || style.position === 'sticky') && Number.isFinite(z) && z >= 1000) {
+        return true;
+      }
+      // Shadow hosts mounted directly under <body>/<html> are the typical
+      // footprint of another extension's in-page UI.
+      if (
+        el.shadowRoot &&
+        (el.parentElement === this.doc.body || el.parentElement === this.doc.documentElement)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Resolve the configured placement; 'auto' dodges other floating UI. */
+  private resolvePlacement(rect: DOMRect): 'below' | 'above' {
+    if (this.prefs.placement !== 'auto') return this.prefs.placement;
+    const view = this.doc.defaultView;
+    if (!view) return 'below';
+    const centerX = Math.min(Math.max(rect.left + rect.width / 2, 8), view.innerWidth - 8);
+    // The toolbar occupies roughly a 44px band starting 10px away from the
+    // selection; sample several points across that band on each side.
+    const band = [14, 32, 50];
+    const belowFree = band.every(
+      (dy) => rect.bottom + dy < view.innerHeight - 8 && !this.isSpotOccupied(centerX, rect.bottom + dy),
+    );
+    if (belowFree) return 'below';
+    const aboveFree = band.every(
+      (dy) => rect.top - dy > 8 && !this.isSpotOccupied(centerX, rect.top - dy),
+    );
+    if (aboveFree) return 'above';
+    return rect.bottom + 54 < view.innerHeight - 8 ? 'below' : 'above';
   }
 
   private showToolbarForSelection(): boolean {
@@ -238,7 +321,8 @@ class LocusContent {
     if (!this.doc.body.contains(range.commonAncestorContainer)) return false;
     if (range.toString().trim().length === 0) return false;
     this.pending = { type: 'text', range: range.cloneRange() };
-    this.ui.showToolbar(range.getBoundingClientRect(), this.lastColor);
+    const rect = range.getBoundingClientRect();
+    this.ui.showToolbar(rect, this.effectiveLastColor(), this.resolvePlacement(rect));
     return true;
   }
 
@@ -252,9 +336,9 @@ class LocusContent {
       ) {
         return;
       }
-      // 1/2/3 pick a color for the pending selection or image.
+      // Digits pick a palette color for the pending selection or image.
       if (!event.metaKey && !event.ctrlKey && !event.altKey && this.ui.isToolbarVisible()) {
-        const color = colorForDigit(Number(event.key));
+        const color = colorForDigit(Number(event.key), this.palette);
         if (color) {
           event.preventDefault();
           event.stopPropagation();
@@ -299,6 +383,10 @@ class LocusContent {
             return false;
           case 'anchor-state:query':
             sendResponse({ url: location.href, states: this.states() });
+            return false;
+          case 'prefs:changed':
+            this.applyPrefs(message.prefs);
+            this.anchorAll();
             return false;
           default:
             return false;

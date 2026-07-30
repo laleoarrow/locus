@@ -64,6 +64,17 @@ describe('repo (U8–U10)', () => {
     expect(await repo.getLastColor()).toBe('teal');
   });
 
+  it('persists prefs: placement and custom colors (U15)', async () => {
+    expect(await repo.getPrefs()).toEqual({ placement: 'below', customColors: [] });
+    await repo.setPlacement('auto');
+    const color = { key: 'c336699', label: '#336699', swatch: '#336699', bg: 'rgba(51, 102, 153, 0.45)' };
+    await repo.addCustomColor(color);
+    await repo.addCustomColor(color); // dedupe
+    expect(await repo.getPrefs()).toEqual({ placement: 'auto', customColors: [color] });
+    await repo.removeCustomColor('c336699');
+    expect((await repo.getPrefs()).customColors).toEqual([]);
+  });
+
   it('stores image annotations with kind and alt as exact (U11)', async () => {
     const source = await repo.ensureSource(URL_A, 'A Paper');
     const created = await repo.createAnnotation({

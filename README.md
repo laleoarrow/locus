@@ -12,10 +12,16 @@ bring them back reliably — even when the page shifts under you.
 - **Select → highlight → note.** Selecting text pops a liquid-glass toolbar
   with three colors (fluorescent yellow, teal, pink). Press **1/2/3** to pick
   a color from the keyboard; the last-used color is remembered. Clicking a
-  highlight opens a **Markdown** note editor with live preview. **Cmd+Z /
-  Ctrl+Z** undoes your last highlight.
+  highlight opens a **Markdown** note editor with live preview — **Enter**
+  saves (Shift+Enter for a newline), **Delete** on an empty note (or
+  **⌘/Ctrl+Delete** anytime) removes the highlight. **Cmd+Z / Ctrl+Z** undoes
+  your last highlight.
 - **Images too.** Clicking a figure (not wrapped in a link) offers the same
   toolbar and draws a glowing ring around the image.
+- **Your palette, your layout.** The toolbar's **+** orb adds custom colors
+  (they get the next shortcut digits; manage them in the side panel). The
+  toolbar shows below the selection by default, or set it to *above* /
+  *auto* — auto dodges other extensions' floating toolbars.
 - **Local only.** Everything lives in IndexedDB. No accounts, no sync, no
   telemetry, nothing leaves the machine.
 - **Resilient anchors.** Each annotation stores the exact text, surrounding

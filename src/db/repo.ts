@@ -1,11 +1,14 @@
-import { DEFAULT_COLOR, isColorKey } from '@/domain/colors';
+import { DEFAULT_COLOR } from '@/domain/colors';
 import type {
   AnchorPayload,
   AnnotationRecord,
   AnnotationWithAnchor,
   ColorKey,
+  CustomColor,
   DocumentRecord,
+  Prefs,
   SourceRecord,
+  ToolbarPlacement,
 } from '@/domain/types';
 import { toUrlKey } from '@/domain/url';
 import { db } from './schema';
@@ -125,5 +128,41 @@ export async function getAnnotation(id: string): Promise<AnnotationRecord | unde
 
 export async function getLastColor(): Promise<ColorKey> {
   const record = await db.settings.get(LAST_COLOR_KEY);
-  return record && isColorKey(record.value) ? record.value : DEFAULT_COLOR;
+  return record && typeof record.value === 'string' && record.value ? record.value : DEFAULT_COLOR;
+}
+
+const PLACEMENT_KEY = 'toolbarPlacement';
+const CUSTOM_COLORS_KEY = 'customColors';
+
+function isPlacement(value: unknown): value is ToolbarPlacement {
+  return value === 'below' || value === 'above' || value === 'auto';
+}
+
+export async function getPrefs(): Promise<Prefs> {
+  const [placement, colors] = await Promise.all([
+    db.settings.get(PLACEMENT_KEY),
+    db.settings.get(CUSTOM_COLORS_KEY),
+  ]);
+  return {
+    placement: placement && isPlacement(placement.value) ? placement.value : 'below',
+    customColors: Array.isArray(colors?.value) ? (colors.value as CustomColor[]) : [],
+  };
+}
+
+export async function setPlacement(placement: ToolbarPlacement): Promise<void> {
+  await db.settings.put({ key: PLACEMENT_KEY, value: placement });
+}
+
+export async function addCustomColor(color: CustomColor): Promise<void> {
+  const prefs = await getPrefs();
+  if (prefs.customColors.some((c) => c.key === color.key)) return;
+  await db.settings.put({ key: CUSTOM_COLORS_KEY, value: [...prefs.customColors, color] });
+}
+
+export async function removeCustomColor(key: string): Promise<void> {
+  const prefs = await getPrefs();
+  await db.settings.put({
+    key: CUSTOM_COLORS_KEY,
+    value: prefs.customColors.filter((c) => c.key !== key),
+  });
 }

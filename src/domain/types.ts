@@ -1,6 +1,25 @@
 /** All timestamps are epoch milliseconds. */
 
-export type ColorKey = 'yellow' | 'teal' | 'pink';
+export type BuiltinColorKey = 'yellow' | 'teal' | 'pink';
+
+/** A builtin key or a custom color key (`c<hex>`, see domain/colors.ts). */
+export type ColorKey = string;
+
+/** A user-added highlight color, persisted in settings. */
+export interface CustomColor {
+  key: string;
+  label: string;
+  swatch: string;
+  bg: string;
+}
+
+export type ToolbarPlacement = 'below' | 'above' | 'auto';
+
+/** User preferences, persisted in settings and pushed to content scripts. */
+export interface Prefs {
+  placement: ToolbarPlacement;
+  customColors: CustomColor[];
+}
 
 /** A logical document being read. */
 export interface DocumentRecord {

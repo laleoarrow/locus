@@ -3,7 +3,10 @@ import type {
   AnchorState,
   AnnotationWithAnchor,
   ColorKey,
+  CustomColor,
+  Prefs,
   SourceRecord,
+  ToolbarPlacement,
 } from '@/domain/types';
 
 /**
@@ -18,6 +21,7 @@ export interface BootstrapResult {
   source: SourceRecord;
   items: AnnotationWithAnchor[];
   lastColor: ColorKey;
+  prefs: Prefs;
 }
 
 export interface CreateResult {
@@ -39,7 +43,10 @@ export type BgRequest =
   | { type: 'annotation:delete'; id: string }
   | { type: 'annotation:undelete'; id: string }
   | { type: 'site:registered-status' }
-  | { type: 'site:enable'; origin: string; tabId?: number };
+  | { type: 'site:enable'; origin: string; tabId?: number }
+  | { type: 'prefs:set-placement'; placement: ToolbarPlacement }
+  | { type: 'prefs:add-color'; color: CustomColor }
+  | { type: 'prefs:remove-color'; key: string };
 
 export interface BgResponseMap {
   'source:bootstrap': BootstrapResult;
@@ -50,6 +57,9 @@ export interface BgResponseMap {
   'annotation:undelete': { ok: true };
   'site:registered-status': { origins: string[] };
   'site:enable': { ok: boolean };
+  'prefs:set-placement': { prefs: Prefs };
+  'prefs:add-color': { prefs: Prefs };
+  'prefs:remove-color': { prefs: Prefs };
 }
 
 export type BgResponseFor<T extends BgRequest> = BgResponseMap[T['type']];
@@ -63,7 +73,8 @@ export type ChangeBroadcast =
 export type TabMessage =
   | { type: 'annotations:changed'; urlKey: string }
   | { type: 'annotation:reveal'; id: string }
-  | { type: 'anchor-state:query' };
+  | { type: 'anchor-state:query' }
+  | { type: 'prefs:changed'; prefs: Prefs };
 
 export interface AnchorStateReply {
   url: string;

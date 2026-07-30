@@ -188,13 +188,20 @@ fixtures) without a permanent observer cost.
 ### 5.4 Interaction model
 
 - Selecting text (or clicking a non-linked image) pops a liquid-glass pill
-  toolbar with the three color orbs; the last-used color is ringed and is
-  also what shortcut keys map to: **1/2/3** pick a color, **Esc/click-away**
+  toolbar with the palette orbs — three builtins plus any user-added colors
+  (the "+" orb opens a native picker; custom colors persist in prefs and get
+  the next shortcut digits). **1–9** pick a color, **Esc/click-away**
   dismisses.
+- Toolbar placement is a preference (side-panel footer): *below* (default),
+  *above*, or *auto* — auto samples the band the toolbar would occupy with
+  `elementsFromPoint` and flips to the other side when another extension's
+  floating UI (fixed/sticky high-z elements, shadow hosts mounted on
+  `<body>`/`<html>`) already renders there.
 - Clicking an existing highlight (hit-tested against rendered ranges — the
   Custom Highlight API has no DOM elements to click) opens the Markdown note
-  editor with live preview; Cmd/Ctrl+Enter saves, and *Remove highlight*
-  tombstones.
+  editor with live preview. **Enter** saves (Shift+Enter inserts a newline);
+  **Delete** with an empty note — or **⌘/Ctrl+Delete** anytime — removes the
+  highlight, as does the *Remove highlight* button. All removals tombstone.
 - **Cmd+Z (macOS) / Ctrl+Z (Windows)** undoes the most recent Locus action
   in the tab (create → tombstone, note-editor delete → restore), via a
   per-tab action stack. The shortcut is ignored inside editable page

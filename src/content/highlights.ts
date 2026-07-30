@@ -1,4 +1,4 @@
-import { COLOR_KEYS, COLORS } from '@/domain/colors';
+import { buildPalette, type PaletteEntry } from '@/domain/colors';
 import type { ColorKey } from '@/domain/types';
 
 const STYLE_ID = 'locus-style';
@@ -9,27 +9,6 @@ export function supportsCustomHighlights(): boolean {
     'highlights' in CSS &&
     typeof (globalThis as { Highlight?: unknown }).Highlight === 'function'
   );
-}
-
-/**
- * One <style> in <head> carrying the ::highlight() rules (and the fallback
- * mark rules). This never touches article text and has zero layout cost:
- * highlight pseudo styles cannot affect layout, and fallback marks zero out
- * every box property.
- */
-function injectPageStyle(doc: Document): void {
-  if (doc.getElementById(STYLE_ID)) return;
-  const style = doc.createElement('style');
-  style.id = STYLE_ID;
-  const rules = COLOR_KEYS.map((key) => `::highlight(locus-${key}) { background-color: ${COLORS[key].bg}; }`);
-  rules.push(
-    'mark.locus-mark { background-color: transparent; color: inherit; font: inherit; margin: 0; padding: 0; border: 0; }',
-  );
-  for (const key of COLOR_KEYS) {
-    rules.push(`mark.locus-mark[data-locus-color="${key}"] { background-color: ${COLORS[key].bg}; }`);
-  }
-  style.textContent = rules.join('\n');
-  doc.head.appendChild(style);
 }
 
 function textNodesInRange(range: Range): Text[] {
@@ -78,6 +57,8 @@ export class HighlightRenderer {
   private readonly useApi: boolean;
   private readonly highlights = new Map<ColorKey, Highlight>();
   private readonly entries = new Map<string, Entry>();
+  private palette = new Map<ColorKey, PaletteEntry>();
+  private readonly style: HTMLStyleElement;
   /** Shadow layer holding image rings, isolated from page CSS. */
   private readonly ringLayer: ShadowRoot;
   /** Observers can ignore mutations we caused ourselves (fallback mode). */
@@ -85,14 +66,12 @@ export class HighlightRenderer {
 
   constructor(private readonly doc: Document) {
     this.useApi = supportsCustomHighlights();
-    injectPageStyle(doc);
-    if (this.useApi) {
-      for (const key of COLOR_KEYS) {
-        const highlight = new Highlight();
-        this.highlights.set(key, highlight);
-        CSS.highlights.set(`locus-${key}`, highlight);
-      }
-    }
+    // One <style> in <head> carrying ::highlight() and fallback mark rules —
+    // it never touches article text and has zero layout cost.
+    this.style = doc.createElement('style');
+    this.style.id = STYLE_ID;
+    doc.head.appendChild(this.style);
+    this.setPalette(buildPalette([]));
     const ringHost = doc.createElement('div');
     ringHost.id = 'locus-ring-host';
     ringHost.style.cssText = 'position:absolute;top:0;left:0;width:0;height:0;z-index:2147483645;';
@@ -101,6 +80,39 @@ export class HighlightRenderer {
     style.textContent = RING_CSS;
     this.ringLayer.appendChild(style);
     doc.documentElement.appendChild(ringHost);
+  }
+
+  /** Sync rules and Highlight registrations with the current palette. */
+  setPalette(entries: PaletteEntry[]): void {
+    this.palette = new Map(entries.map((entry) => [entry.key, entry]));
+    const rules = entries.map(
+      (entry) => `::highlight(locus-${entry.key}) { background-color: ${entry.bg}; }`,
+    );
+    rules.push(
+      'mark.locus-mark { background-color: transparent; color: inherit; font: inherit; margin: 0; padding: 0; border: 0; }',
+    );
+    for (const entry of entries) {
+      rules.push(
+        `mark.locus-mark[data-locus-color="${entry.key}"] { background-color: ${entry.bg}; }`,
+      );
+    }
+    this.style.textContent = rules.join('\n');
+    if (this.useApi) {
+      for (const entry of entries) {
+        if (!this.highlights.has(entry.key)) {
+          const highlight = new Highlight();
+          this.highlights.set(entry.key, highlight);
+          CSS.highlights.set(`locus-${entry.key}`, highlight);
+        }
+      }
+    }
+  }
+
+  /** A palette key valid for rendering (unknown keys fall back to the first entry). */
+  effectiveColor(key: ColorKey): ColorKey {
+    if (this.palette.has(key)) return key;
+    const first = this.palette.keys().next();
+    return first.done ? key : first.value;
   }
 
   isSelfMutation(): boolean {
@@ -140,10 +152,11 @@ export class HighlightRenderer {
   /** Render an image annotation as a glowing ring overlay around the img. */
   setImage(id: string, color: ColorKey, image: HTMLImageElement): void {
     this.clear(id);
+    const spec = this.palette.get(this.effectiveColor(color));
     const ring = this.doc.createElement('div');
     ring.className = 'ring';
     ring.setAttribute('data-locus-ring', id);
-    ring.style.setProperty('--ring-color', COLORS[color].swatch);
+    ring.style.setProperty('--ring-color', spec?.swatch ?? '#ffe600');
     this.ringLayer.appendChild(ring);
     const entry: Entry = { color, range: null, marks: [], image, ring };
     this.entries.set(id, entry);

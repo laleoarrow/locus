@@ -282,6 +282,104 @@ test('E15: clicking an image rings it; the ring and panel entry survive reload',
   await expect(item.locator('.annotation-image img')).toBeVisible();
 });
 
+test('E16: Enter saves the note; Delete on an empty note removes the highlight', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  await highlight(page, '#probe-2', 'footnote marker');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+  await clickText(page, '#probe-2', 'footnote marker');
+  const note = page.locator('[data-locus-note]');
+  await expect(note).toBeVisible();
+  await note.locator('textarea').fill('quick thought');
+  await note.locator('textarea').press('Enter');
+  await expect(note).toBeHidden();
+  const panel = await openPanelFor(page, serviceWorker, extensionId, NESTED);
+  await expect(panel.locator('.annotation-comment')).toContainText('quick thought');
+
+  // Re-open, clear the note, press Delete → the highlight is removed.
+  await clickText(page, '#probe-2', 'footnote marker');
+  await expect(note).toBeVisible();
+  await note.locator('textarea').fill('');
+  await note.locator('textarea').press('Backspace');
+  await expect(note).toBeHidden();
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '0');
+  await expect(panel.locator('.annotation-item')).toHaveCount(0);
+});
+
+test('E17: a custom color can be added and used with the next shortcut digit', async ({
+  context,
+  serviceWorker,
+}) => {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  await selectText(page, '#probe-2', 'footnote marker');
+  await expect(page.locator('[data-locus-toolbar]')).toBeVisible();
+  await expect(page.locator('[data-locus-add-color]')).toBeVisible();
+  // Drive the hidden picker input directly (the native dialog cannot be automated).
+  await page.evaluate(() => {
+    const shadow = document.getElementById('locus-host')?.shadowRoot;
+    const input = shadow?.querySelector('input[type="color"]') as HTMLInputElement;
+    input.value = '#8e44ad';
+    input.dispatchEvent(new Event('input'));
+  });
+  const newSwatch = page.locator('[data-locus-toolbar] .swatch[data-color="c8e44ad"]');
+  await expect(newSwatch).toBeVisible();
+  await expect(newSwatch).toHaveAttribute('data-shortcut', '4');
+  await page.keyboard.press('4');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+  const customCount = await page.evaluate(() => {
+    const custom = CSS.highlights.get('locus-c8e44ad');
+    return custom ? [...(custom as unknown as Iterable<Range>)].length : 0;
+  });
+  expect(customCount).toBe(1);
+  // The custom color survives reload (rules are palette-driven).
+  await page.reload();
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+});
+
+test('E18: toolbar placement can be set to above, and auto dodges other floating UI', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
+  const panel = await openPanelFor(page, serviceWorker, extensionId, NESTED);
+
+  // Default: below.
+  await selectText(page, '#probe-2', 'footnote marker');
+  await expect(page.locator('[data-locus-toolbar]')).toHaveAttribute('data-placement', 'below');
+
+  // Explicit "above".
+  await panel.locator('.segmented button[data-placement="above"]').click();
+  await page.waitForTimeout(400);
+  await selectText(page, '#probe-2', 'footnote marker');
+  await expect(page.locator('[data-locus-toolbar]')).toHaveAttribute('data-placement', 'above');
+
+  // "Auto": another extension's floating bar below the selection → flip above.
+  await panel.locator('.segmented button[data-placement="auto"]').click();
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    const probe = document.querySelector('#probe-3') as HTMLElement;
+    const rect = probe.getBoundingClientRect();
+    const blocker = document.createElement('div');
+    blocker.id = 'fake-other-extension';
+    blocker.style.cssText = `position:fixed;left:0;right:0;top:${rect.bottom + 4}px;height:70px;z-index:99999;background:rgba(0,0,0,0.01);`;
+    document.body.appendChild(blocker);
+  });
+  await selectText(page, '#probe-3', 'second paragraph');
+  await expect(page.locator('[data-locus-toolbar]')).toHaveAttribute('data-placement', 'above');
+  // Without a blocker, auto stays below.
+  await page.evaluate(() => document.getElementById('fake-other-extension')?.remove());
+  await selectText(page, '#probe-2', 'footnote marker');
+  await expect(page.locator('[data-locus-toolbar]')).toHaveAttribute('data-placement', 'below');
+});
+
 test('E12: svg and mathjax pages anchor across reload; iframe selection is ignored', async ({
   context,
   serviceWorker,

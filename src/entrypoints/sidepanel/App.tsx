@@ -1,8 +1,13 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { listForUrl } from '@/db/repo';
-import { COLORS } from '@/domain/colors';
-import type { AnchorState, AnnotationWithAnchor } from '@/domain/types';
+import { getPrefs, listForUrl } from '@/db/repo';
+import { specFor } from '@/domain/colors';
+import type {
+  AnchorState,
+  AnnotationWithAnchor,
+  CustomColor,
+  ToolbarPlacement,
+} from '@/domain/types';
 import { markdownToHtml } from '@/lib/markdown';
 import {
   requestBg,
@@ -94,11 +99,13 @@ interface UndoEntry {
 function AnnotationItem({
   item,
   state,
+  customColors,
   onReveal,
   onDelete,
 }: {
   item: AnnotationWithAnchor;
   state: AnchorState;
+  customColors: CustomColor[];
   onReveal: () => void;
   onDelete: () => void;
 }) {
@@ -121,7 +128,10 @@ function AnnotationItem({
       onClick={detached ? undefined : onReveal}
     >
       <div className="annotation-top">
-        <span className="color-dot" style={{ background: COLORS[annotation.color].swatch }} />
+        <span
+          className="color-dot"
+          style={{ background: specFor(annotation.color, customColors).swatch }}
+        />
         {isImage ? (
           <span className="annotation-image">
             <img src={anchor.kind === 'image' ? anchor.src : ''} alt={annotation.exact || 'annotated image'} />
@@ -195,8 +205,15 @@ export function App() {
     setUndo(null);
   };
 
+  const prefs = useLiveQuery(() => getPrefs(), []) ?? { placement: 'below' as ToolbarPlacement, customColors: [] };
   const items = data?.items ?? [];
   const supported = target !== null && /^https?:/.test(target.url);
+
+  const placements: Array<{ value: ToolbarPlacement; label: string }> = [
+    { value: 'below', label: 'Below' },
+    { value: 'above', label: 'Above' },
+    { value: 'auto', label: 'Auto' },
+  ];
 
   return (
     <div className="panel">
@@ -218,6 +235,7 @@ export function App() {
             <AnnotationItem
               key={item.annotation.id}
               item={item}
+              customColors={prefs.customColors}
               state={anchorStates[item.annotation.id] ?? 'anchored'}
               onReveal={() => {
                 if (target?.tabId) {
@@ -238,6 +256,45 @@ export function App() {
           <button onClick={() => void undoDelete()}>Undo</button>
         </div>
       )}
+      <footer className="panel-footer">
+        <div className="pref-row">
+          <span className="pref-label">Toolbar position</span>
+          <div className="segmented" role="group" aria-label="Toolbar position">
+            {placements.map(({ value, label }) => (
+              <button
+                key={value}
+                className={prefs.placement === value ? 'on' : ''}
+                data-placement={value}
+                onClick={() => void requestBg({ type: 'prefs:set-placement', placement: value })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {prefs.customColors.length > 0 && (
+          <div className="pref-row">
+            <span className="pref-label">Custom colors</span>
+            <div className="custom-colors">
+              {prefs.customColors.map((color) => (
+                <span
+                  key={color.key}
+                  className="color-chip"
+                  style={{ background: color.swatch }}
+                  title={color.label}
+                >
+                  <button
+                    aria-label={`Remove ${color.label}`}
+                    onClick={() => void requestBg({ type: 'prefs:remove-color', key: color.key })}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </footer>
     </div>
   );
 }

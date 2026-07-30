@@ -1,10 +1,11 @@
 import { LOCUS_HOST_ID } from '@/domain/anchor/textIndex';
-import { COLOR_KEYS, COLORS } from '@/domain/colors';
+import { specFor, type PaletteEntry } from '@/domain/colors';
 import type { ColorKey } from '@/domain/types';
 import { markdownToHtml } from '@/lib/markdown';
 
 export interface ToolbarActions {
   onHighlight(color: ColorKey): void;
+  onAddColor(hex: string): void;
 }
 
 export interface NoteEditorOptions {
@@ -93,6 +94,22 @@ const SHADOW_CSS = `
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 0.5px 2px rgba(0, 0, 0, 0.25);
 }
+.swatch[data-shortcut=""]::after { display: none; }
+
+.add-color {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1.5px dashed rgba(120, 120, 128, 0.55);
+  border-radius: 50%;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+  font: 600 14px/1 inherit;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+.add-color:hover { transform: scale(1.12); border-color: #0a84ff; color: #0a84ff; }
 
 .note-card {
   width: 300px;
@@ -198,10 +215,16 @@ export class LocusUI {
   private readonly shadow: ShadowRoot;
   private readonly toolbar: HTMLDivElement;
   private readonly noteCard: HTMLDivElement;
+  private readonly colorInput: HTMLInputElement;
+  private palette: PaletteEntry[] = [];
+  private customColors: PaletteEntry[] = [];
+  private lastAnchor: DOMRect | null = null;
+  private lastPlacement: 'below' | 'above' = 'below';
+  private lastColorShown: ColorKey = 'yellow';
 
   constructor(
     private readonly doc: Document,
-    actions: ToolbarActions,
+    private readonly actions: ToolbarActions,
   ) {
     this.host = doc.createElement('div');
     this.host.id = LOCUS_HOST_ID;
@@ -213,17 +236,15 @@ export class LocusUI {
     this.toolbar = doc.createElement('div');
     this.toolbar.className = 'glass toolbar hidden';
     this.toolbar.setAttribute('data-locus-toolbar', '');
-    COLOR_KEYS.forEach((key, i) => {
-      const swatch = doc.createElement('button');
-      swatch.className = 'swatch';
-      swatch.dataset['color'] = key;
-      swatch.dataset['shortcut'] = String(i + 1);
-      swatch.title = `${COLORS[key].label} — press ${i + 1}`;
-      swatch.style.setProperty('--c', COLORS[key].swatch);
-      swatch.addEventListener('click', () => actions.onHighlight(key));
-      this.toolbar.appendChild(swatch);
-    });
     this.shadow.appendChild(this.toolbar);
+
+    // Hidden native color picker backing the "+" orb.
+    this.colorInput = doc.createElement('input');
+    this.colorInput.type = 'color';
+    this.colorInput.value = '#8e6fe8';
+    this.colorInput.style.cssText = 'position:fixed;width:0;height:0;opacity:0;pointer-events:none;';
+    this.colorInput.addEventListener('input', () => this.actions.onAddColor(this.colorInput.value));
+    this.shadow.appendChild(this.colorInput);
 
     this.noteCard = doc.createElement('div');
     this.noteCard.className = 'glass note-card hidden';
@@ -231,6 +252,34 @@ export class LocusUI {
     this.shadow.appendChild(this.noteCard);
 
     doc.documentElement.appendChild(this.host);
+  }
+
+  /** Rebuild the toolbar swatches for the current palette (builtin + custom). */
+  setPalette(palette: PaletteEntry[]): void {
+    this.palette = palette;
+    this.customColors = palette.slice(3);
+    this.toolbar.textContent = '';
+    palette.forEach((entry, i) => {
+      const swatch = this.doc.createElement('button');
+      swatch.className = 'swatch';
+      swatch.dataset['color'] = entry.key;
+      swatch.dataset['shortcut'] = i < 9 ? String(i + 1) : '';
+      swatch.title = i < 9 ? `${entry.label} — press ${i + 1}` : entry.label;
+      swatch.style.setProperty('--c', entry.swatch);
+      swatch.addEventListener('click', () => this.actions.onHighlight(entry.key));
+      this.toolbar.appendChild(swatch);
+    });
+    const add = this.doc.createElement('button');
+    add.className = 'add-color';
+    add.textContent = '+';
+    add.title = 'Add a custom color';
+    add.setAttribute('data-locus-add-color', '');
+    add.addEventListener('click', () => this.colorInput.click());
+    this.toolbar.appendChild(add);
+    // Keep the toolbar in place when the palette changes while it is open.
+    if (this.isToolbarVisible() && this.lastAnchor) {
+      this.showToolbar(this.lastAnchor, this.lastColorShown, this.lastPlacement);
+    }
   }
 
   containsEvent(event: Event): boolean {
@@ -241,7 +290,10 @@ export class LocusUI {
     return !this.toolbar.classList.contains('hidden');
   }
 
-  showToolbar(anchor: DOMRect, lastColor: ColorKey): void {
+  showToolbar(anchor: DOMRect, lastColor: ColorKey, placement: 'below' | 'above' = 'below'): void {
+    this.lastAnchor = anchor;
+    this.lastPlacement = placement;
+    this.lastColorShown = lastColor;
     for (const swatch of this.toolbar.querySelectorAll<HTMLButtonElement>('.swatch')) {
       swatch.dataset['last'] = swatch.dataset['color'] === lastColor ? 'true' : 'false';
     }
@@ -251,8 +303,10 @@ export class LocusUI {
     const height = this.toolbar.offsetHeight;
     const maxLeft = (view?.innerWidth ?? 0) - width - 8;
     const maxTop = (view?.innerHeight ?? 0) - height - 8;
+    const top = placement === 'below' ? anchor.bottom + 10 : anchor.top - height - 10;
+    this.toolbar.dataset['placement'] = placement;
     this.toolbar.style.left = `${clamp(anchor.left + anchor.width / 2 - width / 2, 8, maxLeft)}px`;
-    this.toolbar.style.top = `${clamp(anchor.bottom + 10, 8, maxTop)}px`;
+    this.toolbar.style.top = `${clamp(top, 8, maxTop)}px`;
   }
 
   hideToolbar(): void {
@@ -267,7 +321,7 @@ export class LocusUI {
   openNoteEditor(options: NoteEditorOptions): void {
     const { doc } = this;
     this.noteCard.textContent = '';
-    this.noteCard.style.setProperty('--c', COLORS[options.color].swatch);
+    this.noteCard.style.setProperty('--c', specFor(options.color, this.customColors).swatch);
 
     const head = doc.createElement('div');
     head.className = 'note-head';
@@ -278,7 +332,8 @@ export class LocusUI {
     head.append(dot, title);
 
     const textarea = doc.createElement('textarea');
-    textarea.placeholder = 'Write a note… Markdown supported';
+    textarea.placeholder = 'Write a note… Markdown · Enter to save';
+    textarea.title = 'Enter: save · Shift+Enter: newline · Delete (empty) or ⌘Delete: remove highlight';
     textarea.value = options.initial;
     const preview = doc.createElement('div');
     preview.className = 'note-preview';
@@ -289,8 +344,25 @@ export class LocusUI {
     renderPreview();
     textarea.addEventListener('input', renderPreview);
     textarea.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape') this.closeNoteEditor();
-      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') save();
+      const removeHighlight = () => {
+        this.closeNoteEditor();
+        options.onDelete();
+      };
+      if (event.key === 'Escape') {
+        this.closeNoteEditor();
+      } else if (event.key === 'Enter' && !event.shiftKey) {
+        // Enter confirms the note; Shift+Enter inserts a newline.
+        event.preventDefault();
+        save();
+      } else if (
+        (event.key === 'Backspace' || event.key === 'Delete') &&
+        (event.metaKey || event.ctrlKey || textarea.value === '')
+      ) {
+        // Delete removes the highlight when the note is empty; ⌘/Ctrl+Delete
+        // removes it regardless of note content.
+        event.preventDefault();
+        removeHighlight();
+      }
       event.stopPropagation();
     });
 
