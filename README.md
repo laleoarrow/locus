@@ -59,6 +59,14 @@ The e2e build pre-grants `http://localhost/*` only so Playwright can bypass
 the (un-automatable) native permission prompt; production builds request no
 host access at install.
 
+## Download
+
+Grab the latest packaged build from the
+[Releases page](https://github.com/laleoarrow/locus/releases) —
+`locus-x.y.z-edge.zip` for Microsoft Edge, `locus-x.y.z-chrome.zip` for
+Chrome. Unzip it, then load the folder as an unpacked extension (steps
+below). To build from source instead:
+
 ## Installing in Edge (or Chrome)
 
 1. `pnpm build:edge` (or `pnpm build` for Chrome). `pnpm zip:edge` also
