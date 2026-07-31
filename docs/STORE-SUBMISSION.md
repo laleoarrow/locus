@@ -203,3 +203,15 @@ statement:
 - **One-off migration:** installing from the store creates a new extension ID,
   so its database starts empty. Before switching, export a backup from the side
   panel (Backup → Export) and import it after installing from the store.
+
+## 7. Current submission status
+
+- 2026-07-31: v0.7.0 is published as GitHub Latest and the final keyless Edge
+  upload package is ready at
+  `~/Desktop/locus-store-upload/1-PACKAGE-edge-上传这个.zip` (SHA-256
+  `909b832f9886e72976b5a4b717c261c6253e53ec5b94da4c379281c72329e641`).
+- Microsoft Partner Center is still at developer **Email Verification — In
+  Progress (step 2 of 4)**, so no Edge listing has been submitted and there is
+  no store review date yet. The final Submit/Publish action remains with the
+  user.
+- Chrome Web Store submission is paused by the user.

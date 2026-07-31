@@ -9,7 +9,7 @@
 把浏览器扩展 **Locus / 文迹** 提交到 **Microsoft Edge Add-ons** 和 **Chrome Web Store**。
 上架的唯一目的是让用户获得**自动更新**——sideload（开发人员模式加载）的扩展浏览器永远不会自动更新，上架后才会。
 
-仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（v0.7.0 发布候选；发布前先核对 git 状态）
+仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（v0.7.0 已发布；继续前先核对 git 状态）
 
 ## 项目背景（够用即止）
 
@@ -19,7 +19,8 @@ Locus 是一个 Manifest V3 扩展（WXT + TypeScript + React + Dexie），功�
 
 ## 当前进度（从这里继续）
 
-- ⏳ v0.7.0 发布候选已通过全部门槛；确认 GitHub Latest 已切到 v0.7.0 后再继续商店表单
+- ✅ v0.7.0 已发布为 GitHub Latest：<https://github.com/laleoarrow/locus/releases/tag/v0.7.0>
+- ✅ 本机 Edge 已在固定 ID `dfmekdplmdbjbefchginloeehjonjlan` 原位 Reload 到 v0.7.0；Library 仍显示全部 22 条现有批注
 - ✅ v0.7.0 Edge keyless 上架包已验证并同步到桌面上传目录（SHA-256 `909b832f9886e72976b5a4b717c261c6253e53ec5b94da4c379281c72329e641`）
 - ✅ 素材已生成并归置到 `~/Desktop/locus-store-upload/`（按提交顺序编号）
 - ✅ 第 5 张 Library 截图已按 v0.7.0 的紧凑卡片、批量改色入口与站点族界面重新生成
