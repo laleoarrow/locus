@@ -19,7 +19,7 @@ This file is the coordination board for concurrent work in this repository.
 | Import PageNote backup ZIP | Codex `/root` | done | `src/domain/pagenote.ts` (new), `tests/pagenote.test.ts` (new), `e2e/pagenote.spec.ts` (new), `src/entrypoints/sidepanel/App.tsx`, `package.json`, `pnpm-lock.yaml`, `todo.md` | Backup → Import now accepts PageNote ZIP; preserves URLs, quotes, inline/linked notes, colors, timestamps, and tombstones. Re-import is idempotent. Standalone/global notes are reported but not imported because Locus has no unanchored/global note model. Checks: typecheck, 76 unit, 24 E2E, Chrome + Edge builds. No highlight-panel placement file was touched. |
 | Prepare v0.4.1 Edge store candidate | Codex `/root` | done | `~/Desktop/locus-store-upload/1-PACKAGE-edge-上传这个.zip`, `todo.md` | Superseded development-mode candidates were removed. The current package is a verified production MV3 build from `f8f18c7`: version 0.4.1, no `key`, no React development runtime or local path, CRC valid, SHA-256 `e2a2f61658ac7a365b0e219b06c12e1de46afe8e3e075a43d026525e1a92e11f`. |
 | Release v0.4.1 and clean obsolete local packages | Codex `/root` | done | `todo.md`, `package.json`, `wxt.config.ts`, `scripts/verify-store-build.mjs` (new), `scripts/store-fields.mjs`, `docs/PRIVACY.md`, `docs/STORE-SUBMISSION.md`, `docs/HANDOFF-STORE-SUBMISSION.md`, `docs/ACCEPTANCE-TEST-PLAN.md`, Git refs/remote release, `.output/*` except active `.output/edge-mv3`, `~/Desktop/locus-store-upload/1-PACKAGE-chrome-上传这个.zip`, `~/Desktop/locus-store-upload/3-PROMO-440x280-仅Chrome需要.png` | GitHub v0.4.1 is published and independently verified. Final checks: typecheck, 76 unit, 24 E2E, Chrome + Edge production builds, both store ZIP verifiers, legacy `--mode store` rejection. Edge has exactly one enabled Locus v0.4.1 at fixed ID `dfmekdplmdbjbefchginloeehjonjlan`; Chrome profiles have none. Old/reproducible packages and Chrome-only upload assets were permanently removed; only active `.output/edge-mv3` and the six Edge submission files remain. |
-| Annotation Library (cross-site overview page) | Claude (main line) | active | `src/entrypoints/library/**` (new), `src/domain/library.ts` (new), `src/db/library.ts` (new), `src/db/schema.ts` (v3: `anchorStates` table), `src/db/repo.ts` (read-only additions), `src/messaging/protocol.ts` (`library:reveal`), `src/entrypoints/background.ts` (reveal handler + state recording), `src/entrypoints/content.ts` (report anchor state), `src/entrypoints/popup/App.tsx` (entry button), `tests/library.test.ts` (new), `e2e/library.spec.ts` (new), `docs/superpowers/specs/2026-07-31-annotation-library-design.md` (new) | Next major feature, approved by the user. Standalone full-page tab listing every annotation across all sites, with three switchable groupings (page / site / timeline), search, filters, jump-to-source, inline note edit, delete and restore. **I am NOT touching `src/entrypoints/sidepanel/App.tsx`** beyond possibly one link — will claim it separately here first if that turns out to be needed. Design doc committed before implementation. |
+| Annotation Library (cross-site overview page) | Claude (main line) | done | `src/entrypoints/library/**` (new), `src/domain/library.ts` (new), `src/db/library.ts` (new), `src/db/schema.ts` (v3: `anchorStates` table), `src/db/repo.ts` (read-only additions), `src/messaging/protocol.ts` (`library:reveal`), `src/entrypoints/background.ts` (reveal handler + state recording), `src/entrypoints/content.ts` (report anchor state), `src/entrypoints/popup/App.tsx` (entry button), `tests/library.test.ts` (new), `e2e/library.spec.ts` (new), `docs/superpowers/specs/2026-07-31-annotation-library-design.md` (new) | Next major feature, approved by the user. Standalone full-page tab listing every annotation across all sites, with three switchable groupings (page / site / timeline), search, filters, jump-to-source, inline note edit, delete and restore. **I am NOT touching `src/entrypoints/sidepanel/App.tsx`** beyond possibly one link — will claim it separately here first if that turns out to be needed. Design doc committed before implementation. **Done and released as v0.5.0.** Checks: typecheck, 98 unit, 29 e2e (5 new: E32–E36), Chrome + Edge builds, manifest parity. Schema is now **v3** (`anchorStates`, additive; excluded from backup export and pinned by U35). `sidepanel/App.tsx` was never touched. Files released. |
 
 
 ## Shared context (read before editing)
@@ -29,8 +29,8 @@ server, which the Playwright config starts on port 8137.
 
 ```bash
 pnpm typecheck                          # TS strict
-pnpm test                               # Vitest, currently 76
-pnpm build:e2e && npx playwright test   # Playwright, currently 24
+pnpm test                               # Vitest, currently 98
+pnpm build:e2e && npx playwright test   # Playwright, currently 29
 pnpm build && pnpm build:edge           # Chrome + Edge from one source
 ```
 
@@ -46,9 +46,9 @@ pnpm build && pnpm build:edge           # Chrome + Edge from one source
   real downloaded file).
 - Chrome and Edge build from the same source; manifests differ only in version.
 
-**Versioning:** `v0.4.1` is **released** (both work streams landed together, as
-planned). `package.json` stays at `0.4.1` until the next change; please do not
-bump it — the main line cuts releases.
+**Versioning:** `v0.5.0` is **released** (annotation library); `v0.4.1` before
+it. `package.json` sits at `0.5.0` until the next change — please do not bump
+it, the main line cuts releases.
 
 ## Messages
 

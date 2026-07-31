@@ -16,6 +16,8 @@ Manifest V3 extension for Chrome and Microsoft Edge.
 |---|---|---|
 | ![Selection toolbar](assets/shot-toolbar.png) | ![Note editor](assets/shot-note.png) | ![Image ring](assets/shot-ring.png) |
 
+![The annotation library](assets/shot-library.png)
+
 Locus is not a reference manager. It does one thing: let you highlight and
 annotate the HTML pages you read, keep those annotations on your machine, and
 bring them back reliably — even when the page shifts under you.
@@ -111,6 +113,23 @@ build starts with an empty library. To carry your annotations across, run
 `node scripts/migrate-bridge.mjs`, reload, export a backup from the side panel,
 then `pnpm build:edge`, reload again and import it. (The script prints these
 steps.) Skip this if you have nothing worth keeping yet.
+
+## The library — everything you have annotated
+
+Click the extension icon → **All annotations →** to open a full-page view of
+every annotation across every site. Three ways to look at the same collection:
+
+| Mode | What you see |
+|---|---|
+| **By page** | One card per annotated page, listing its highlights and notes |
+| **By site** | Pages collapsed under their domain |
+| **Timeline** | Everything newest-first, split by day |
+
+Search runs over quoted text, notes and page titles, with the match marked.
+Filter by colour, site, date, **detached**, or **deleted** — deleted
+annotations were always kept, and now there is a bin to restore them from.
+Click any annotation to open its page and scroll straight to it, even if that
+tab is not open. Notes can be edited here without leaving the library.
 
 ## Sync between devices
 

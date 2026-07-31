@@ -183,6 +183,16 @@ class LocusContent {
     chrome.runtime
       .sendMessage({ type: 'anchor-state:changed', urlKey: this.urlKey })
       .catch(() => undefined);
+    // Persist what this page could and could not resolve, so the library can
+    // show detached annotations without a content script running everywhere.
+    // The background only writes rows whose state actually changed.
+    void requestBg({
+      type: 'anchor-state:report',
+      states: [...this.entries].map(([id, entry]) => ({
+        annotationId: id,
+        detached: entry.state === 'detached',
+      })),
+    }).catch(() => undefined);
   }
 
   private anchorOne(id: string, entry: Entry): boolean {

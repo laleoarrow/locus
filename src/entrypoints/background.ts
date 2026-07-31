@@ -1,4 +1,5 @@
 import { defineBackground } from 'wxt/utils/define-background';
+import { recordAnchorStates } from '@/db/library';
 import * as repo from '@/db/repo';
 import { db } from '@/db/schema';
 import { toUrlKey } from '@/domain/url';
@@ -263,7 +264,74 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
       return testConnection(await getSyncConfig());
     case 'sync:now':
       return syncNow();
+    case 'anchor-state:report': {
+      await recordAnchorStates(message.states);
+      return { ok: true };
+    }
+    case 'library:open': {
+      await openLibrary();
+      return { ok: true };
+    }
+    case 'library:reveal':
+      return revealInPage(message.url, message.annotationId);
   }
+}
+
+const LIBRARY_PAGE = 'library.html';
+
+/** Focus the library tab if it is already open, otherwise create it. */
+async function openLibrary(): Promise<void> {
+  const url = chrome.runtime.getURL(LIBRARY_PAGE);
+  const [existing] = await chrome.tabs.query({ url });
+  if (existing?.id !== undefined) {
+    await chrome.tabs.update(existing.id, { active: true });
+    if (existing.windowId !== undefined) {
+      await chrome.windows.update(existing.windowId, { focused: true });
+    }
+    return;
+  }
+  await chrome.tabs.create({ url });
+}
+
+/**
+ * Open (or focus) the page an annotation lives on and scroll to it.
+ *
+ * A freshly created tab has no content script for a moment, so the reveal
+ * cannot simply be sent: it is retried while the page boots. Failing to reach
+ * the highlight is reported rather than swallowed — the tab is still opened, so
+ * the user is not left wondering whether the click did anything.
+ */
+async function revealInPage(
+  url: string,
+  annotationId: string,
+): Promise<{ ok: boolean; revealed: boolean }> {
+  const urlKey = toUrlKey(url);
+  const tabs = await chrome.tabs.query({});
+  const match = tabs.find((tab) => tab.url && toUrlKey(tab.url) === urlKey);
+
+  let tabId: number | undefined;
+  if (match?.id !== undefined) {
+    tabId = match.id;
+    await chrome.tabs.update(tabId, { active: true });
+    if (match.windowId !== undefined) {
+      await chrome.windows.update(match.windowId, { focused: true });
+    }
+  } else {
+    const created = await chrome.tabs.create({ url, active: true });
+    tabId = created.id;
+  }
+  if (tabId === undefined) return { ok: false, revealed: false };
+
+  const reveal: TabMessage = { type: 'annotation:reveal', id: annotationId };
+  for (let attempt = 0; attempt < 20; attempt++) {
+    try {
+      await chrome.tabs.sendMessage(tabId, reveal);
+      return { ok: true, revealed: true };
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  return { ok: true, revealed: false };
 }
 
 async function broadcastForAnnotation(id: string): Promise<void> {

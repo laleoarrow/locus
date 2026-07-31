@@ -36,6 +36,15 @@ bypassed while still exercising the dynamic registration code path).
 | U24 | sync/auth | Basic auth survives non-ASCII credentials; HTTP statuses map to actionable messages |
 | U25 | placement | toolbar box centres on the selection and clamps to viewport edges on both sides |
 | U26 | placement | auto picks the clear side, the less-obstructed side when both collide, ignores non-overlapping obstacles, and respects an explicit preference |
+| U27 | library/url | origin extraction, opaque (`about:`) origins treated as unknown, host labels |
+| U28 | library/build | annotations grouped under their page with title/DOI/origin/image/detached carried; anchorless rows and empty pages dropped; empty library safe |
+| U29 | library/filter | tombstones hidden by default and shown alone in the bin; search over quote, note and title; colour, origin, detached and date filters; combinations drop emptied pages |
+| U30 | library/site | pages collapsed per origin with counts, newest first; distinct origins listed for the filter bar |
+| U31 | library/timeline | newest-first stream split into local calendar days |
+| U32 | library/search | text split around every case-insensitive match; repeats, misses and empty needles |
+| U33 | library/db | one pass returns every table the view model needs, including recorded detached state |
+| U34 | library/db | anchor state is written only when it actually changes; empty reports ignored |
+| U35 | library/db | anchor state never appears in an exported backup and survives an import |
 
 ## E2E (Playwright, loaded extension)
 
@@ -69,6 +78,11 @@ for observability without page-world coupling.
 | E23 | sync | two independent installs (separate profiles) converge in both directions through a mock WebDAV server; a deletion on one propagates and repeated syncs never resurrect it; a real export contains neither the sync username nor password |
 | E24 | sync/errors | a wrong app password surfaces an actionable message instead of failing silently |
 | E26 | placement/rivals | auto dodges a rival toolbar built the way real ones are: `pointer-events: none` wrapper, `position: absolute`, shadow host nested below `<body>`, and one that renders 250 ms late |
+| E32 | library | annotations from three pages are listed; switching to site and timeline re-groups the same data |
+| E33 | library | search matches notes and quotes with the hit marked; a miss shows the filtered-empty state; colour filter narrows and clears |
+| E34 | library | clicking an annotation opens a page that was **not** already open and scrolls to it — the path that fails silently if the reveal is fired at a fresh tab |
+| E35 | library | editing a note, deleting and restoring from the library, each reflected on the open page |
+| E36 | library | a detached annotation is badged and can be filtered to |
 | E25 | builds | production Chrome and Edge builds are loadable MV3 bundles from the same source; `pnpm zip:store*` omits the manifest key while keeping WXT in production mode, and its verifier rejects React development code or absolute local paths |
 
 ## Manual checklist (pre-release)

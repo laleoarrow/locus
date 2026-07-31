@@ -59,7 +59,13 @@ export type BgRequest =
   | { type: 'sync:status' }
   | { type: 'sync:save'; patch: Partial<SyncConfig> }
   | { type: 'sync:test' }
-  | { type: 'sync:now' };
+  | { type: 'sync:now' }
+  | {
+      type: 'anchor-state:report';
+      states: { annotationId: string; detached: boolean }[];
+    }
+  | { type: 'library:open' }
+  | { type: 'library:reveal'; url: string; annotationId: string };
 
 export interface BgResponseMap {
   'source:bootstrap': BootstrapResult;
@@ -79,6 +85,10 @@ export interface BgResponseMap {
   'sync:save': { config: SyncConfigView; state: SyncState };
   'sync:test': { ok: boolean; error: string };
   'sync:now': { result: SyncResult; state: SyncState };
+  'anchor-state:report': { ok: true };
+  'library:open': { ok: true };
+  /** `revealed` is false when the tab opened but the highlight could not be reached. */
+  'library:reveal': { ok: boolean; revealed: boolean };
 }
 
 export type BgResponseFor<T extends BgRequest> = BgResponseMap[T['type']];

@@ -288,6 +288,36 @@ Credentials live in `chrome.storage.local`, not the Dexie settings table — tha
 keeps them structurally out of export files (asserted by E23). The UI is only
 handed a view with `hasPassword: boolean`.
 
+## 6c. Annotation library
+
+A standalone extension page (`library.html`) listing every annotation across
+every site — the one place to browse, search and tidy the whole collection. It
+is a separate entrypoint rather than a side-panel mode: a library needs width,
+and `sidepanel/App.tsx` was already carrying the page list, backup and sync.
+
+- `src/domain/library.ts` is pure (no DOM, no `chrome.*`): the view model plus
+  grouping, filtering, search and sorting. The three display modes — by page, by
+  site, timeline — are three projections of one dataset, which is why supporting
+  all three costs almost nothing.
+- `src/db/library.ts` loads the whole library in one pass. Cross-dimension
+  filtering (site × colour × time × keyword) does not map onto IndexedDB's
+  single-index model, so a paged version would still finish in memory. The scale
+  ceiling and its remedy are recorded in the design doc.
+- The page reads through `liveQuery`, so a sync pull, a backup import or an edit
+  in the side panel is reflected without a refresh. **Every mutation still goes
+  through the existing background messages**, so no second write path exists to
+  bypass the sync and tombstone invariants.
+- Deleted annotations are reachable behind a *Deleted* filter with a Restore
+  action — the rows were always kept, there was simply no way to see them.
+- Detached state is knowledge only a running content script has, so the content
+  script reports it and the background stores it in an `anchorStates` table
+  (schema v3). It is written **only when the state changes**, and it never
+  enters a backup: `exportBackup` enumerates tables explicitly, and a unit test
+  pins that.
+- Jumping to an annotation goes through `library:reveal`, which finds or creates
+  the tab, waits for the page, then retries the reveal while the content script
+  boots. Sending straight at a fresh tab would fail silently.
+
 ## 7. Source layout
 
 ```

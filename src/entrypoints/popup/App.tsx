@@ -51,6 +51,11 @@ export function App() {
     if (result) setPrefs(result.prefs);
   };
 
+  const openLibrary = async () => {
+    await requestBg({ type: 'library:open' });
+    window.close();
+  };
+
   const openSidePanel = async () => {
     if (tab?.tabId) {
       await chrome.sidePanel.open({ tabId: tab.tabId });
@@ -80,9 +85,17 @@ export function App() {
           <button className="action" onClick={() => void openSidePanel()}>
             Open annotation panel
           </button>
+          <button className="action" data-action="open-library" onClick={() => void openLibrary()}>
+            All annotations →
+          </button>
         </>
       ) : (
-        <p className="hint">This page cannot be annotated.</p>
+        <>
+          <p className="hint">This page cannot be annotated.</p>
+          <button className="action" data-action="open-library" onClick={() => void openLibrary()}>
+            All annotations →
+          </button>
+        </>
       )}
       <p className="version">
         v{update?.current ?? chrome.runtime.getManifest().version}
