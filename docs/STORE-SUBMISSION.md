@@ -10,13 +10,14 @@ account. Everything up to the upload is prepared here.
 ## 1. Build the packages
 
 ```bash
-pnpm zip:store        # → .output/locus-<version>-chrome.zip  (Chrome Web Store)
-pnpm zip:store:edge   # → .output/locus-<version>-edge.zip    (Edge Add-ons)
+pnpm zip:store        # → .output/locus-<version>-chrome-store.zip  (Chrome Web Store)
+pnpm zip:store:edge   # → .output/locus-<version>-edge-store.zip    (Edge Add-ons)
 ```
 
-`--mode store` deliberately omits the manifest `key`: the stores assign and
-manage the extension ID themselves. Do **not** upload the sideload zips from
-the GitHub release — those carry a pinned key.
+The store scripts keep WXT in production mode and use a separate build flag to
+omit the manifest `key`: the stores assign and manage the extension ID
+themselves. They also verify the ZIP before returning successfully. Do **not**
+upload the sideload zips from the GitHub release — those carry a pinned key.
 
 ## 2. Assets (already generated in `assets/`)
 
@@ -159,10 +160,10 @@ executed at runtime.
 statement:
 
 > Locus has no backend and no account system. Annotations are stored in the
-> browser's local IndexedDB. Page content never leaves the device. The optional
-> WebDAV sync sends the user's own annotations to a server the user configures
-> and controls; the optional update check requests public release metadata from
-> the GitHub API and sends no user data. Both are off unless enabled.
+> browser's local IndexedDB. Page content never leaves the device. WebDAV sync
+> is off until the user configures a server and enables it. Update checking is
+> enabled by default and requests only public release metadata from the GitHub
+> API; it sends no user data and can be switched off at any time.
 
 **Privacy policy URL:** `https://github.com/laleoarrow/locus/blob/main/docs/PRIVACY.md`
 
@@ -170,14 +171,14 @@ statement:
 
 **Edge Add-ons** (free, no registration fee)
 1. Sign in at <https://partner.microsoft.com/dashboard/microsoftedge/overview>.
-2. *Create new extension* → upload `locus-<version>-edge.zip`.
+2. *Create new extension* → upload `locus-<version>-edge-store.zip`.
 3. Fill in listing copy (§3), upload the 300×300 logo and the four screenshots.
 4. Availability: all markets. Answer the privacy questions with §4.
 5. Submit. First review is typically a few days to about two weeks.
 
 **Chrome Web Store** (one-time US$5 developer registration)
 1. Sign in at <https://chrome.google.com/webstore/devconsole>, pay the one-time fee if this is a first submission.
-2. *New item* → upload `locus-<version>-chrome.zip`.
+2. *New item* → upload `locus-<version>-chrome-store.zip`.
 3. Fill in listing copy (§3), upload the 440×280 promo tile and screenshots.
 4. Complete *Privacy practices* using §4, and set the privacy policy URL.
 5. Submit for review (usually a few days).

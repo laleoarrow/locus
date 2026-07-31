@@ -21,7 +21,7 @@ saved locally so the highlight can be found again after the page changes).
 advertising or tracking of any kind, and no identifier of you or your device is
 created or transmitted.
 
-## The only two network features, both optional and off by default
+## The only two network features, both optional and user-controlled
 
 **WebDAV sync.** If you enter WebDAV credentials, Locus uploads and downloads a
 single JSON file containing your annotations, to and from the server *you*
@@ -32,12 +32,13 @@ browser's local extension storage, are sent only to the server you configured,
 and are deliberately excluded from exported backup files. Sync stops entirely
 when you turn it off.
 
-**Update check.** If enabled, Locus periodically requests public release
-information from the GitHub API (`api.github.com`) to tell you when a newer
-version is available. This request contains no information about you, your
-browsing, or your annotations. GitHub will see the request as it would any
-anonymous web request; see GitHub's privacy statement for their practices. This
-can be switched off in the side panel.
+**Update check.** Locus enables update checking by default so sideloaded users
+can learn when a newer version is available. It periodically requests public
+release information from the GitHub API (`api.github.com`). This request
+contains no information about you, your browsing, or your annotations. GitHub
+will see the request as it would any anonymous web request; see GitHub's privacy
+statement for their practices. Update checking can be switched off at any time
+in the side panel.
 
 ## Data you export
 

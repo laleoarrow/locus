@@ -69,7 +69,7 @@ for observability without page-world coupling.
 | E23 | sync | two independent installs (separate profiles) converge in both directions through a mock WebDAV server; a deletion on one propagates and repeated syncs never resurrect it; a real export contains neither the sync username nor password |
 | E24 | sync/errors | a wrong app password surfaces an actionable message instead of failing silently |
 | E26 | placement/rivals | auto dodges a rival toolbar built the way real ones are: `pointer-events: none` wrapper, `position: absolute`, shadow host nested below `<body>`, and one that renders 250 ms late |
-| E25 | builds | `wxt build -b chrome` and `-b edge` both produce a loadable MV3 bundle from the same source; `--mode store` omits the manifest key while sideload builds keep it |
+| E25 | builds | production Chrome and Edge builds are loadable MV3 bundles from the same source; `pnpm zip:store*` omits the manifest key while keeping WXT in production mode, and its verifier rejects React development code or absolute local paths |
 
 ## Manual checklist (pre-release)
 

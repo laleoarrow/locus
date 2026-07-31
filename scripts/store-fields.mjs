@@ -71,13 +71,13 @@ HOW TO TEST
 ABOUT THE BROAD HOST PERMISSION
 Annotation has to work on whatever the user chooses to read, so the extension requests http://*/* and https://*/*. Page text is read only to locate a highlight and is never transmitted. Any site can be disabled individually, and disabled sites are left untouched.
 
-NETWORK ACCESS (both optional, both off unless the user enables them)
+NETWORK ACCESS (both optional and user-controlled)
 - WebDAV sync: uploads/downloads one JSON file of the user's own annotations to a WebDAV server the user configures. No default server exists.
-- Update check: a GET to api.github.com for the latest release tag, so the popup can say a newer version exists. Sends no user data.
+- Update check: enabled by default so sideloaded users can learn about new versions; sends a GET to api.github.com for the latest release tag. Sends no user data and can be switched off at any time.
 
 No remote code is loaded or executed; everything is bundled in the package.`;
 
-const DATA_STATEMENT = `Locus has no backend and no account system. Annotations are stored in the browser's local IndexedDB. Page content never leaves the device. The optional WebDAV sync sends the user's own annotations to a server the user configures and controls; the optional update check requests public release metadata from the GitHub API and sends no user data. Both are off unless enabled.`;
+const DATA_STATEMENT = `Locus has no backend and no account system. Annotations are stored in the browser's local IndexedDB. Page content never leaves the device. WebDAV sync is off until the user configures a server and enables it. Update checking is enabled by default and requests only public release metadata from the GitHub API; it sends no user data and can be switched off at any time.`;
 
 export const FIELDS = [
   // ── Listing basics ──

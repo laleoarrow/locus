@@ -18,10 +18,10 @@
     "postinstall": "wxt prepare",
     "zip": "wxt zip -b chrome",
     "zip:edge": "wxt zip -b edge",
-    "build:store": "wxt build -b chrome --mode store",
-    "build:store:edge": "wxt build -b edge --mode store",
-    "zip:store": "wxt zip -b chrome --mode store",
-    "zip:store:edge": "wxt zip -b edge --mode store",
+    "build:store": "NODE_ENV=production LOCUS_STORE_BUILD=1 wxt build -b chrome --mode production",
+    "build:store:edge": "NODE_ENV=production LOCUS_STORE_BUILD=1 wxt build -b edge --mode production",
+    "zip:store": "NODE_ENV=production LOCUS_STORE_BUILD=1 wxt zip -b chrome --mode production && node scripts/verify-store-build.mjs chrome",
+    "zip:store:edge": "NODE_ENV=production LOCUS_STORE_BUILD=1 wxt zip -b edge --mode production && node scripts/verify-store-build.mjs edge",
     "migrate:bridge": "node scripts/migrate-bridge.mjs"
   },
   "dependencies": {

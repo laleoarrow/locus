@@ -19,12 +19,12 @@ Locus 是一个 Manifest V3 扩展（WXT + TypeScript + React + Dexie），功�
 
 ## 当前进度（从这里继续）
 
-- ✅ 上架用的包已构建：`.output/locus-0.4.0-edge-store.zip`、`.output/locus-0.4.0-chrome-store.zip`
+- ✅ v0.4.1 已发布到 GitHub；Edge 上架包已构建并放在桌面上传目录
 - ✅ 素材已生成并归置到 `~/Desktop/locus-store-upload/`（按提交顺序编号）
 - ✅ 中英文商店文案、权限说明、隐私问卷答案已全部撰写完毕
 - ✅ 隐私政策已上线：<https://github.com/laleoarrow/locus/blob/main/docs/PRIVACY.md>（返回 200）
-- ⏳ 用户已登录 Microsoft Partner Center，但**尚未注册 Microsoft Edge 开发者程序**——`My access` 面板是空的，只有一个蓝色 `+`。所以目前还没有可填写的扩展表单。
-- ⏳ Chrome Web Store 侧尚未开始（需要一次性 $5 开发者注册费）
+- ⏳ Microsoft Edge 开发者注册已开始，但 Partner Center 仍停在 **Step 2 of 4 — Email Verification / In Progress**。邮箱验证完成前无法继续扩展表单。
+- ⏸️ 用户明确决定暂不做 Chrome Web Store；不要支付费用或准备 Chrome 提交。
 
 ## 你要做的事
 
@@ -39,10 +39,9 @@ Locus 是一个 Manifest V3 扩展（WXT + TypeScript + React + Dexie），功�
 5. Availability 选全部市场；隐私问卷按下方说明作答。
 6. 让用户点 Submit。
 
-### 第二阶段：Chrome Web Store
+### 第二阶段：Chrome Web Store（已暂停）
 
-同样流程，包用 `1-PACKAGE-chrome-上传这个.zip`，另外需要上传 440×280 宣传图，
-并且 Chrome 会**逐个权限**要求填写用途说明（文案已备好，共 6 项 + remote code 一项）。
+用户已明确决定暂不提交 Chrome。只有用户以后重新提出时，才重新构建 Chrome store 包并恢复此流程。
 
 ## 文案与素材
 
@@ -68,10 +67,8 @@ node scripts/store-copy.mjs next            # 复制下一项
 | 文件 | 用途 |
 |---|---|
 | `1-PACKAGE-edge-上传这个.zip` | Edge 扩展包 |
-| `1-PACKAGE-chrome-上传这个.zip` | Chrome 扩展包 |
 | `2-LOGO-300x300.png` | Edge 商店 logo |
-| `3-PROMO-440x280-仅Chrome需要.png` | Chrome 小宣传图 |
-| `4-截图1~4-*.png` | 4 张 1280×800 截图，两个商店都要 |
+| `4-截图1~4-*.png` | 4 张 1280×800 Edge 截图 |
 
 素材需要重新生成时：
 
@@ -91,8 +88,7 @@ pnpm build:e2e && node scripts/store-shots.mjs   # 重截 4 张截图
 
 ## 已知坑（务必注意）
 
-1. **必须用 `-store` 结尾的包**。GitHub Release 里的 `locus-0.4.0-edge.zip` / `-chrome.zip` 是 sideload 包，manifest 里带 `key` 字段（用来固定 sideload 的扩展 ID）。商店会自己分配 ID，带 `key` 会冲突。
-   `--mode store` 构建会自动去掉该字段：`pnpm zip:store` / `pnpm zip:store:edge`。
+1. **真正的约束是商店包的 manifest 不能含 `key`，不是桌面文件名是否带 `-store`。** GitHub Release 里的 `locus-0.4.1-edge.zip` / `-chrome.zip` 是 sideload 包，manifest 带固定 ID 用的 `key`，不能上传商店。桌面的 `1-PACKAGE-edge-上传这个.zip` 已由 `pnpm zip:store:edge` 生成并验证为 v0.4.1、无 `key`。
 2. **Edge 审核最常卡在全站权限**（`host_permissions: http://*/*, https://*/*`）。
    字段清单第 9 项「Notes for certification」专门写了：测试步骤、为何必须全站权限（用户读什么文章无法预先枚举）、页面文字仅用于定位高亮且从不外传、用户可逐站禁用。**这一项不要省略或简写。**
 3. **数据收集问卷全部声明"不收集"**。配套声明文本见字段 `data-statement`。两个可选联网功能要如实说明：WebDAV 同步发到用户自己配置的服务器；更新检查只请求 GitHub 公开的 release 信息，不含任何用户数据。
