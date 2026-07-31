@@ -6,7 +6,7 @@ import { markdownToHtml } from '@/lib/markdown';
 import { requestBg } from '@/messaging/protocol';
 
 /** Text with the current search term marked. */
-function Marked({ text, query }: { text: string; query: string }) {
+export function Marked({ text, query }: { text: string; query: string }) {
   return (
     <>
       {highlightParts(text, query).map((part, index) =>

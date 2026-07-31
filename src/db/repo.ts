@@ -6,6 +6,7 @@ import {
   type ImportSummary,
 } from '@/domain/backup';
 import { DEFAULT_COLOR } from '@/domain/colors';
+import type { GroupMode } from '@/domain/library';
 import type {
   AnchorPayload,
   AnchorRecord,
@@ -359,9 +360,24 @@ const DISABLED_SITES_KEY = 'disabledSites';
 const DETECT_DOI_KEY = 'detectDoi';
 const CHECK_UPDATES_KEY = 'checkUpdates';
 const UPDATE_INFO_KEY = 'updateInfo';
+const LIBRARY_MODE_KEY = 'libraryGroupMode';
 
 function isPlacement(value: unknown): value is ToolbarPlacement {
   return value === 'below' || value === 'above' || value === 'auto';
+}
+
+function isGroupMode(value: unknown): value is GroupMode {
+  return value === 'page' || value === 'site' || value === 'timeline';
+}
+
+/** The last grouping selected on the full-page Library. */
+export async function getLibraryMode(): Promise<GroupMode> {
+  const record = await db.settings.get(LIBRARY_MODE_KEY);
+  return record && isGroupMode(record.value) ? record.value : 'page';
+}
+
+export async function setLibraryMode(mode: GroupMode): Promise<void> {
+  await db.settings.put({ key: LIBRARY_MODE_KEY, value: mode });
 }
 
 export async function getPrefs(): Promise<Prefs> {

@@ -268,6 +268,10 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
       await recordAnchorStates(message.states);
       return { ok: true };
     }
+    case 'library:set-mode': {
+      await repo.setLibraryMode(message.mode);
+      return { mode: message.mode };
+    }
     case 'library:open': {
       await openLibrary();
       return { ok: true };

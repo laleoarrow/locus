@@ -30,6 +30,7 @@ upload the sideload zips from the GitHub release — those carry a pinned key.
 | Screenshot 2 | 1280×800 | `store-shot-2-note.png` | both |
 | Screenshot 3 | 1280×800 | `store-shot-3-figure.png` | both |
 | Screenshot 4 | 1280×800 | `store-shot-4-panel.png` | both |
+| Screenshot 5 | 1280×800 | `shot-library.png` | both |
 
 Regenerate screenshots after UI changes:
 
@@ -66,6 +67,8 @@ WHAT IT DOES
 • Click a highlight to write a note in Markdown, with a live preview.
 • Click a figure to ring it in colour — images are annotatable too.
 • A side panel lists every annotation on the page; click one to scroll to it.
+• Open the Library to search every annotation across sites, group by page, site
+  or timeline, edit notes, and restore deleted items.
 • Cmd/Ctrl+Z undoes your last highlight. Deletes are undoable, never silent.
 • Highlights come back after reload, and keep working when the page changes:
   each one records its text, surrounding context, character offsets and DOM
@@ -108,6 +111,7 @@ Locus / 文迹 是一个安静的网页阅读标注层。选中文字、选颜�
 • 点击高亮即可写 Markdown 笔记，带实时预览。
 • 点击插图可为图片加一圈彩色高亮环。
 • 侧边栏列出本页所有标注，点击即滚动定位并闪烁提示。
+• 打开资料库可跨网站搜索全部标注，按页面、站点或时间线分组，编辑笔记并恢复已删除项目。
 • Cmd/Ctrl+Z 撤销上一次高亮；删除可撤销，不会静默丢失。
 • 刷新后标注自动恢复，页面结构改变也能重新定位：每条标注同时记录原文、上下文、
   字符位置与 DOM 路径，按可用的线索依次恢复。若原文确实已不存在，标注会显示为
@@ -172,7 +176,7 @@ statement:
 **Edge Add-ons** (free, no registration fee)
 1. Sign in at <https://partner.microsoft.com/dashboard/microsoftedge/overview>.
 2. *Create new extension* → upload `locus-<version>-edge-store.zip`.
-3. Fill in listing copy (§3), upload the 300×300 logo and the four screenshots.
+3. Fill in listing copy (§3), upload the 300×300 logo and the five screenshots.
 4. Availability: all markets. Answer the privacy questions with §4.
 5. Submit. First review is typically a few days to about two weeks.
 

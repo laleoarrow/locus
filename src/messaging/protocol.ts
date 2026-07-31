@@ -1,4 +1,5 @@
 import type { AltVersion } from '@/db/repo';
+import type { GroupMode } from '@/domain/library';
 import type { SyncConfig, SyncState } from '@/domain/sync';
 import type { SyncResult } from '@/sync/engine';
 import type { SyncConfigView } from '@/sync/store';
@@ -64,6 +65,7 @@ export type BgRequest =
       type: 'anchor-state:report';
       states: { annotationId: string; detached: boolean }[];
     }
+  | { type: 'library:set-mode'; mode: GroupMode }
   | { type: 'library:open' }
   | { type: 'library:reveal'; url: string; annotationId: string };
 
@@ -86,6 +88,7 @@ export interface BgResponseMap {
   'sync:test': { ok: boolean; error: string };
   'sync:now': { result: SyncResult; state: SyncState };
   'anchor-state:report': { ok: true };
+  'library:set-mode': { mode: GroupMode };
   'library:open': { ok: true };
   /** `revealed` is false when the tab opened but the highlight could not be reached. */
   'library:reveal': { ok: boolean; revealed: boolean };

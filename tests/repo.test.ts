@@ -93,6 +93,15 @@ describe('repo (U8–U10)', () => {
     expect((await repo.getPrefs()).disabledSites).toEqual([]);
   });
 
+  it('persists the Library group mode and rejects an invalid stored value (U36)', async () => {
+    expect(await repo.getLibraryMode()).toBe('page');
+    await repo.setLibraryMode('timeline');
+    expect(await repo.getLibraryMode()).toBe('timeline');
+
+    await db.settings.put({ key: 'libraryGroupMode', value: 'columns' });
+    expect(await repo.getLibraryMode()).toBe('page');
+  });
+
   it('records DOIs and finds annotated alternate versions (U18)', async () => {
     const a = await repo.ensureSource('https://publisher.example/paper', 'Paper (publisher)');
     const b = await repo.ensureSource('https://mirror.example/pmc/1', 'Paper (mirror)');

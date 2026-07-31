@@ -14,6 +14,7 @@ WHAT IT DOES
 • Click a highlight to write a note in Markdown, with a live preview.
 • Click a figure to ring it in colour — images are annotatable too.
 • A side panel lists every annotation on the page; click one to scroll to it.
+• Open the Library to search every annotation across sites, group by page, site or timeline, edit notes, and restore deleted items.
 • Cmd/Ctrl+Z undoes your last highlight. Deletes are undoable, never silent.
 • Highlights come back after reload, and keep working when the page changes: each one records its text, surrounding context, character offsets and DOM path, and is re-located by whichever still matches. If a passage is genuinely gone, the annotation is shown as "detached" rather than quietly discarded.
 • Same paper on a different site? Locus reads the page's DOI and offers to jump to the version you already annotated — publisher page, PMC mirror, preprint.
@@ -39,6 +40,7 @@ const DESCRIPTION_ZH = `Locus / 文迹 是一个安静的网页阅读标注层�
 • 点击高亮即可写 Markdown 笔记，带实时预览。
 • 点击插图可为图片加一圈彩色高亮环。
 • 侧边栏列出本页所有标注，点击即滚动定位并闪烁提示。
+• 打开资料库可跨网站搜索全部标注，按页面、站点或时间线分组，编辑笔记并恢复已删除项目。
 • Cmd/Ctrl+Z 撤销上一次高亮；删除可撤销，不会静默丢失。
 • 刷新后标注自动恢复，页面结构改变也能重新定位：每条标注同时记录原文、上下文、字符位置与 DOM 路径，按可用的线索依次恢复。若原文确实已不存在，标注会显示为「detached（已脱锚）」，而不会被悄悄删掉。
 • 同一篇论文在不同网站？Locus 会读取页面 DOI，当你打开另一个版本（出版社页面、PMC 镜像、预印本）时提示跳回你标注过的那个版本。
@@ -65,8 +67,9 @@ HOW TO TEST
 3. Click the highlight you just made — a note editor opens; type Markdown and press Save (or Cmd/Ctrl+Enter).
 4. Reload the page: the highlight and note are restored.
 5. Click the extension icon, then "Open annotation panel" to see the side panel list. Clicking an entry scrolls to and flashes that highlight.
-6. Click an image on the page to ring it in colour.
-7. To disable a site: hold Cmd/Ctrl and move the pointer to the right edge of the selection toolbar; an ✕ slides out. Clicking it disables Locus for that origin. The popup has the same switch.
+6. Click the extension icon, then "All annotations" to open the Library. Search for the saved note and switch between page, site and timeline grouping.
+7. Click an image on the page to ring it in colour.
+8. To disable a site: hold Cmd/Ctrl and move the pointer to the right edge of the selection toolbar; an ✕ slides out. Clicking it disables Locus for that origin. The popup has the same switch.
 
 ABOUT THE BROAD HOST PERMISSION
 Annotation has to work on whatever the user chooses to read, so the extension requests http://*/* and https://*/*. Page text is read only to locate a highlight and is never transmitted. Any site can be disabled individually, and disabled sites are left untouched.
@@ -212,4 +215,5 @@ export const UPLOADS = [
   { step: 4, where: 'both', label: 'Screenshot 2 (note)', file: '4-截图2-笔记.png' },
   { step: 4, where: 'both', label: 'Screenshot 3 (figure ring)', file: '4-截图3-图片高亮.png' },
   { step: 4, where: 'both', label: 'Screenshot 4 (side panel)', file: '4-截图4-侧边栏.png' },
+  { step: 4, where: 'both', label: 'Screenshot 5 (Library)', file: '4-截图5-资料库.png' },
 ];

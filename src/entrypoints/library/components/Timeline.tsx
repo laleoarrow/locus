@@ -1,6 +1,6 @@
 import { siteLabel, type TimelineDay } from '@/domain/library';
 import type { CustomColor } from '@/domain/types';
-import { AnnotationRow } from './AnnotationRow';
+import { AnnotationRow, Marked } from './AnnotationRow';
 
 /** `2026-07-31` → `Friday, 31 July 2026`, or "Today" / "Yesterday". */
 function dayHeading(day: string, today: string, yesterday: string): string {
@@ -39,7 +39,9 @@ export function Timeline({
               <li key={annotation.id} className="timeline-entry">
                 <p className="timeline-source">
                   <span className="site">{siteLabel(page.origin)}</span>
-                  <span className="page-title-inline">{page.title}</span>
+                  <span className="page-title-inline">
+                    <Marked text={page.title} query={query} />
+                  </span>
                 </p>
                 <ul className="annotations">
                   <AnnotationRow

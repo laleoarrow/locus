@@ -54,8 +54,14 @@ test('E32: library lists annotations from every page and switches grouping', asy
   await expect(library.locator('.timeline-entry')).toHaveCount(3);
   await expect(library.locator('.timeline-day')).toHaveCount(1);
 
-  await library.locator('.segmented button[data-mode="page"]').click();
-  await expect(library.locator('.page-card')).toHaveCount(3);
+  // The selected projection is a preference, not a per-tab transient.
+  await library.close();
+  const reopened = await openLibrary(await context.newPage(), extensionId);
+  await expect(reopened.locator('button[data-mode="timeline"]')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(reopened.locator('.timeline-entry')).toHaveCount(3);
 });
 
 test('E33: search and filters narrow the library', async ({ context, serviceWorker, extensionId }) => {
@@ -65,11 +71,18 @@ test('E33: search and filters narrow the library', async ({ context, serviceWork
   // Search matches note text.
   await library.locator('[data-library="search"]').fill('seeded note');
   await expect(library.locator('.annotation')).toHaveCount(1);
-  await expect(library.locator('mark').first()).toBeVisible();
+  await expect(library.locator('.note.note-plain mark')).toHaveText('seeded note');
 
   // Search matches quoted text too.
   await library.locator('[data-library="search"]').fill('powerhouse');
   await expect(library.locator('.annotation')).toHaveCount(1);
+  await expect(library.locator('.annotation .quote mark')).toHaveText('powerhouse');
+
+  // Timeline keeps title-only matches visible and marks the actual hit.
+  await library.locator('[data-library="search"]').fill('repeated text');
+  await library.locator('.segmented button[data-mode="timeline"]').click();
+  await expect(library.locator('.timeline-entry')).toHaveCount(1);
+  await expect(library.locator('.page-title-inline mark')).toHaveText('repeated text');
 
   // A miss shows the filtered-empty state, not a blank page.
   await library.locator('[data-library="search"]').fill('zzz-not-present');

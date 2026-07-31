@@ -1,7 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo, useState } from 'react';
 import { loadLibrary } from '@/db/library';
-import { getPrefs } from '@/db/repo';
+import { getLibraryMode, getPrefs } from '@/db/repo';
 import { buildPalette, specFor } from '@/domain/colors';
 import {
   availableOrigins,
@@ -16,6 +16,7 @@ import {
   type LibraryFilters,
 } from '@/domain/library';
 import type { ColorKey } from '@/domain/types';
+import { requestBg } from '@/messaging/protocol';
 import { PageCard } from './components/PageCard';
 import { SiteGroup } from './components/SiteGroup';
 import { Timeline } from './components/Timeline';
@@ -43,7 +44,7 @@ export function App() {
   // edit in the side panel changes the database.
   const input = useLiveQuery(() => loadLibrary(), []);
   const prefs = useLiveQuery(() => getPrefs(), []);
-  const [mode, setMode] = useState<GroupMode>('page');
+  const mode = useLiveQuery(() => getLibraryMode(), []) ?? 'page';
   const [filters, setFilters] = useState<LibraryFilters>(EMPTY_FILTERS);
   const [fromText, setFromText] = useState('');
   const [toText, setToText] = useState('');
@@ -117,7 +118,7 @@ export function App() {
                 key={entry.key}
                 data-mode={entry.key}
                 aria-pressed={mode === entry.key}
-                onClick={() => setMode(entry.key)}
+                onClick={() => void requestBg({ type: 'library:set-mode', mode: entry.key })}
               >
                 {entry.label}
               </button>
