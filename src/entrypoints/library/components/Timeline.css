@@ -1,0 +1,246 @@
+/*
+ * Time Machine styling for the timeline projection.
+ *
+ * Kept in its own file, under a `tm-` prefix, so it adds to the library's
+ * shared stylesheet without editing it. Where a legacy rule has to be
+ * overridden, the selector is made more specific rather than relying on which
+ * stylesheet the bundler emits first.
+ */
+
+.tm-root {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 22px;
+  align-items: start;
+}
+
+/* The corridor you travel down: a spine that fades into the distance. */
+.tm-stage {
+  position: relative;
+  min-width: 0;
+  padding-left: 26px;
+}
+.tm-stage::before {
+  content: '';
+  position: absolute;
+  left: 5px;
+  top: 6px;
+  bottom: 92px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--locus-accent) 55%, transparent),
+    var(--locus-border) 38%,
+    transparent
+  );
+}
+
+/* ── Eras ─────────────────────────────────────────────────────────────── */
+
+.tm-era + .tm-era { margin-top: 26px; }
+
+.tm-era-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0 0 12px -26px;
+  padding-left: 26px;
+}
+.tm-era-label {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--locus-fg);
+}
+.tm-era-count { font-size: 11.5px; color: var(--locus-fg-muted); }
+.tm-era-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--locus-border), transparent);
+}
+
+/* ── Layers ───────────────────────────────────────────────────────────── */
+
+.timeline-day.tm-layer {
+  position: relative;
+  margin: 0 0 14px;
+  /* Recession applies to the card surface, never to the text: an older note
+     should look further away, not harder to read. */
+  --tm-inset: calc(var(--tm-depth, 0) * 14px);
+  --tm-recede: calc(var(--tm-depth, 0) * 0.72);
+  transform: translateX(var(--tm-inset)) scale(calc(1 - var(--tm-depth, 0) * 0.012));
+  transform-origin: left center;
+  transition: transform 0.25s ease;
+}
+.timeline-day.tm-layer[data-active='true'] {
+  --tm-recede: 0;
+  transform: none;
+}
+
+/* Override the shared `.timeline-day h2` rule with a more specific selector. */
+.timeline-day .tm-day-label {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--locus-fg);
+}
+.tm-when { font-size: 13.5px; }
+.tm-date,
+.tm-count {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--locus-fg-muted);
+}
+.tm-count::before { content: '· '; }
+
+/* The node where this layer meets the spine. */
+.tm-node {
+  position: absolute;
+  left: -26px;
+  top: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--locus-bg);
+  border: 2px solid var(--locus-border);
+  box-sizing: border-box;
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.timeline-day.tm-layer[data-active='true'] .tm-node {
+  border-color: var(--locus-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--locus-accent) 18%, transparent);
+}
+
+.tm-cards { gap: 8px; }
+
+.timeline-entry.tm-entry {
+  margin: 0;
+  border: 0.5px solid
+    color-mix(in srgb, var(--locus-border) calc(100% - var(--tm-recede, 0) * 55%), transparent);
+  border-radius: 12px;
+  /* The surface thins out with distance while the text on it stays solid. */
+  background: color-mix(
+    in srgb,
+    var(--locus-card) calc(100% - var(--tm-recede, 0) * 62%),
+    transparent
+  );
+  padding: 10px 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, calc(0.05 * (1 - var(--tm-recede, 0))));
+  transition: box-shadow 0.18s ease, transform 0.18s ease, background 0.25s ease,
+    border-color 0.25s ease;
+}
+.timeline-entry.tm-entry:hover {
+  transform: translateY(-1px);
+  background: var(--locus-card);
+  border-color: var(--locus-border);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.1);
+}
+.tm-entry .timeline-source { margin-bottom: 6px; }
+
+.tm-horizon {
+  display: flex;
+  gap: 8px;
+  margin: 4px 0 0 -26px;
+  padding: 22px 0 40px 26px;
+  font-size: 11.5px;
+  color: var(--locus-fg-muted);
+}
+
+/* ── The rail ─────────────────────────────────────────────────────────── */
+
+.tm-rail {
+  position: sticky;
+  top: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0 4px 8px;
+  border-left: 1px solid var(--locus-border);
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.tm-rail::-webkit-scrollbar { display: none; }
+
+.tm-rail-era { display: flex; flex-direction: column; gap: 3px; }
+.tm-rail-era-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--locus-fg-muted);
+  margin-bottom: 3px;
+  white-space: nowrap;
+}
+
+.tm-tick {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  cursor: pointer;
+  color: var(--locus-fg-muted);
+}
+.tm-tick-bar {
+  display: block;
+  /* Busier days get a longer tick, so the rail doubles as a density map. */
+  width: calc(10px + var(--tm-weight, 1) * 4px);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--locus-border);
+  transition: background 0.18s ease, width 0.18s ease;
+}
+.tm-tick-day {
+  min-width: 15px;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  opacity: 0.55;
+  transition: opacity 0.18s ease;
+}
+.tm-tick:hover .tm-tick-bar,
+.tm-tick[data-active='true'] .tm-tick-bar {
+  background: var(--locus-accent);
+}
+.tm-tick:hover .tm-tick-day,
+.tm-tick[data-active='true'] .tm-tick-day {
+  opacity: 1;
+}
+.tm-tick[data-active='true'] { color: var(--locus-fg); }
+.tm-tick:focus-visible { outline: 2px solid var(--locus-accent); outline-offset: 3px; }
+
+/* ── Arrival ──────────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: no-preference) {
+  .timeline-day.tm-layer {
+    animation: tm-arrive 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+    animation-delay: calc(var(--tm-depth, 0) * 0.18s);
+  }
+  @keyframes tm-arrive {
+    from {
+      opacity: 0;
+      transform: translateX(26px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(var(--tm-inset)) scale(calc(1 - var(--tm-depth, 0) * 0.012));
+    }
+  }
+}
+
+/* Narrow windows: the rail costs more than it gives. */
+@media (max-width: 720px) {
+  .tm-root { grid-template-columns: minmax(0, 1fr); }
+  .tm-rail { display: none; }
+}

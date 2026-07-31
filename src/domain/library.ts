@@ -319,3 +319,107 @@ export function highlightParts(text: string, needle: string): { text: string; hi
   if (index < text.length) parts.push({ text: text.slice(index), hit: false });
   return parts.length > 0 ? parts : [{ text, hit: false }];
 }
+
+/* ── Time Machine projection ─────────────────────────────────────────────
+ *
+ * The timeline is not just "records in order": it is meant to read as
+ * travelling back through a history. That needs structure the flat list does
+ * not carry — how far back a day sits (which drives the receding depth), and
+ * where one era ends and the next begins (the markers you pass on the way).
+ * All of it is derived here, from the day keys alone, so it stays pure and
+ * testable; `todayKey` is a parameter rather than a call to the clock.
+ */
+
+/** Parse a `YYYY-MM-DD` key back to a local Date at midnight. */
+function parseDayKey(day: string): Date {
+  const [year, month, date] = day.split('-').map(Number);
+  return new Date(year ?? 1970, (month ?? 1) - 1, date ?? 1);
+}
+
+/** Whole days between two day keys; negative when `day` is in the future. */
+export function daysBetween(day: string, todayKey: string): number {
+  const MS_PER_DAY = 86_400_000;
+  const diff = parseDayKey(todayKey).getTime() - parseDayKey(day).getTime();
+  return Math.round(diff / MS_PER_DAY);
+}
+
+/** "Today", "Yesterday", "5 days ago", else a plain date. */
+export function relativeDayLabel(day: string, todayKey: string): string {
+  const ago = daysBetween(day, todayKey);
+  if (ago === 0) return 'Today';
+  if (ago === 1) return 'Yesterday';
+  if (ago > 1 && ago <= 6) return `${ago} days ago`;
+  return parseDayKey(day).toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+}
+
+/** Full date for tooltips and the tick rail. */
+export function fullDayLabel(day: string): string {
+  return parseDayKey(day).toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+/** The era a day belongs to: one calendar month. */
+export function eraKeyOf(day: string): string {
+  return day.slice(0, 7);
+}
+
+export function eraLabelOf(day: string): string {
+  return parseDayKey(day).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+
+export interface TimeMachineDay extends TimelineDay {
+  /** "Today" / "Yesterday" / "5 days ago" / "12 March". */
+  label: string;
+  fullDate: string;
+  /** Whole days back from today; 0 is today. */
+  daysAgo: number;
+  /**
+   * How far the layer recedes, 0 (nearest) to 1 (furthest). Ranked by position
+   * in the list rather than by elapsed time, so a library with one old cluster
+   * still recedes evenly instead of collapsing to two extremes.
+   */
+  depth: number;
+  count: number;
+}
+
+export interface TimeMachineEra {
+  key: string;
+  label: string;
+  days: TimeMachineDay[];
+  count: number;
+}
+
+/**
+ * Group the timeline into eras of receding days.
+ *
+ * `depth` is ranked by index, not by date distance: a reader with a burst of
+ * activity last year and nothing since should still see an even recession, not
+ * one near layer and a wall of identical far ones.
+ */
+export function buildTimeMachine(days: TimelineDay[], todayKey: string): TimeMachineEra[] {
+  const total = days.length;
+  const eras: TimeMachineEra[] = [];
+  days.forEach((day, index) => {
+    const entry: TimeMachineDay = {
+      ...day,
+      label: relativeDayLabel(day.day, todayKey),
+      fullDate: fullDayLabel(day.day),
+      daysAgo: daysBetween(day.day, todayKey),
+      depth: total <= 1 ? 0 : index / (total - 1),
+      count: day.entries.length,
+    };
+    const key = eraKeyOf(day.day);
+    const current = eras[eras.length - 1];
+    if (current && current.key === key) {
+      current.days.push(entry);
+      current.count += entry.count;
+    } else {
+      eras.push({ key, label: eraLabelOf(day.day), days: [entry], count: entry.count });
+    }
+  });
+  return eras;
+}

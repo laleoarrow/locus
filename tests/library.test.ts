@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   availableOrigins,
   buildLibrary,
+  buildTimeMachine,
+  daysBetween,
+  eraKeyOf,
+  eraLabelOf,
+  relativeDayLabel,
   countAnnotations,
   dayKey,
   EMPTY_FILTERS,
@@ -296,5 +301,75 @@ describe('highlightParts (U32)', () => {
     expect(highlightParts('aXaXa', 'x').filter((p) => p.hit)).toHaveLength(2);
     expect(highlightParts('nothing', 'zzz')).toEqual([{ text: 'nothing', hit: false }]);
     expect(highlightParts('text', '  ')).toEqual([{ text: 'text', hit: false }]);
+  });
+});
+
+describe('Time Machine projection (U36)', () => {
+  const TODAY = '2026-07-31';
+
+  /** Minimal TimelineDay: only `day` and the entry count matter here. */
+  function tlDay(day: string, count: number) {
+    return {
+      day,
+      entries: Array.from({ length: count }, (_, i) => ({
+        page: { title: `page ${i}` },
+        annotation: { id: `${day}-${i}` },
+      })),
+    } as unknown as Parameters<typeof buildTimeMachine>[0][number];
+  }
+
+  it('counts whole days back, including across months and years', () => {
+    expect(daysBetween('2026-07-31', TODAY)).toBe(0);
+    expect(daysBetween('2026-07-30', TODAY)).toBe(1);
+    expect(daysBetween('2026-06-30', TODAY)).toBe(31);
+    expect(daysBetween('2025-07-31', TODAY)).toBe(365);
+    // A future day is negative rather than silently clamped.
+    expect(daysBetween('2026-08-02', TODAY)).toBe(-2);
+  });
+
+  it('labels the recent past in words and older days by date', () => {
+    expect(relativeDayLabel('2026-07-31', TODAY)).toBe('Today');
+    expect(relativeDayLabel('2026-07-30', TODAY)).toBe('Yesterday');
+    expect(relativeDayLabel('2026-07-28', TODAY)).toBe('3 days ago');
+    expect(relativeDayLabel('2026-07-25', TODAY)).toBe('6 days ago');
+    // Beyond a week the phrasing stops helping, so it becomes a date.
+    expect(relativeDayLabel('2026-07-24', TODAY)).not.toContain('days ago');
+  });
+
+  it('groups consecutive days into one era per calendar month', () => {
+    const eras = buildTimeMachine(
+      [tlDay('2026-07-31', 2), tlDay('2026-07-19', 1), tlDay('2026-06-21', 1), tlDay('2026-04-27', 3)],
+      TODAY,
+    );
+    expect(eras.map((era) => era.key)).toEqual(['2026-07', '2026-06', '2026-04']);
+    expect(eras.map((era) => era.days.length)).toEqual([2, 1, 1]);
+    expect(eras.map((era) => era.count)).toEqual([3, 1, 3]);
+    expect(eraKeyOf('2026-04-27')).toBe('2026-04');
+    expect(eraLabelOf('2026-04-27')).toContain('2026');
+  });
+
+  it('ranks depth by position so an uneven history still recedes evenly', () => {
+    // Three days, but the last one is a year old: depth must not collapse to
+    // two extremes just because the elapsed time does.
+    const eras = buildTimeMachine(
+      [tlDay('2026-07-31', 1), tlDay('2026-07-30', 1), tlDay('2025-07-30', 1)],
+      TODAY,
+    );
+    const depths = eras.flatMap((era) => era.days).map((day) => day.depth);
+    expect(depths).toEqual([0, 0.5, 1]);
+  });
+
+  it('carries per-day counts and both labels through', () => {
+    const [era] = buildTimeMachine([tlDay('2026-07-30', 4)], TODAY);
+    const day = era?.days[0];
+    expect(day?.count).toBe(4);
+    expect(day?.daysAgo).toBe(1);
+    expect(day?.label).toBe('Yesterday');
+    expect(day?.fullDate).toContain('2026');
+  });
+
+  it('handles a single day and an empty history without dividing by zero', () => {
+    expect(buildTimeMachine([tlDay('2026-07-31', 1)], TODAY)[0]?.days[0]?.depth).toBe(0);
+    expect(buildTimeMachine([], TODAY)).toEqual([]);
   });
 });
