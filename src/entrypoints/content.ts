@@ -6,6 +6,7 @@ import { captureImageAnchor, resolveImageAnchor } from '@/domain/anchor/image';
 import { resolveAnchor } from '@/domain/anchor/resolve';
 import { buildTextIndex, LOCUS_HOST_ID, type TextIndex } from '@/domain/anchor/textIndex';
 import { extractDoi } from '@/domain/doi';
+import type { Box } from '@/domain/placement';
 import {
   buildPalette,
   colorForDigit,
@@ -24,6 +25,8 @@ import { requestBg, type AnchorStateReply, type TabMessage } from '@/messaging/p
 
 /** How long after load we keep retrying detached anchors on DOM mutations. */
 const MUTATION_WATCH_MS = 15_000;
+/** Delay before re-checking placement, to catch rivals that render late. */
+const PLACEMENT_RECHECK_MS = 350;
 const MUTATION_DEBOUNCE_MS = 300;
 
 interface Entry {
@@ -59,6 +62,7 @@ class LocusContent {
   private readonly origin = location.origin;
   /** Per-tab undo stack for Cmd/Ctrl+Z (creates and note-editor deletes). */
   private readonly undoStack: UndoAction[] = [];
+  private placementRecheck: ReturnType<typeof setTimeout> | undefined;
 
   constructor() {
     this.ui = new LocusUI(this.doc, {
@@ -282,8 +286,25 @@ class LocusContent {
   private wirePointer(): void {
     this.doc.addEventListener('mouseup', (event) => {
       if (!this.active || this.ui.containsEvent(event)) return;
+      // Link-wrapped images are handled by the click listener below so the
+      // link can be cancelled before navigation.
+      if (event.target instanceof HTMLImageElement && event.target.closest('a')) return;
       setTimeout(() => this.handlePointerUp(event), 0);
     });
+    this.doc.addEventListener(
+      'click',
+      (event) => {
+        if (!this.active || this.ui.containsEvent(event)) return;
+        const target = event.target;
+        if (!(target instanceof HTMLImageElement) || !target.closest('a')) return;
+        // Keep modified clicks available for opening the underlying link.
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.handlePointerUp(event);
+      },
+      true,
+    );
     this.doc.addEventListener('mousedown', (event) => {
       if (this.active && !this.ui.containsEvent(event)) {
         this.ui.hideToolbar();
@@ -301,8 +322,9 @@ class LocusContent {
   private handlePointerUp(event: MouseEvent): void {
     if (this.showToolbarForSelection()) return;
 
-    // Collapsed click: an existing highlight opens its note; a plain image
-    // (not wrapped in a link) offers the ring toolbar.
+    // Collapsed click: an existing highlight opens its note; an image offers
+    // the ring toolbar. Link-wrapped images reach here through the click
+    // listener, which prevents the unmodified click from navigating.
     const hitId = this.renderer.annotationAtPoint(event.clientX, event.clientY);
     if (hitId) {
       const range = this.renderer.getRange(hitId);
@@ -310,55 +332,71 @@ class LocusContent {
       return;
     }
     const target = event.target;
-    if (target instanceof HTMLImageElement && !target.closest('a')) {
+    if (target instanceof HTMLImageElement) {
       const rect = target.getBoundingClientRect();
       this.pending = { type: 'image', image: target };
-      this.ui.showToolbar(rect, this.effectiveLastColor(), this.resolvePlacement(rect));
+      this.presentToolbar(rect);
     }
   }
 
-  /** Something (likely another extension's floating UI) already renders here? */
-  private isSpotOccupied(x: number, y: number): boolean {
+  /**
+   * Boxes of other in-page floating UI (typically another extension's
+   * selection toolbar), so 'auto' placement can avoid overlapping them.
+   *
+   * Measured with getBoundingClientRect rather than probed with
+   * elementsFromPoint: rival toolbars are commonly wrapped in a
+   * `pointer-events: none` layer, which hit-testing skips entirely, and they
+   * are as often `position: absolute` as fixed.
+   */
+  private collectObstacles(): Box[] {
     const view = this.doc.defaultView;
-    if (!view) return false;
-    for (const el of this.doc.elementsFromPoint(x, y)) {
-      if (el === this.doc.documentElement || el === this.doc.body) continue;
-      if (el.id === LOCUS_HOST_ID || el.id === 'locus-ring-host') continue;
+    if (!view) return [];
+    const viewportArea = view.innerWidth * view.innerHeight;
+    const skipTags = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD']);
+    const boxes: Box[] = [];
+
+    const consider = (el: Element, depth: number): void => {
+      if (el.id === LOCUS_HOST_ID || el.id === 'locus-ring-host') return;
+      if (skipTags.has(el.tagName)) return;
       const style = view.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return;
+      const positioned =
+        style.position === 'fixed' || style.position === 'sticky' || style.position === 'absolute';
       const z = Number.parseInt(style.zIndex, 10);
-      if ((style.position === 'fixed' || style.position === 'sticky') && Number.isFinite(z) && z >= 1000) {
-        return true;
+      if (positioned && ((Number.isFinite(z) && z >= 1000) || el.shadowRoot)) {
+        const rect = el.getBoundingClientRect();
+        const area = rect.width * rect.height;
+        // Ignore full-page scrims and layout wrappers; they are not toolbars
+        // and would make every side look occupied.
+        if (rect.width > 0 && rect.height > 0 && area < viewportArea * 0.6) {
+          boxes.push(rect);
+          return;
+        }
       }
-      // Shadow hosts mounted directly under <body>/<html> are the typical
-      // footprint of another extension's in-page UI.
-      if (
-        el.shadowRoot &&
-        (el.parentElement === this.doc.body || el.parentElement === this.doc.documentElement)
-      ) {
-        return true;
+      // Overlay roots are nearly always shallow; two levels covers hosts that
+      // sit inside a positioning wrapper.
+      if (depth < 2) {
+        for (const child of el.children) consider(child, depth + 1);
       }
+    };
+
+    for (const root of [...this.doc.body.children, ...this.doc.documentElement.children]) {
+      consider(root, 0);
     }
-    return false;
+    return boxes;
   }
 
-  /** Resolve the configured placement; 'auto' dodges other floating UI. */
-  private resolvePlacement(rect: DOMRect): 'below' | 'above' {
-    if (this.prefs.placement !== 'auto') return this.prefs.placement;
-    const view = this.doc.defaultView;
-    if (!view) return 'below';
-    const centerX = Math.min(Math.max(rect.left + rect.width / 2, 8), view.innerWidth - 8);
-    // The toolbar occupies roughly a 44px band starting 10px away from the
-    // selection; sample several points across that band on each side.
-    const band = [14, 32, 50];
-    const belowFree = band.every(
-      (dy) => rect.bottom + dy < view.innerHeight - 8 && !this.isSpotOccupied(centerX, rect.bottom + dy),
-    );
-    if (belowFree) return 'below';
-    const aboveFree = band.every(
-      (dy) => rect.top - dy > 8 && !this.isSpotOccupied(centerX, rect.top - dy),
-    );
-    if (aboveFree) return 'above';
-    return rect.bottom + 54 < view.innerHeight - 8 ? 'below' : 'above';
+  /** Show the toolbar, then re-check shortly after in case a rival renders late. */
+  private presentToolbar(rect: DOMRect): void {
+    this.ui.showToolbar(rect, this.effectiveLastColor(), this.prefs.placement, this.collectObstacles());
+    clearTimeout(this.placementRecheck);
+    if (this.prefs.placement !== 'auto') return;
+    // Rival toolbars react to the same mouseup we do and often appear a beat
+    // later; a single measurement at mouseup time would miss them.
+    this.placementRecheck = setTimeout(() => {
+      if (!this.ui.isToolbarVisible()) return;
+      this.ui.showToolbar(rect, this.effectiveLastColor(), 'auto', this.collectObstacles());
+    }, PLACEMENT_RECHECK_MS);
   }
 
   private showToolbarForSelection(): boolean {
@@ -375,7 +413,7 @@ class LocusContent {
     if (range.toString().trim().length === 0) return false;
     this.pending = { type: 'text', range: range.cloneRange() };
     const rect = range.getBoundingClientRect();
-    this.ui.showToolbar(rect, this.effectiveLastColor(), this.resolvePlacement(rect));
+    this.presentToolbar(rect);
     return true;
   }
 

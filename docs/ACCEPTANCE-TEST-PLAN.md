@@ -34,6 +34,8 @@ bypassed while still exercising the dynamic registration code path).
 | U22 | backup/merge | another machine's rows attach to the local page by urlKey (one document, no duplicates); unseen pages are added; DOI backfilled; list prefs unioned |
 | U23 | sync/config | collection URL normalization (trailing slash, query/fragment stripped, non-http rejected); completeness check |
 | U24 | sync/auth | Basic auth survives non-ASCII credentials; HTTP statuses map to actionable messages |
+| U25 | placement | toolbar box centres on the selection and clamps to viewport edges on both sides |
+| U26 | placement | auto picks the clear side, the less-obstructed side when both collide, ignores non-overlapping obstacles, and respects an explicit preference |
 
 ## E2E (Playwright, loaded extension)
 
@@ -57,7 +59,7 @@ for observability without page-world coupling.
 | E12 | svg/mathjax/iframe | fixtures load without errors; annotating HTML text near SVG/MathJax-like markup works; selection inside a cross-frame iframe is ignored gracefully |
 | E13 | shortcuts | with the toolbar open, pressing 2 highlights in the second color and dismisses the toolbar |
 | E14 | undo | Cmd/Ctrl+Z tombstones the most recent highlight |
-| E15 | image | clicking a plain image offers the toolbar and shortcut 1 rings it (ring tracks the image box, survives reload, lists in the panel); linked images are ignored |
+| E15 | image | clicking a plain or linked image offers the toolbar without navigating and shortcut 1 rings it (ring tracks the image box, survives reload, lists in the panel); modified clicks keep the link available |
 | E16 | note keys | Enter saves the note (Shift+Enter = newline); Delete with an empty note (or ⌘/Ctrl+Delete anytime) removes the highlight |
 | E17 | custom color | the toolbar "+" adds a picker color; it appears with the next shortcut digit, highlights, and survives reload |
 | E18 | placement | position pref: below (default) / above / auto — auto flips above when another floating UI overlaps the below band |
@@ -66,6 +68,7 @@ for observability without page-world coupling.
 | E22 | backup | Export produces a real download; wiping the DB and importing that file restores the annotation, its Markdown note and a working anchor; re-importing adds nothing |
 | E23 | sync | two independent installs (separate profiles) converge in both directions through a mock WebDAV server; a deletion on one propagates and repeated syncs never resurrect it; a real export contains neither the sync username nor password |
 | E24 | sync/errors | a wrong app password surfaces an actionable message instead of failing silently |
+| E26 | placement/rivals | auto dodges a rival toolbar built the way real ones are: `pointer-events: none` wrapper, `position: absolute`, shadow host nested below `<body>`, and one that renders 250 ms late |
 | E25 | builds | `wxt build -b chrome` and `-b edge` both produce a loadable MV3 bundle from the same source; `--mode store` omits the manifest key while sideload builds keep it |
 
 ## Manual checklist (pre-release)

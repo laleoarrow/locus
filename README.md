@@ -34,8 +34,9 @@ bring them back reliably — even when the page shifts under you.
   saves (Shift+Enter for a newline), **Delete** on an empty note (or
   **⌘/Ctrl+Delete** anytime) removes the highlight. **Cmd+Z / Ctrl+Z** undoes
   your last highlight.
-- **Images too.** Clicking a figure (not wrapped in a link) offers the same
-  toolbar and draws a glowing ring around the image.
+- **Images too.** Clicking a figure — including one wrapped in a link — offers
+  the same toolbar and draws a glowing ring around the image. Cmd/Ctrl-click
+  still follows the underlying link.
 - **Your palette, your layout.** The toolbar's **+** orb adds custom colors
   (they get the next shortcut digits; manage them in the side panel). The
   toolbar shows below the selection by default, or set it to *above* /

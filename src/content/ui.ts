@@ -1,6 +1,7 @@
 import { LOCUS_HOST_ID } from '@/domain/anchor/textIndex';
 import { specFor, type PaletteEntry } from '@/domain/colors';
-import type { ColorKey } from '@/domain/types';
+import type { ColorKey, ToolbarPlacement } from '@/domain/types';
+import { resolvePlacement, type Box } from '@/domain/placement';
 import { markdownToHtml } from '@/lib/markdown';
 
 export interface ToolbarActions {
@@ -306,6 +307,9 @@ export class LocusUI {
   private palette: PaletteEntry[] = [];
   private customColors: PaletteEntry[] = [];
   private lastAnchor: DOMRect | null = null;
+  /** What the user asked for ('auto' included) — replayed on palette changes. */
+  private lastPreference: ToolbarPlacement = 'below';
+  /** The side actually chosen last time. */
   private lastPlacement: 'below' | 'above' = 'below';
   private lastColorShown: ColorKey = 'yellow';
 
@@ -386,7 +390,7 @@ export class LocusUI {
     this.toolbar.appendChild(siteOff);
     // Keep the toolbar in place when the palette changes while it is open.
     if (this.isToolbarVisible() && this.lastAnchor) {
-      this.showToolbar(this.lastAnchor, this.lastColorShown, this.lastPlacement);
+      this.showToolbar(this.lastAnchor, this.lastColorShown, this.lastPreference);
     }
   }
 
@@ -398,9 +402,19 @@ export class LocusUI {
     return !this.toolbar.classList.contains('hidden');
   }
 
-  showToolbar(anchor: DOMRect, lastColor: ColorKey, placement: 'below' | 'above' = 'below'): void {
+  /**
+   * Show the toolbar next to `anchor`. `preference` may be 'auto', in which
+   * case the side is chosen here — after the toolbar has been measured, since
+   * the decision needs its real width and height.
+   */
+  showToolbar(
+    anchor: DOMRect,
+    lastColor: ColorKey,
+    preference: ToolbarPlacement = 'below',
+    obstacles: Box[] = [],
+  ): void {
     this.lastAnchor = anchor;
-    this.lastPlacement = placement;
+    this.lastPreference = preference;
     this.lastColorShown = lastColor;
     for (const swatch of this.toolbar.querySelectorAll<HTMLButtonElement>('.swatch')) {
       swatch.dataset['last'] = swatch.dataset['color'] === lastColor ? 'true' : 'false';
@@ -409,6 +423,17 @@ export class LocusUI {
     const view = this.doc.defaultView;
     const width = this.toolbar.offsetWidth;
     const height = this.toolbar.offsetHeight;
+    const placement = resolvePlacement(preference, {
+      selection: anchor,
+      toolbarWidth: width,
+      toolbarHeight: height,
+      gap: 10,
+      viewportWidth: view?.innerWidth ?? 0,
+      viewportHeight: view?.innerHeight ?? 0,
+      obstacles,
+      margin: 8,
+    });
+    this.lastPlacement = placement;
     const maxLeft = (view?.innerWidth ?? 0) - width - 8;
     const maxTop = (view?.innerHeight ?? 0) - height - 8;
     const top = placement === 'below' ? anchor.bottom + 10 : anchor.top - height - 10;

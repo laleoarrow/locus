@@ -260,11 +260,14 @@ test('E15: clicking an image rings it; the ring and panel entry survive reload',
   await expect(page.locator('html')).toHaveAttribute('data-locus-ready', '1');
   await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
 
-  // A linked image must be left alone.
+  // A linked image is annotatable without following its link.
   await page.click('#figure-linked');
+  await expect(page).toHaveURL(IMAGES);
+  await expect(page.locator('[data-locus-toolbar]')).toBeVisible();
+  await page.click('#probe-3');
   await expect(page.locator('[data-locus-toolbar]')).toBeHidden();
 
-  // A plain image offers the toolbar; shortcut 1 = fluorescent yellow ring.
+  // A plain image also offers the toolbar; shortcut 1 = fluorescent yellow ring.
   await page.click('#figure-1');
   await expect(page.locator('[data-locus-toolbar]')).toBeVisible();
   await page.keyboard.press('1');
@@ -382,6 +385,31 @@ test('E18: toolbar placement can be set to above, and auto dodges other floating
   await page.evaluate(() => document.getElementById('fake-other-extension')?.remove());
   await selectText(page, '#probe-2', 'footnote marker');
   await expect(page.locator('[data-locus-toolbar]')).toHaveAttribute('data-placement', 'below');
+});
+
+test('E26: auto placement dodges realistically-built rival toolbars', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await page.goto(`${BASE_URL}/fixtures/competitor.html`);
+  await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
+  const panel = await openPanelFor(page, serviceWorker, extensionId, `${BASE_URL}/fixtures/competitor.html`);
+  await panel.locator('.segmented button[data-placement="auto"]').click();
+  await page.waitForTimeout(300);
+
+  // Each mode is a shape real selection toolbars actually take.
+  for (const mode of ['pointer-events', 'absolute', 'nested', 'late'] as const) {
+    await page.goto(`${BASE_URL}/fixtures/competitor.html?mode=${mode}`);
+    await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
+    await selectText(page, '#probe-2', 'a rival toolbar appear');
+    await expect(page.locator('html')).toHaveAttribute('data-rival-shown', '1');
+    await expect(
+      page.locator('[data-locus-toolbar]'),
+      `mode=${mode}: the rival sits below the selection, so Locus must go above`,
+    ).toHaveAttribute('data-placement', 'above', { timeout: 3000 });
+  }
 });
 
 test('E19: ⌘-hover reveals the site-off switch; ✕ disables Locus on this site', async ({

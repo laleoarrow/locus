@@ -194,10 +194,26 @@ fixtures) without a permanent observer cost.
   the next shortcut digits). **1–9** pick a color, **Esc/click-away**
   dismisses.
 - Toolbar placement is a preference (side-panel footer): *below* (default),
-  *above*, or *auto* — auto samples the band the toolbar would occupy with
-  `elementsFromPoint` and flips to the other side when another extension's
-  floating UI (fixed/sticky high-z elements, shadow hosts mounted on
-  `<body>`/`<html>`) already renders there.
+  *above*, or *auto*. The decision itself is pure geometry in
+  `src/domain/placement.ts` (unit-tested without a DOM): given the selection
+  box, the measured toolbar size and the boxes of other floating UI, it takes
+  the side that fits and is clear, else the clear side, else the side with
+  less overlap.
+
+  Obstacles are gathered in the content script by **measuring rectangles**
+  (`getBoundingClientRect` over positioned, high-z or shadow-hosting elements
+  near the top of the tree), not by hit-testing sample points. An earlier
+  `elementsFromPoint` version missed real rival toolbars for three reasons
+  worth remembering: they are routinely wrapped in a `pointer-events: none`
+  layer, which hit-testing skips entirely; they are as often `position:
+  absolute` as fixed/sticky; and a single probe column misses anything that
+  overlaps only part of our width. Full-page scrims (>60% of the viewport) are
+  ignored, or every side would look occupied.
+
+  Because rival toolbars react to the same `mouseup` and often render a beat
+  later, placement is re-evaluated once ~350 ms after showing and the toolbar
+  moves if the chosen side turned out to be taken. `fixtures/competitor.html`
+  reproduces all four shapes; E26 covers them.
 - **⌘/Ctrl-hover** on the toolbar's right edge slides out a ✕ zone that
   disables Locus on the current site (see §2).
 - **DOI version linking** (optional, on by default): the content script reads

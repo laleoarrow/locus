@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fixture: a competing extension's selection toolbar</title>
+  <style>
+    body { max-width: 640px; margin: 40px auto; font: 16px/1.6 Georgia, serif; }
+    p { margin: 0 0 18px; }
+  </style>
+</head>
+<body>
+  <article>
+    <h1 id="probe-1">Another extension also reacts to selections</h1>
+    <p id="probe-2">Selecting inside this paragraph makes a rival toolbar appear just below the
+      selection, the way a translation or AI-assistant extension does.</p>
+    <p id="probe-3">A second paragraph, so a selection can be made away from the first one.</p>
+    <p id="probe-4">A third paragraph near the bottom of the article.</p>
+  </article>
+
+  <script>
+    // Reproduces how real selection toolbars are actually built, which is what
+    // makes them hard to detect:
+    //   ?mode=pointer-events  wrapper is pointer-events:none (invisible to
+    //                         elementsFromPoint hit-testing)
+    //   ?mode=absolute        position:absolute rather than fixed/sticky
+    //   ?mode=nested          shadow host is not a direct child of body
+    //   ?mode=late            renders 250ms after mouseup, losing the race
+    // ?offset=N shifts it horizontally so a single-column probe can miss it.
+    const params = new URLSearchParams(location.search);
+    const mode = params.get('mode') || 'pointer-events';
+    const offset = Number(params.get('offset') || 0);
+    const delay = mode === 'late' ? 250 : 0;
+
+    let host = null;
+
+    function removeBar() {
+      host?.remove();
+      host = null;
+    }
+
+    function showBar(rect) {
+      removeBar();
+      const wrapper = document.createElement('div');
+      wrapper.id = 'rival-wrapper';
+      // The wrapper is a passive overlay layer: only the inner control is
+      // clickable. This is the detail that hides it from elementsFromPoint.
+      const passive = mode === 'pointer-events';
+      const positioning = mode === 'absolute'
+        ? `position:absolute;top:${rect.bottom + window.scrollY + 6}px;`
+        : `position:fixed;top:${rect.bottom + 6}px;`;
+      wrapper.style.cssText =
+        `${positioning}left:${rect.left + offset}px;z-index:2147483000;` +
+        (passive ? 'pointer-events:none;' : '');
+
+      const inner = document.createElement('div');
+      if (mode === 'nested') {
+        // Shadow host buried one level down, not a direct child of <body>.
+        const shell = document.createElement('div');
+        shell.id = 'rival-shell';
+        shell.appendChild(inner);
+        wrapper.appendChild(shell);
+      } else {
+        wrapper.appendChild(inner);
+      }
+
+      const shadow = inner.attachShadow({ mode: 'open' });
+      const bar = document.createElement('div');
+      bar.setAttribute('data-rival-bar', '');
+      bar.style.cssText =
+        'width:240px;height:40px;border-radius:20px;background:#26262b;color:#fff;' +
+        'font:13px/40px sans-serif;text-align:center;' +
+        (passive ? 'pointer-events:auto;' : '');
+      bar.textContent = 'Rival extension toolbar';
+      shadow.appendChild(bar);
+
+      document.body.appendChild(wrapper);
+      document.documentElement.setAttribute('data-rival-shown', '1');
+    }
+
+    document.addEventListener('mouseup', () => {
+      setTimeout(() => {
+        const selection = getSelection();
+        if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+          removeBar();
+          document.documentElement.removeAttribute('data-rival-shown');
+          return;
+        }
+        showBar(selection.getRangeAt(0).getBoundingClientRect());
+      }, delay);
+    });
+
+    document.addEventListener('mousedown', () => {
+      removeBar();
+      document.documentElement.removeAttribute('data-rival-shown');
+    });
+  </script>
+</body>
+</html>
