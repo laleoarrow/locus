@@ -162,9 +162,10 @@ means: the resolved range's text equals `exact`.
 **Image anchors** (`src/domain/anchor/image.ts`) follow the same shape with
 two strategies: DOM path (verified against `src`), then `src` + index among
 same-src images; otherwise detached. A deliberate primary-button drag across
-any image (including one wrapped in a link) is the selection gesture; ordinary
-clicks and modifier-assisted gestures always remain with the page so links,
-lightboxes and publisher controls keep their native behaviour.
+an image, or a native image-only DOM selection dragged from just before it to
+just after it, is the selection gesture. Both work for images wrapped in links;
+ordinary clicks and modifier-assisted gestures always remain with the page so
+links, lightboxes and publisher controls keep their native behaviour.
 
 Re-anchoring is retried for detached annotations on DOM mutations
 (MutationObserver, debounced 300 ms) for the first 15 seconds after load,
@@ -191,8 +192,8 @@ fixtures) without a permanent observer cost.
 
 ### 5.4 Interaction model
 
-- Selecting text (or dragging at least 8 px across an image with the unmodified
-  primary button) pops a liquid-glass pill toolbar with the palette orbs —
+- Selecting text (or selecting one image through either supported drag path)
+  pops a liquid-glass pill toolbar with the palette orbs —
   three builtins plus any user-added colors (the "+" orb opens a native picker;
   custom colors persist in prefs and get the next shortcut digits). **1–9**
   pick a color, **Esc/click-away** dismisses. Repeating that drag on an already

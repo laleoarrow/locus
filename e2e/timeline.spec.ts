@@ -11,6 +11,13 @@ import { BASE_URL, expect, highlight, test } from './extension';
 const NESTED = `${BASE_URL}/fixtures/nested.html`;
 const DEMO = `${BASE_URL}/fixtures/demo.html`;
 const REPEATED = `${BASE_URL}/fixtures/repeated.html`;
+const DAYS_TO_PREVIOUS_MONTH = new Date().getDate();
+const HISTORY_OFFSETS = [
+  0,
+  DAYS_TO_PREVIOUS_MONTH,
+  DAYS_TO_PREVIOUS_MONTH + 1,
+  DAYS_TO_PREVIOUS_MONTH + 2,
+];
 
 /** Annotate three pages, then spread the history across days and months. */
 async function seedHistory(context: BrowserContext, offsetsInDays: number[]) {
@@ -89,12 +96,14 @@ test('E44: the timeline groups days into eras with a tick per day', async ({
   await expect(library.locator('.tl-tick')).toHaveCount(1);
 
   // Spread it over two months: two eras, four days, four ticks.
-  await backdate(library, [0, 2, 40, 41]);
+  await backdate(library, HISTORY_OFFSETS);
   await expect(library.locator('.tl-era')).toHaveCount(2);
   await expect(library.locator('.timeline-day')).toHaveCount(4);
   await expect(library.locator('.tl-tick')).toHaveCount(4);
   await expect(library.locator('.tl-when').first()).toHaveText('Today');
-  await expect(library.locator('.tl-when').nth(1)).toHaveText('2 days ago');
+  await expect(library.locator('.tl-when').nth(1)).toHaveText(
+    DAYS_TO_PREVIOUS_MONTH === 1 ? 'Yesterday' : `${DAYS_TO_PREVIOUS_MONTH} days ago`,
+  );
 
   // Each entry is still one annotation, and the legacy hooks are intact.
   await expect(library.locator('.timeline-entry')).toHaveCount(4);
@@ -107,7 +116,7 @@ test('E45: clicking a rail tick travels to that day and marks it current', async
 }) => {
   await seedHistory(context, []);
   const library = await openTimeline(context, extensionId);
-  await backdate(library, [0, 2, 40, 41]);
+  await backdate(library, HISTORY_OFFSETS);
 
   const ticks = library.locator('.tl-tick');
   await expect(ticks.first()).toHaveAttribute('data-active', 'true');
@@ -132,7 +141,7 @@ test('E46: older layers recede without fading their text', async ({
 }) => {
   await seedHistory(context, []);
   const library = await openTimeline(context, extensionId);
-  await backdate(library, [0, 2, 40, 41]);
+  await backdate(library, HISTORY_OFFSETS);
 
   const depths = await library
     .locator('.timeline-day')
@@ -150,4 +159,39 @@ test('E46: older layers recede without fading their text', async ({
     .locator('.timeline-entry .quote')
     .evaluateAll((nodes) => nodes.map((node) => getComputedStyle(node).opacity));
   expect(new Set(quoteOpacities)).toEqual(new Set(['1']));
+});
+
+test('E48: timeline cards never paint beneath the navigation rail', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  await seedHistory(context, []);
+  const library = await openTimeline(context, extensionId);
+  await library.emulateMedia({ reducedMotion: 'reduce' });
+  await library.setViewportSize({ width: 900, height: 720 });
+  await backdate(library, HISTORY_OFFSETS);
+
+  await library.locator('.timeline-entry').first().evaluate((card) => {
+    const title = card.querySelector('.page-title-inline');
+    const quote = card.querySelector('.quote');
+    if (!title || !quote) throw new Error('timeline fixture card is incomplete');
+    title.textContent = 'A very long publisher article title '.repeat(30);
+    quote.textContent = 'publisheraccessibleimagedescription'.repeat(30);
+  });
+  const rail = await library.locator('.tl-rail').boundingBox();
+  const cardRights = await library
+    .locator('.timeline-entry')
+    .evaluateAll((cards) => cards.map((card) => card.getBoundingClientRect().right));
+  expect(rail).not.toBeNull();
+  expect(Math.max(...cardRights)).toBeLessThanOrEqual((rail?.x ?? 0) - 1);
+  expect(await library.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    await library.evaluate(() => innerWidth),
+  );
+
+  await library.setViewportSize({ width: 720, height: 720 });
+  await expect(library.locator('.tl-rail')).toBeHidden();
+  expect(await library.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+    await library.evaluate(() => innerWidth),
+  );
 });

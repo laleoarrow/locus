@@ -349,17 +349,19 @@ export function App() {
             </div>
           </div>
         )}
-        <div className="pref-row">
-          <span className="pref-label">All annotations</span>
-          <button
-            className="pref-button"
-            data-action="open-library"
-            onClick={() => void requestBg({ type: 'library:open' })}
-          >
-            Open Library →
-          </button>
+        <div className="aligned-pref-rows">
+          <div className="pref-row">
+            <span className="pref-label">All annotations</span>
+            <button
+              className="pref-button"
+              data-action="open-library"
+              onClick={() => void requestBg({ type: 'library:open' })}
+            >
+              Open Library →
+            </button>
+          </div>
+          <BackupRow />
         </div>
-        <BackupRow />
         <SyncRow />
         <p className="panel-version" data-locus-version>
           Locus · 文迹 · v{version}

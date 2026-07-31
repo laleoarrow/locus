@@ -209,8 +209,18 @@ test('E41: side panel shows its version and opens the full Library', async ({
   const page = await context.newPage();
   await page.goto(NESTED);
   const panel = await openPanelFor(page, serviceWorker, extensionId, NESTED);
+  await panel.setViewportSize({ width: 320, height: 800 });
   const version = await panel.evaluate(() => chrome.runtime.getManifest().version);
   await expect(panel.locator('[data-locus-version]')).toHaveText(`Locus · 文迹 · v${version}`);
+
+  const libraryButtonBox = await panel
+    .locator('button[data-action="open-library"]')
+    .boundingBox();
+  const backupActionsBox = await panel.locator('.backup-row .backup-actions').boundingBox();
+  expect(libraryButtonBox).not.toBeNull();
+  expect(backupActionsBox).not.toBeNull();
+  expect(Math.abs((libraryButtonBox?.x ?? 0) - (backupActionsBox?.x ?? 0))).toBeLessThan(1);
+  expect(Math.abs((libraryButtonBox?.width ?? 0) - (backupActionsBox?.width ?? 0))).toBeLessThan(1);
 
   const [library] = await Promise.all([
     context.waitForEvent('page'),
@@ -396,6 +406,47 @@ test('E15: image clicks stay native; dragging selects an image for a persistent 
   const item = panel.locator('.annotation-item');
   await expect(item).toHaveCount(1);
   await expect(item.locator('.annotation-image img')).toBeVisible();
+});
+
+test('E47: a native DOM selection containing one image can create an image annotation', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await page.goto(IMAGES);
+  await expect(page.locator('html')).toHaveAttribute('data-locus-ready', '1');
+  await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
+
+  // Chromium can select a replaced element as a non-collapsed DOM Range when
+  // the drag starts before the image and ends after it. Such a range paints
+  // the familiar blue selection overlay, but has an empty text value.
+  await page.evaluate(() => {
+    const image = document.querySelector('#figure-linked');
+    const releaseTarget = document.querySelector('#probe-3');
+    if (!image || !releaseTarget) throw new Error('image selection fixture is incomplete');
+    const range = document.createRange();
+    range.selectNode(image);
+    const selection = getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    releaseTarget.dispatchEvent(
+      new MouseEvent('mouseup', { bubbles: true, cancelable: true, button: 0 }),
+    );
+  });
+
+  await expect(page.locator('[data-locus-toolbar]')).toBeVisible();
+  await expect(page).toHaveURL(IMAGES);
+  await page.keyboard.press('1');
+  await expect(page.locator('[data-locus-ring]')).toHaveCount(1);
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+
+  const panel = await openPanelFor(page, serviceWorker, extensionId, IMAGES);
+  await expect(panel.locator('.annotation-item')).toHaveCount(1);
+  await expect(panel.locator('.annotation-image img')).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator('[data-locus-ring]')).toHaveCount(1);
 });
 
 test('E16: Enter saves the note; Delete on an empty note removes the highlight', async ({

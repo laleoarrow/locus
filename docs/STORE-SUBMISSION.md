@@ -70,8 +70,9 @@ WHAT IT DOES
   pick one from the keyboard. Add page-specific colours without cluttering
   other pages.
 • Click a highlight to write a note in Markdown, with a live preview.
-• Drag across a figure to ring it in colour. Ordinary clicks still open the
-  page's link or image viewer.
+• Select a figure by dragging across it or from just before it to just after it,
+  then ring it in colour. Ordinary clicks still open the page's link or image
+  viewer.
 • A side panel lists every annotation on the page; click one to scroll to it.
 • Open the Library to search every annotation across sites, travel through a
   day-by-day timeline, edit notes, restore deleted items, or replace one
@@ -116,7 +117,8 @@ Locus / 文迹 是一个安静的网页阅读标注层。选中文字、选颜�
 功能
 • 选中文字弹出三色工具条，按 1 / 2 / 3 即可用键盘选色；自定义颜色只属于当前页面，不会挤满其他页面。
 • 点击高亮即可写 Markdown 笔记，带实时预览。
-• 在插图上拖动即可为图片加一圈彩色高亮环；普通单击仍用于打开网页原有的链接或图片查看器。
+• 在插图上拖动，或从图片前拖到图片后选中它，即可加一圈彩色高亮环；普通单击仍用于打开
+  网页原有的链接或图片查看器。
 • 侧边栏列出本页所有标注，点击即滚动定位并闪烁提示。
 • 打开资料库可跨网站搜索全部标注，沿逐日时间线回顾阅读历程，编辑笔记、恢复已删除项目，
   或在整个未删除资料库中批量替换一种标注颜色。

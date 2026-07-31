@@ -260,6 +260,17 @@ body {
 
 .backup-row { flex-wrap: wrap; }
 .backup-actions { display: flex; gap: 6px; }
+.aligned-pref-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px 10px;
+}
+.aligned-pref-rows > .pref-row { display: contents; }
+.aligned-pref-rows .pref-button,
+.aligned-pref-rows .backup-actions { width: 100%; }
+.aligned-pref-rows .backup-actions button { flex: 1; }
+.aligned-pref-rows .backup-status { grid-column: 1 / -1; }
 .backup-actions button,
 .pref-button {
   border: 0.5px solid var(--locus-border);

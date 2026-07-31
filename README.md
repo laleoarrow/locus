@@ -17,7 +17,7 @@ Manifest V3 extension for Chrome and Microsoft Edge.
 | Liquid-glass toolbar | Markdown notes | Image rings |
 |---|---|---|
 | ![Selection toolbar](assets/shot-toolbar.png) | ![Note editor](assets/shot-note.png) | ![Image ring](assets/shot-ring.png) |
-| Select any text and a compact toolbar appears. Click a colour, or press **1 / 2 / 3** without leaving the keyboard. | Click a highlight to write a note in **Markdown**, with a live preview underneath. **Enter** saves. | Drag across a figure, then choose a colour to ring it. Ordinary clicks still open links and image viewers. |
+| Select any text and a compact toolbar appears. Click a colour, or press **1 / 2 / 3** without leaving the keyboard. | Click a highlight to write a note in **Markdown**, with a live preview underneath. **Enter** saves. | Select a figure by dragging across it or from just before it to just after it, then choose a colour to ring it. Ordinary clicks still open links and image viewers. |
 
 ### Afterwards — everything in one place
 
@@ -78,8 +78,9 @@ bring them back reliably — even when the page shifts under you.
   **⌘/Ctrl+Delete** anytime) removes the highlight. **Cmd+Z / Ctrl+Z** undoes
   your last highlight. Select across several existing highlights and press
   **Delete / Backspace** to remove them together; one undo restores the batch.
-- **Images too, without stealing clicks.** Drag across a figure to select it
-  for the same toolbar and draw a glowing ring. An ordinary click always stays
+- **Images too, without stealing clicks.** Drag across a figure, or from just
+  before it to just after it, to select it for the same toolbar and draw a
+  glowing ring. An ordinary click always stays
   with the page, so linked figures, zoom viewers and publisher controls keep
   working even after an image has been annotated.
 - **Your palette, your layout.** A page starts with at most five color choices.
@@ -155,7 +156,7 @@ below). To build from source instead:
    click **Load unpacked**, and pick the `.output/edge-mv3` folder.
    Chrome: `chrome://extensions` → Developer mode → *Load unpacked* →
    `.output/chrome-mv3`.
-3. Open any article, select text (or drag across a figure), and highlight away.
+3. Open any article, select text (or select a figure by dragging across it), and highlight away.
 
 The manifest pins a public `key`, so the extension ID no longer depends on where
 the folder lives — updating by replacing the folder keeps your annotations.

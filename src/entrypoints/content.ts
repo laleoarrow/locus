@@ -566,7 +566,19 @@ class LocusContent {
     }
     const range = selection.getRangeAt(0);
     if (!this.doc.body.contains(range.commonAncestorContainer)) return false;
-    if (range.toString().trim().length === 0) return false;
+    if (range.toString().trim().length === 0) {
+      const common = range.commonAncestorContainer;
+      const root = common.nodeType === 1 ? (common as Element) : common.parentElement;
+      if (!root) return false;
+      const images = [
+        ...(root.matches('img') ? [root as HTMLImageElement] : []),
+        ...root.querySelectorAll<HTMLImageElement>('img'),
+      ].filter((image) => range.intersectsNode(image));
+      const image = images[0];
+      if (!image || images.length !== 1) return false;
+      this.presentImageSelection(image);
+      return true;
+    }
     this.pending = { type: 'text', range: range.cloneRange() };
     const rect = range.getBoundingClientRect();
     this.presentToolbar(rect);
