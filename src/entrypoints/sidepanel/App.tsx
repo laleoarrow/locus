@@ -6,8 +6,9 @@ import {
   importBackup as repoImportBackup,
   listForUrl,
 } from '@/db/repo';
-import { backupFileName, parseBackup } from '@/domain/backup';
+import { backupFileName, parseBackup, type BackupFile } from '@/domain/backup';
 import { specFor } from '@/domain/colors';
+import { parsePageNoteZip, type PageNoteImportStats } from '@/domain/pagenote';
 import type { SyncConfig, SyncState } from '@/domain/sync';
 import type { SyncConfigView } from '@/sync/store';
 import type {
@@ -364,23 +365,67 @@ function BackupRow() {
   };
 
   const importBackup = async (selected: File) => {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(await selected.text());
-    } catch {
-      setStatus('That file is not valid JSON.');
-      return;
+    setStatus('Importing…');
+    let file: BackupFile;
+    let pageNoteStats: PageNoteImportStats | null = null;
+    const isZip = selected.name.toLowerCase().endsWith('.zip') || selected.type.includes('zip');
+
+    if (isZip) {
+      const result = await parsePageNoteZip(
+        selected,
+        chrome.runtime.getManifest().version,
+      );
+      if ('error' in result) {
+        setStatus(result.error);
+        return;
+      }
+      file = result.file;
+      pageNoteStats = result.stats;
+    } else {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await selected.text());
+      } catch {
+        setStatus('That file is not valid JSON.');
+        return;
+      }
+      const result = parseBackup(parsed);
+      if ('error' in result) {
+        setStatus(result.error);
+        return;
+      }
+      file = result.file;
     }
-    const result = parseBackup(parsed);
-    if ('error' in result) {
-      setStatus(result.error);
-      return;
-    }
-    const summary = await repoImportBackup(result.file);
-    setStatus(
+
+    const summary = await repoImportBackup(file);
+    let message =
       `Imported: ${summary.annotationsAdded} added, ${summary.annotationsUpdated} updated, ` +
-        `${summary.annotationsSkipped} already present.`,
-    );
+      `${summary.annotationsSkipped} already present.`;
+    if (pageNoteStats) {
+      const warnings: string[] = [];
+      if (pageNoteStats.recordsSkipped) {
+        warnings.push(`${pageNoteStats.recordsSkipped} invalid/deleted records skipped`);
+      }
+      if (pageNoteStats.deletedHighlights) {
+        warnings.push(`${pageNoteStats.deletedHighlights} deleted highlights merged`);
+      }
+      if (pageNoteStats.standaloneNotesSkipped) {
+        warnings.push(`${pageNoteStats.standaloneNotesSkipped} standalone notes not supported`);
+      }
+      if (pageNoteStats.emptyNotesSkipped) {
+        warnings.push(`${pageNoteStats.emptyNotesSkipped} empty note shells ignored`);
+      }
+      if (pageNoteStats.degradedStrikethroughs) {
+        warnings.push(
+          `${pageNoteStats.degradedStrikethroughs} strikethroughs shown as highlights`,
+        );
+      }
+      message +=
+        ` PageNote source: ${pageNoteStats.highlights} highlights, ` +
+        `${pageNoteStats.highlightNotes} with notes.` +
+        (warnings.length > 0 ? ` ${warnings.join('; ')}.` : '');
+    }
+    setStatus(message);
   };
 
   return (
@@ -390,13 +435,17 @@ function BackupRow() {
         <button data-action="export" onClick={() => void exportBackup()}>
           Export
         </button>
-        <button data-action="import" onClick={() => fileInput.current?.click()}>
+        <button
+          data-action="import"
+          title="Import a Locus JSON backup or PageNote ZIP"
+          onClick={() => fileInput.current?.click()}
+        >
           Import
         </button>
         <input
           ref={fileInput}
           type="file"
-          accept="application/json,.json"
+          accept="application/json,application/zip,.json,.zip"
           data-locus-import-input
           hidden
           onChange={(event) => {
