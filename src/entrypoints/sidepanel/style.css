@@ -260,7 +260,8 @@ body {
 
 .backup-row { flex-wrap: wrap; }
 .backup-actions { display: flex; gap: 6px; }
-.backup-actions button {
+.backup-actions button,
+.pref-button {
   border: 0.5px solid var(--locus-border);
   border-radius: 999px;
   background: var(--locus-subtle);
@@ -269,11 +270,24 @@ body {
   color: inherit;
   cursor: pointer;
 }
-.backup-actions button:hover { filter: brightness(1.06); }
+.backup-actions button:hover,
+.pref-button:hover { filter: brightness(1.06); }
+.backup-actions button:focus-visible,
+.pref-button:focus-visible {
+  outline: 2px solid var(--locus-accent);
+  outline-offset: 2px;
+}
 .backup-status {
   flex-basis: 100%;
   margin: 6px 0 0;
   font-size: 11.5px;
+  color: var(--locus-fg-muted);
+}
+
+.panel-version {
+  margin: 2px 0 0;
+  text-align: center;
+  font-size: 10.5px;
   color: var(--locus-fg-muted);
 }
 

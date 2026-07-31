@@ -201,6 +201,26 @@ test('E10: delete uses a tombstone with temporary undo', async ({
   expect(row?.deletedAt).toBeGreaterThan(0);
 });
 
+test('E41: side panel shows its version and opens the full Library', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  const panel = await openPanelFor(page, serviceWorker, extensionId, NESTED);
+  const version = await panel.evaluate(() => chrome.runtime.getManifest().version);
+  await expect(panel.locator('[data-locus-version]')).toHaveText(`Locus · 文迹 · v${version}`);
+
+  const [library] = await Promise.all([
+    context.waitForEvent('page'),
+    panel.locator('button[data-action="open-library"]').click(),
+  ]);
+  await library.waitForLoadState('domcontentloaded');
+  await expect(library).toHaveURL(`chrome-extension://${extensionId}/library.html`);
+  await expect(library.locator('.library-header')).toBeVisible();
+});
+
 test('E11: creating highlights causes no layout shift', async ({ context, serviceWorker }) => {
   const page = await context.newPage();
   for (const [url, selector, text] of [

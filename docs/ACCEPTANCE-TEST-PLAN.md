@@ -92,6 +92,7 @@ for observability without page-world coupling.
 | E38 | page colors | a new page starts with three (at most five) choices; three manual additions persist only on that page; side-panel removal hides the choice without changing an existing annotation's rendered color |
 | E39 | library cards | page cards show at most five matching annotations by default, expose the complete remainder through an ellipsis control, keep hidden matches searchable, and pack variable-height cards without grid-row gaps |
 | E40 | library sites | site chips merge host variants into readable families; deleting the last live annotation in a selected family removes the stale chip and filter, while the deleted bin retains its own family/count universe |
+| E41 | side panel navigation | the panel displays the version from its manifest and its All annotations control opens the full Library page |
 
 ## Manual checklist (pre-release)
 

@@ -230,6 +230,7 @@ export function App() {
   const pageColors = buildPaletteForKeys(pageColorKeys, prefs.customColors).slice(3);
   const items = data?.items ?? [];
   const supported = target !== null && /^https?:/.test(target.url);
+  const version = chrome.runtime.getManifest().version;
 
   const placements: Array<{ value: ToolbarPlacement; label: string }> = [
     { value: 'below', label: 'Below' },
@@ -348,8 +349,21 @@ export function App() {
             </div>
           </div>
         )}
+        <div className="pref-row">
+          <span className="pref-label">All annotations</span>
+          <button
+            className="pref-button"
+            data-action="open-library"
+            onClick={() => void requestBg({ type: 'library:open' })}
+          >
+            Open Library →
+          </button>
+        </div>
         <BackupRow />
         <SyncRow />
+        <p className="panel-version" data-locus-version>
+          Locus · 文迹 · v{version}
+        </p>
       </footer>
     </div>
   );
