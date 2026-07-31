@@ -25,6 +25,8 @@ const DAV_PASS = 'app-password';
 const davFiles = new Map(); // path -> { body, etag }
 const davCollections = new Set(['/dav/']);
 let etagCounter = 0;
+let nextPutDelayMs = 0;
+let delayedPutActive = false;
 
 function davAuthorized(req) {
   const header = req.headers.authorization ?? '';
@@ -103,8 +105,22 @@ async function handleDav(req, res, pathname) {
         res.end('missing');
         return;
       }
+      // Read the complete request before exposing the delay as active. Tests
+      // can then mutate IndexedDB while this PUT is stalled and know that its
+      // payload is an immutable snapshot of the state from before the edit.
+      const body = await readBody(req);
+      const delayMs = nextPutDelayMs;
+      nextPutDelayMs = 0;
+      if (delayMs > 0) {
+        delayedPutActive = true;
+        try {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        } finally {
+          delayedPutActive = false;
+        }
+      }
       const etag = `"v${++etagCounter}"`;
-      davFiles.set(pathname, { body: await readBody(req), etag });
+      davFiles.set(pathname, { body, etag });
       res.writeHead(existing ? 204 : 201, { etag });
       res.end();
       return;
@@ -134,8 +150,32 @@ createServer(async (req, res) => {
   // Test hook: wipe the mock server between e2e cases.
   if (pathname === '/__dav-reset') {
     davFiles.clear();
+    nextPutDelayMs = 0;
+    delayedPutActive = false;
     res.writeHead(200);
     res.end('reset');
+    return;
+  }
+
+  // Test hooks for deterministically exercising edits made while a sync is
+  // inside its PUT. Only the next PUT is delayed; later queued syncs run at
+  // normal speed.
+  if (pathname === '/__dav-delay-next-put') {
+    const delayMs = Number(url.searchParams.get('ms'));
+    if (!Number.isFinite(delayMs) || delayMs <= 0) {
+      res.writeHead(400);
+      res.end('invalid delay');
+      return;
+    }
+    nextPutDelayMs = delayMs;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ armed: true, delayMs }));
+    return;
+  }
+
+  if (pathname === '/__dav-delay-status') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ armed: nextPutDelayMs > 0, active: delayedPutActive }));
     return;
   }
 

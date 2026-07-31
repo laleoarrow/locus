@@ -9,6 +9,7 @@
  * Writes assets/store-shot-*.png.
  */
 import { spawnSync } from 'node:child_process';
+import { unlink } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
@@ -20,6 +21,8 @@ const DEMO = 'http://localhost:8137/fixtures/demo.html';
 const WIDTH = 1280;
 const HEIGHT = 800;
 const PANEL_WIDTH = 400;
+const PANEL_TMP = path.join(OUT, '.panel.png');
+const PAGE_TMP = path.join(OUT, '.page.png');
 
 const context = await chromium.launchPersistentContext('', {
   channel: 'chromium',
@@ -76,6 +79,17 @@ async function centreOf(text) {
   }, text);
 }
 
+async function dragAcross(locator) {
+  await locator.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(100);
+  const box = await locator.boundingBox();
+  if (!box) throw new Error('image has no rendered box');
+  await page.mouse.move(box.x + 12, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 12, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+}
+
 // 1 — the selection toolbar
 await select('shift in case mix is not represented');
 await page.screenshot({ path: `${OUT}/store-shot-1-toolbar.png` });
@@ -105,7 +119,7 @@ await page.locator('[data-locus-note-save]').click();
 await page.waitForTimeout(400);
 
 // 3 — an image annotation ring
-await page.locator('#figure-1').click();
+await dragAcross(page.locator('#figure-1'));
 await page.locator('[data-locus-toolbar]').waitFor();
 await page.keyboard.press('3');
 await page.waitForTimeout(500);
@@ -118,10 +132,10 @@ await panel.goto(
   `chrome-extension://${extensionId}/sidepanel.html?url=${encodeURIComponent(DEMO)}`,
 );
 await panel.waitForTimeout(600);
-await panel.screenshot({ path: `${OUT}/.panel.png` });
+await panel.screenshot({ path: PANEL_TMP });
 await page.setViewportSize({ width: WIDTH - PANEL_WIDTH, height: HEIGHT });
 await page.waitForTimeout(300);
-await page.screenshot({ path: `${OUT}/.page.png` });
+await page.screenshot({ path: PAGE_TMP });
 await context.close();
 
 const composite = spawnSync(
@@ -130,10 +144,11 @@ const composite = spawnSync(
     '-e',
     `const sharp=require('sharp');
      sharp({create:{width:${WIDTH},height:${HEIGHT},channels:4,background:'#ffffff'}})
-       .composite([{input:'${OUT}/.page.png',left:0,top:0},
-                   {input:'${OUT}/.panel.png',left:${WIDTH - PANEL_WIDTH},top:0}])
+       .composite([{input:'${PAGE_TMP}',left:0,top:0},
+                   {input:'${PANEL_TMP}',left:${WIDTH - PANEL_WIDTH},top:0}])
        .png().toFile('${OUT}/store-shot-4-panel.png').then(()=>console.log('composed'));`,
   ],
   { cwd: ROOT, stdio: 'inherit' },
 );
+if (composite.status === 0) await Promise.all([unlink(PAGE_TMP), unlink(PANEL_TMP)]);
 process.exitCode = composite.status ?? 0;

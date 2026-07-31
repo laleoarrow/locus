@@ -24,11 +24,16 @@ const SYNC_DEBOUNCE_MS = 4000;
 let syncTimer: ReturnType<typeof setTimeout> | undefined;
 /** Guard so an alarm and a debounced push cannot interleave two passes. */
 let syncing = false;
+/** A local mutation that still needs a pass after the active one finishes. */
+let syncQueued = false;
 
 async function syncNow(): Promise<{ result: SyncResult; state: SyncState }> {
   const config = await getSyncConfig();
   const state = await getSyncState();
   if (!config.enabled || !isConfigComplete(config)) {
+    clearTimeout(syncTimer);
+    syncTimer = undefined;
+    syncQueued = false;
     return {
       result: {
         ok: false,
@@ -52,6 +57,11 @@ async function syncNow(): Promise<{ result: SyncResult; state: SyncState }> {
       state,
     };
   }
+  clearTimeout(syncTimer);
+  syncTimer = undefined;
+  // A manual/alarm pass includes everything queued before it starts. Any
+  // mutation after this point sets the flag again and is pushed afterwards.
+  syncQueued = false;
   syncing = true;
   try {
     const outcome = await runSync(config, state, chrome.runtime.getManifest().version);
@@ -70,19 +80,29 @@ async function syncNow(): Promise<{ result: SyncResult; state: SyncState }> {
           ),
       );
     }
-    if (outcome.result.settingsPulled > 0) {
-      await Promise.all([broadcastPrefs(), broadcastOpenPageColors()]);
+    if (outcome.result.settingsPulled > 0) await broadcastPrefs();
+    if (outcome.result.pulled > 0 || outcome.result.settingsPulled > 0) {
+      await broadcastOpenPageColors();
     }
     return outcome;
   } finally {
     syncing = false;
+    if (syncQueued) armScheduledSync();
   }
+}
+
+function armScheduledSync(): void {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => {
+    syncTimer = undefined;
+    void syncNow();
+  }, SYNC_DEBOUNCE_MS);
 }
 
 /** Called after any local mutation; pushes once the edits settle. */
 function scheduleSync(): void {
-  clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => void syncNow(), SYNC_DEBOUNCE_MS);
+  syncQueued = true;
+  armScheduledSync();
 }
 
 async function rescheduleSyncAlarm(): Promise<void> {
@@ -290,6 +310,27 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
       await bestEffortBroadcastForAnnotations(message.ids);
       return { ok: true };
     }
+    case 'annotations:replace-color': {
+      try {
+        const result = await repo.replaceAnnotationColor(
+          message.sourceColor,
+          message.targetColor,
+          message.expectedCount,
+          message.expectedAnnotations,
+        );
+        if (result.updated > 0) {
+          scheduleSync();
+          await bestEffortBroadcastForAnnotations(result.annotationIds, true);
+        }
+        return { updated: result.updated };
+      } catch (error) {
+        console.error('[locus] color replacement failed', error);
+        return {
+          updated: 0,
+          error: error instanceof Error ? error.message : 'Could not replace annotation colors.',
+        };
+      }
+    }
     case 'prefs:set-placement': {
       await repo.setPlacement(message.placement);
       return broadcastPrefs();
@@ -415,30 +456,41 @@ async function broadcastForAnnotation(id: string): Promise<void> {
   if (source) await broadcastChange(source.urlKey);
 }
 
-async function broadcastForAnnotations(ids: string[]): Promise<void> {
+async function broadcastForAnnotations(
+  ids: string[],
+  refreshPageColors = false,
+): Promise<void> {
   const annotations = await db.annotations.bulkGet([...new Set(ids)]);
   const sourceIds = [
     ...new Set(
       annotations.flatMap((annotation) => annotation ? [annotation.sourceId] : []),
     ),
   ];
-  const sources = await db.sources.bulkGet(sourceIds);
+  const sources = (await db.sources.bulkGet(sourceIds)).filter(
+    (source): source is NonNullable<typeof source> => source !== undefined,
+  );
   const urlKeys = [
-    ...new Set(sources.flatMap((source) => source ? [source.urlKey] : [])),
+    ...new Set(sources.map((source) => source.urlKey)),
   ];
-  await Promise.all(urlKeys.map((urlKey) => broadcastChange(urlKey)));
+  await Promise.all([
+    ...urlKeys.map((urlKey) => broadcastChange(urlKey)),
+    ...(refreshPageColors ? sources.map((source) => broadcastPageColors(source.url)) : []),
+  ]);
 }
 
-async function bestEffortBroadcastForAnnotations(ids: string[]): Promise<void> {
+async function bestEffortBroadcastForAnnotations(
+  ids: string[],
+  refreshPageColors = false,
+): Promise<void> {
   try {
-    await broadcastForAnnotations(ids);
+    await broadcastForAnnotations(ids, refreshPageColors);
   } catch (error) {
     // The database transaction has already committed. Do not report the user
     // action as failed just because tab notification was temporarily
     // unavailable; the initiating content script refreshes from IndexedDB.
     console.error('[locus] annotation batch notification failed', error);
     setTimeout(() => {
-      void broadcastForAnnotations(ids).catch((retryError: unknown) => {
+      void broadcastForAnnotations(ids, refreshPageColors).catch((retryError: unknown) => {
         console.error('[locus] annotation batch notification retry failed', retryError);
       });
     }, 500);

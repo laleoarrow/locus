@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://github.com/laleoarrow/locus/releases"><img src="https://img.shields.io/github/v/release/laleoarrow/locus?label=release&color=0a84ff" alt="latest release"></a>
   <img src="https://img.shields.io/badge/manifest-v3-34c759" alt="Manifest V3">
-  <img src="https://img.shields.io/badge/local--first-no%20cloud%2C%20no%20telemetry-ffe600" alt="local-first">
+  <img src="https://img.shields.io/badge/local--first-no%20backend%2C%20no%20telemetry-ffe600" alt="local-first">
   <img src="https://img.shields.io/badge/Chrome%20%7C%20Edge-supported-6d7390" alt="browsers">
 </p>
 
@@ -17,7 +17,7 @@ Manifest V3 extension for Chrome and Microsoft Edge.
 | Liquid-glass toolbar | Markdown notes | Image rings |
 |---|---|---|
 | ![Selection toolbar](assets/shot-toolbar.png) | ![Note editor](assets/shot-note.png) | ![Image ring](assets/shot-ring.png) |
-| Select any text and a compact toolbar appears. Click a colour, or press **1 / 2 / 3** without leaving the keyboard. | Click a highlight to write a note in **Markdown**, with a live preview underneath. **Enter** saves. | Click a figure to ring it in colour. Images are annotatable too, links still work. |
+| Select any text and a compact toolbar appears. Click a colour, or press **1 / 2 / 3** without leaving the keyboard. | Click a highlight to write a note in **Markdown**, with a live preview underneath. **Enter** saves. | Drag across a figure, then choose a colour to ring it. Ordinary clicks still open links and image viewers. |
 
 ### Afterwards — everything in one place
 
@@ -38,8 +38,9 @@ remember.
 
 ![Library grouped by site](assets/gallery-library-sites.png)
 
-**Timeline.** Every annotation newest-first, split by day — the view for "I
-marked something on Tuesday and cannot recall which paper it was in."
+**Timeline.** Travel back through your reading history on a day rail. Month
+eras, relative dates and receding card surfaces show when a note belongs,
+without fading the words themselves.
 
 ![Library timeline](assets/gallery-library-timeline.png)
 
@@ -77,9 +78,10 @@ bring them back reliably — even when the page shifts under you.
   **⌘/Ctrl+Delete** anytime) removes the highlight. **Cmd+Z / Ctrl+Z** undoes
   your last highlight. Select across several existing highlights and press
   **Delete / Backspace** to remove them together; one undo restores the batch.
-- **Images too.** Clicking a figure — including one wrapped in a link — offers
-  the same toolbar and draws a glowing ring around the image. Cmd/Ctrl-click
-  still follows the underlying link.
+- **Images too, without stealing clicks.** Drag across a figure to select it
+  for the same toolbar and draw a glowing ring. An ordinary click always stays
+  with the page, so linked figures, zoom viewers and publisher controls keep
+  working even after an image has been annotated.
 - **Your palette, your layout.** A page starts with at most five color choices.
   The toolbar's **+** orb can add more for that page only (they get the next
   shortcut digits; manage them under *Colors on this page* in the side panel).
@@ -89,8 +91,9 @@ bring them back reliably — even when the page shifts under you.
 - **One library for everything.** A full page listing every annotation across
   every site — grouped by page, by site, or as a timeline; searchable over
   quotes, notes and titles; filterable by colour, site, date, detached or
-  deleted. Deleted annotations land in a bin you can restore from, and any
-  result is one click from the passage it came from.
+  deleted. Replace one annotation colour across the whole live library from a
+  compact batch menu. Deleted annotations land in a bin you can restore from,
+  and any result is one click from the passage it came from.
 - **Sync through storage you own.** Point Locus at a WebDAV folder (坚果云 /
   Nutstore, Nextcloud, anything WebDAV) once, and every device keeps itself
   merged — no account, no server of ours. Or just use **Export / Import** for a
@@ -106,7 +109,7 @@ bring them back reliably — even when the page shifts under you.
   panel — it is never silently deleted.
 - **Non-invasive rendering.** CSS Custom Highlight API where available (zero
   DOM mutation, zero layout shift); a zero-box `<mark>` fallback elsewhere.
-  All extension UI lives in a Shadow DOM.
+  All in-page extension UI lives in a Shadow DOM.
 - **Native side panel.** Chrome/Edge Side Panel lists the current page's
   annotations; click to scroll-and-pulse; delete is a tombstone with undo.
 
@@ -131,9 +134,10 @@ pnpm build         # production build → .output/chrome-mv3
 pnpm build:edge    # production build → .output/edge-mv3
 ```
 
-The e2e build pre-grants `http://localhost/*` only so Playwright can bypass
-the (un-automatable) native permission prompt; production builds request no
-host access at install.
+The e2e build uses the same `http://*/*` / `https://*/*` host permission as
+production and runs only against localhost fixtures. Broad page access is core
+to an annotation tool because the articles a user may read cannot be listed in
+advance; Locus can be disabled per site at any time.
 
 ## Download
 
@@ -151,7 +155,7 @@ below). To build from source instead:
    click **Load unpacked**, and pick the `.output/edge-mv3` folder.
    Chrome: `chrome://extensions` → Developer mode → *Load unpacked* →
    `.output/chrome-mv3`.
-3. Open any article, select text (or click a figure), and highlight away.
+3. Open any article, select text (or drag across a figure), and highlight away.
 
 The manifest pins a public `key`, so the extension ID no longer depends on where
 the folder lives — updating by replacing the folder keeps your annotations.
@@ -183,6 +187,16 @@ subdomains.
 **Long pages stay readable** — a card shows five annotations, with an ellipsis
 to expand the rest, and the masonry layout packs shorter cards instead of
 leaving empty grid rows.
+
+**Timeline is a journey, not a flat list** — a navigable day rail groups the
+history into month eras. Relative labels make recent days easy to recognise;
+older cards recede through their surfaces while quote text stays fully opaque.
+
+**Batch colour changes** — beside **Clear**, open **Batch → Replace annotation
+colours…** to convert one existing colour across the whole live library in one
+atomic operation. The dialog shows the exact affected count; detached
+annotations are included and deleted annotations are left untouched. There is
+no bulk undo, so review the count first (or Export a backup).
 
 ## Sync between devices
 

@@ -15,8 +15,9 @@ import {
   type GroupMode,
   type LibraryFilters,
 } from '@/domain/library';
-import type { ColorKey } from '@/domain/types';
+import { effectiveColorUpdatedAt, type ColorKey } from '@/domain/types';
 import { requestBg } from '@/messaging/protocol';
+import { BulkColorActions } from './components/BulkColorActions';
 import { PageCard } from './components/PageCard';
 import { SiteGroup } from './components/SiteGroup';
 import { Timeline } from './components/Timeline';
@@ -72,6 +73,18 @@ export function App() {
       ),
     [customColors, usedColors],
   );
+  const liveColorCounts = useMemo(() => {
+    const counts = new Map<ColorKey, number>();
+    for (const annotation of input?.annotations ?? []) {
+      if (annotation.deletedAt !== 0) continue;
+      counts.set(annotation.color, (counts.get(annotation.color) ?? 0) + 1);
+    }
+    return counts;
+  }, [input]);
+  const bulkPalette = useMemo(
+    () => buildPaletteForKeys([...liveColorCounts.keys()], customColors),
+    [customColors, liveColorCounts],
+  );
   const origins = useMemo(() => availableOrigins(collectionPages), [collectionPages]);
   const pages = useMemo(() => filterLibrary(allPages, filters), [allPages, filters]);
   const availableColorKeys = useMemo(() => new Set(usedColors), [usedColors]);
@@ -112,6 +125,40 @@ export function App() {
     setFilters(EMPTY_FILTERS);
     setFromText('');
     setToText('');
+  };
+  const replaceColors = async (
+    sourceColor: ColorKey,
+    targetColor: ColorKey,
+    expectedCount: number,
+  ) => {
+    const sourceWasFiltered = filters.colors.includes(sourceColor);
+    const wasDeletedView = filters.deletedOnly;
+    const expectedAnnotations = (input?.annotations ?? [])
+      .filter((annotation) => annotation.deletedAt === 0 && annotation.color === sourceColor)
+      .map((annotation) => ({
+        id: annotation.id,
+        updatedAt: annotation.updatedAt,
+        colorUpdatedAt: effectiveColorUpdatedAt(annotation),
+      }));
+    const result = await requestBg({
+      type: 'annotations:replace-color',
+      sourceColor,
+      targetColor,
+      expectedCount,
+      expectedAnnotations,
+    });
+    if (!result) {
+      throw new Error('Locus was updated in the background. Reload the extension and try again.');
+    }
+    if (result.error) throw new Error(result.error);
+    if (result.updated > 0 && sourceWasFiltered && !wasDeletedView) {
+      setFilters((current) => {
+        const colors = current.colors.filter((color) => color !== sourceColor);
+        if (!colors.includes(targetColor)) colors.push(targetColor);
+        return { ...current, colors };
+      });
+    }
+    return result.updated;
   };
 
   const filtersActive =
@@ -170,6 +217,8 @@ export function App() {
                 className={`chip color-chip${filters.colors.includes(entry.key) ? ' on' : ''}`}
                 data-filter-color={entry.key}
                 title={entry.label}
+                aria-label={`Filter ${entry.label} annotations`}
+                aria-pressed={filters.colors.includes(entry.key)}
                 onClick={() => toggleColor(entry.key)}
               >
                 <span style={{ background: specFor(entry.key, customColors).swatch }} />
@@ -237,6 +286,12 @@ export function App() {
               Clear
             </button>
           )}
+          <BulkColorActions
+            palette={bulkPalette}
+            counts={liveColorCounts}
+            preferredSource={filters.colors.length === 1 ? filters.colors[0] : undefined}
+            onReplace={replaceColors}
+          />
         </div>
       </header>
 

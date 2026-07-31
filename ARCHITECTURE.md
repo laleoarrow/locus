@@ -3,7 +3,8 @@
 A minimal, local-first annotation layer for academic reading, shipped as a
 Manifest V3 extension for Chrome and Microsoft Edge. Not a reference manager:
 no bibliographic metadata, no AI, no tags/folders, no collaboration, no
-citations, no summarization, no cloud sync, no telemetry.
+citations, no summarization, no hosted backend, no telemetry. Optional WebDAV
+sync talks only to storage configured and controlled by the user.
 
 ## 1. Process topology
 
@@ -38,7 +39,7 @@ Rules enforced by this topology:
   contexts via BroadcastChannel), and sends mutations to the background so
   content scripts hear about them.
 - **UI isolation:** all in-page UI (toolbar, comment box, pulse overlay) lives
-  inside a closed Shadow DOM on a single host element appended to
+  inside an open Shadow DOM on a single host element appended to
   `<html>`. Page CSS cannot leak in; our CSS cannot leak out.
 
 ## 2. Host access & per-site control
@@ -56,9 +57,9 @@ original per-site runtime-grant model is preserved in git history (≤ v0.2).
   adds the current origin. A disabled origin's content script stays dormant
   (no listeners act, nothing renders) and flips back on live when the origin
   is re-enabled — no reload needed.
-- Nothing about the page ever leaves the machine. The only network call in
-  the extension is the optional update check (release metadata from the
-  GitHub API, off-switchable, no user data attached).
+- Nothing about the page is sent to Locus or GitHub. The two optional network
+  features are WebDAV sync to a server the user configures and the update check
+  for public GitHub release metadata; neither sends page content or telemetry.
 
 ## 3. Domain model
 
@@ -69,7 +70,7 @@ Defined in `src/domain/types.ts`. All timestamps are epoch milliseconds.
 |---|---|---|
 | `DocumentRecord` | A logical document being read | `id`, `title`, `createdAt`, `updatedAt` |
 | `SourceRecord` | A concrete URL where the document lives | `id`, `documentId`, `urlKey`, `url`, `title`, `firstSeenAt`, `lastSeenAt` |
-| `AnnotationRecord` | One highlight (`kind: text \| image`) + optional Markdown note | `id`, `documentId`, `sourceId`, `kind`, `color`, `comment`, `exact`, `createdAt`, `updatedAt`, `deletedAt` |
+| `AnnotationRecord` | One highlight (`kind: text \| image`) + optional Markdown note | `id`, `documentId`, `sourceId`, `kind`, `color`, `colorUpdatedAt`, `comment`, `exact`, `createdAt`, `updatedAt`, `deletedAt` |
 | `AnchorRecord` | Everything needed to re-locate the annotation | text: `exact`, `prefix`, `suffix`, `start`, `end`, `startPoint`, `endPoint` · image: `src`, `alt`, `imgIndex`, `path` |
 | `SettingRecord` | Key/value app state (e.g. `lastUsedColor`) | `key`, `value` |
 
@@ -160,8 +161,10 @@ means: the resolved range's text equals `exact`.
 
 **Image anchors** (`src/domain/anchor/image.ts`) follow the same shape with
 two strategies: DOM path (verified against `src`), then `src` + index among
-same-src images; otherwise detached. Images wrapped in links are never
-offered for annotation (clicking them must keep navigating).
+same-src images; otherwise detached. A deliberate primary-button drag across
+any image (including one wrapped in a link) is the selection gesture; ordinary
+clicks and modifier-assisted gestures always remain with the page so links,
+lightboxes and publisher controls keep their native behaviour.
 
 Re-anchoring is retried for detached annotations on DOM mutations
 (MutationObserver, debounced 300 ms) for the first 15 seconds after load,
@@ -188,11 +191,12 @@ fixtures) without a permanent observer cost.
 
 ### 5.4 Interaction model
 
-- Selecting text (or clicking a non-linked image) pops a liquid-glass pill
-  toolbar with the palette orbs — three builtins plus any user-added colors
-  (the "+" orb opens a native picker; custom colors persist in prefs and get
-  the next shortcut digits). **1–9** pick a color, **Esc/click-away**
-  dismisses.
+- Selecting text (or dragging at least 8 px across an image with the unmodified
+  primary button) pops a liquid-glass pill toolbar with the palette orbs —
+  three builtins plus any user-added colors (the "+" orb opens a native picker;
+  custom colors persist in prefs and get the next shortcut digits). **1–9**
+  pick a color, **Esc/click-away** dismisses. Repeating that drag on an already
+  annotated image opens its note; a normal image click is never intercepted.
 - Toolbar placement is a preference (side-panel footer): *below* (default),
   *above*, or *auto*. The decision itself is pure geometry in
   `src/domain/placement.ts` (unit-tested without a DOM): given the selection
@@ -245,6 +249,10 @@ Typed request/response pairs in `src/messaging/protocol.ts`; a single
 - `annotation:create` (content → bg): annotation draft + anchor, returns ids.
 - `annotation:set-comment`, `annotation:delete`, `annotation:undelete`
   (panel/content → bg).
+- `annotations:replace-color` (library → bg): atomically recolours every live
+  annotation using the selected source color, validates the exact preview
+  snapshot and palette key, then schedules the same sync/invalidation path as
+  single-row edits. Detached rows participate; tombstones never do.
 - `annotation:changed` (bg → all tabs + runtime): invalidation broadcast
   carrying `urlKey`.
 - `annotation:reveal` (panel → bg → tab), `annotations:anchor-state`
@@ -262,7 +270,10 @@ Typed request/response pairs in `src/messaging/protocol.ts`; a single
 (`formatVersion`, independent of the DB schema version) holding documents,
 sources, annotations, anchors and portable settings. Import validates every row
 defensively — it runs on a user-supplied file — and drops malformed rows rather
-than trusting them. `updateInfo` is excluded as volatile.
+than trusting them. `updateInfo` is excluded as volatile. v0.7 writes format v2
+for the independent colour clock while continuing to read v1; older clients
+reject v2 and therefore cannot overwrite a synced library using legacy
+whole-row colour conflict rules.
 
 **Merge** (`repo.importBackup`) is the one algorithm both backup-import and sync
 rely on, so it must be convergent and non-destructive:
@@ -270,8 +281,10 @@ rely on, so it must be convergent and non-destructive:
 - Pages are matched by `urlKey`, and incoming `documentId`/`sourceId` are
   remapped to the local ones. Two machines that annotated the same URL keep one
   document, not two.
-- Rows merge by id, newer `updatedAt` wins. Tombstones travel, so a deletion on
-  either side survives and an older copy can never resurrect it.
+- Rows merge by id: newer `updatedAt` wins for notes/deletions, while colour
+  uses its independent `colorUpdatedAt` clock. Tombstones travel, so a colour
+  edit cannot resurrect a deletion or overwrite a newer note on another
+  device.
 - An incoming annotation identical to a local one in every meaningful field
   (source, colour, comment, kind, anchor position) counts as already present, so
   syncing does not accumulate duplicate highlights.
@@ -281,8 +294,10 @@ These properties make it idempotent: syncing twice equals syncing once.
 **Sync** (`src/sync/`, driven from the background): pull the remote file, merge,
 push the result back with `If-Match` on the ETag; a 412 means another device
 pushed first, so the pass restarts from the pull (up to 3 attempts). Pushes are
-debounced ~4 s after local edits and pulls run on a configurable alarm. A remote
-file that fails validation is reported, never overwritten.
+debounced ~4 s after local edits; a mutation arriving during an active pass
+queues one follow-up pass instead of being discarded. Pulls run on a
+configurable alarm. A remote file that fails validation is reported, never
+overwritten.
 
 Credentials live in `chrome.storage.local`, not the Dexie settings table — that
 keeps them structurally out of export files (asserted by E23). The UI is only
@@ -307,6 +322,10 @@ and `sidepanel/App.tsx` was already carrying the page list, backup and sync.
   in the side panel is reflected without a refresh. **Every mutation still goes
   through the existing background messages**, so no second write path exists to
   bypass the sync and tombstone invariants.
+- The compact Batch menu can replace one colour across the complete live
+  library in a single repository transaction. It is not scoped to the current
+  filters or visible cards; the dialog previews the exact count and an active
+  source-colour filter migrates to the target after success.
 - Deleted annotations are reachable behind a *Deleted* filter with a Restore
   action — the rows were always kept, there was simply no way to see them.
 - Detached state is knowledge only a running content script has, so the content
@@ -353,7 +372,10 @@ import nothing above them and are fully unit-testable.
 
 - `pnpm typecheck`, `pnpm test`, `pnpm e2e` all pass.
 - Chrome and Edge builds come from the same source (`wxt build -b chrome|edge`).
-- No install-time host access; no network calls of any kind; no telemetry.
+- The manifest grants HTTP(S) page access for annotation on arbitrary reading
+  sites; the per-site off list must remain immediate and reversible.
+- No hosted backend and no telemetry; only user-configured WebDAV sync and the
+  GitHub release-metadata check may use the network.
 - Highlight rendering causes no visible layout shift on fixture pages.
 - Reload restores every valid annotation; un-anchorable annotations surface
   as detached in the side panel and are never silently deleted.

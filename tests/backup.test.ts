@@ -2,7 +2,13 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as repo from '@/db/repo';
 import { db } from '@/db/schema';
-import { BACKUP_FORMAT, backupFileName, parseBackup, type BackupFile } from '@/domain/backup';
+import {
+  BACKUP_FORMAT,
+  BACKUP_FORMAT_VERSION,
+  backupFileName,
+  parseBackup,
+  type BackupFile,
+} from '@/domain/backup';
 import type { AnchorData } from '@/domain/types';
 
 const anchor: AnchorData = {
@@ -57,7 +63,14 @@ describe('parseBackup (U19)', () => {
     const result = parseBackup({
       ...valid,
       annotations: [
-        { id: 'ok', sourceId: 's', documentId: 'd', updatedAt: 1, deletedAt: 0 },
+        {
+          id: 'ok',
+          sourceId: 's',
+          documentId: 'd',
+          createdAt: 1,
+          updatedAt: 1,
+          deletedAt: 0,
+        },
         { id: 'missing-fields' },
         'not an object',
       ],
@@ -98,6 +111,8 @@ describe('export/import round trip (U20)', () => {
       anchor,
     });
     const file = await repo.exportBackup('0.4.0');
+    expect(file.formatVersion).toBe(BACKUP_FORMAT_VERSION);
+    expect(file.formatVersion).toBe(2);
 
     await clearDb();
     expect((await repo.listForUrl(URL_A)).items).toHaveLength(0);
@@ -165,6 +180,49 @@ describe('export/import round trip (U20)', () => {
     await db.annotations.update(created.annotation.id, { updatedAt: 1 });
     const summary = await repo.importBackup(backupWithDeletion);
     expect(summary.annotationsUpdated).toBe(1);
+    expect((await repo.listForUrl(URL_A)).items).toHaveLength(0);
+  });
+
+  it('merges a legacy remote deletion/note with a later local color change', async () => {
+    const source = await repo.ensureSource(URL_A, 'A Paper');
+    const created = await repo.createAnnotation({
+      sourceId: source.id,
+      documentId: source.documentId,
+      color: 'yellow',
+      comment: 'old note',
+      anchor,
+    });
+    const remote = await repo.exportBackup('0.6.2');
+
+    await repo.setAnnotationColor(created.annotation.id, 'teal');
+    const localColorChange = await db.annotations.get(created.annotation.id);
+    const localColorAt = localColorChange?.colorUpdatedAt ?? 0;
+    // A v0.6.x row has no colour clock. Its much newer updatedAt reflects a
+    // note/deletion only and must not beat the actual v0.7 recolour.
+    const remoteEditAt = localColorAt + 100;
+    remote.annotations = remote.annotations.map((annotation) =>
+      annotation.id === created.annotation.id
+        ? {
+            ...annotation,
+            color: 'yellow',
+            colorUpdatedAt: undefined,
+            comment: 'newer remote note',
+            deletedAt: remoteEditAt,
+            updatedAt: remoteEditAt,
+          }
+        : annotation,
+    );
+
+    const summary = await repo.importBackup(remote);
+    const merged = await db.annotations.get(created.annotation.id);
+    expect(summary.annotationsUpdated).toBe(1);
+    expect(merged).toMatchObject({
+      color: 'teal',
+      colorUpdatedAt: localColorAt,
+      comment: 'newer remote note',
+      deletedAt: remoteEditAt,
+      updatedAt: remoteEditAt,
+    });
     expect((await repo.listForUrl(URL_A)).items).toHaveLength(0);
   });
 

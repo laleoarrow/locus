@@ -76,6 +76,8 @@ export interface AnnotationRecord {
   sourceId: string;
   kind: AnnotationKind;
   color: ColorKey;
+  /** Independent conflict clock so recolouring cannot overwrite notes/deletions. */
+  colorUpdatedAt?: number;
   /** Markdown source of the note ('' = none). Rendered by lib/markdown.ts. */
   comment: string;
   /** Snapshot of the annotated text (text) or alt text (image) at creation. */
@@ -84,6 +86,13 @@ export interface AnnotationRecord {
   updatedAt: number;
   /** 0 = alive; otherwise the tombstone timestamp. Rows are never removed. */
   deletedAt: number;
+}
+
+/** Effective colour clock for both v0.7 rows and legacy rows from older releases. */
+export function effectiveColorUpdatedAt(
+  annotation: Pick<AnnotationRecord, 'colorUpdatedAt' | 'createdAt'>,
+): number {
+  return annotation.colorUpdatedAt ?? annotation.createdAt;
 }
 
 /** One step in an element path: index among same-tag preceding siblings. */

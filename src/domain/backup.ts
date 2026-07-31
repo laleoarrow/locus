@@ -15,7 +15,10 @@ import type {
  * file's shape, so an old file stays readable after DB migrations.
  */
 export const BACKUP_FORMAT = 'locus-backup';
-export const BACKUP_FORMAT_VERSION = 1;
+// v2 adds the independent annotation colour clock. v0.7 still reads v1, but
+// older clients must reject v2 rather than overwrite it with whole-row colour
+// conflict semantics they do not understand.
+export const BACKUP_FORMAT_VERSION = 2;
 
 /** Volatile settings that must never travel between machines. */
 export const UNPORTABLE_SETTING_KEYS = new Set(['updateInfo']);
@@ -88,7 +91,9 @@ export function parseBackup(raw: unknown): { file: BackupFile } | { error: strin
       isStringField(a, 'id') &&
       isStringField(a, 'sourceId') &&
       isStringField(a, 'documentId') &&
+      isNumberField(a, 'createdAt') &&
       isNumberField(a, 'updatedAt') &&
+      (a['colorUpdatedAt'] === undefined || isNumberField(a, 'colorUpdatedAt')) &&
       isNumberField(a, 'deletedAt'),
   ) as unknown as AnnotationRecord[];
   const anchors = rows('anchors').filter(

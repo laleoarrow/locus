@@ -1,4 +1,4 @@
-import type { AltVersion } from '@/db/repo';
+import type { AltVersion, AnnotationColorExpectation } from '@/db/repo';
 import type { GroupMode } from '@/domain/library';
 import type { SyncConfig, SyncState } from '@/domain/sync';
 import type { SyncResult } from '@/sync/engine';
@@ -54,6 +54,13 @@ export type BgRequest =
   | { type: 'annotation:undelete'; id: string }
   | { type: 'annotations:delete'; ids: string[] }
   | { type: 'annotations:undelete'; ids: string[] }
+  | {
+      type: 'annotations:replace-color';
+      sourceColor: ColorKey;
+      targetColor: ColorKey;
+      expectedCount: number;
+      expectedAnnotations: AnnotationColorExpectation[];
+    }
   | { type: 'prefs:set-placement'; placement: ToolbarPlacement }
   | { type: 'page-colors:add'; url: string; color: CustomColor }
   | { type: 'page-colors:remove'; url: string; key: ColorKey }
@@ -82,6 +89,7 @@ export interface BgResponseMap {
   'annotation:undelete': { ok: true };
   'annotations:delete': { ok: true };
   'annotations:undelete': { ok: true };
+  'annotations:replace-color': { updated: number; error?: string };
   'prefs:set-placement': { prefs: Prefs };
   'page-colors:add': { colors: ColorKey[] };
   'page-colors:remove': { colors: ColorKey[] };

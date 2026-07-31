@@ -9,6 +9,8 @@
  * Nothing is fetched from the network.
  *
  *   pnpm build && node scripts/readme-shots.mjs
+ *
+ * Also writes the 1280×800 store-shot-5-library.png used by both stores.
  */
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -30,7 +32,7 @@ const context = await chromium.launchPersistentContext('', {
   channel: 'chromium',
   args: [`--disable-extensions-except=${EXT}`, `--load-extension=${EXT}`],
   viewport: { width: 1280, height: 800 },
-  deviceScaleFactor: 2,
+  deviceScaleFactor: 1,
 });
 
 await context.route('**/*', async (route) => {
@@ -96,6 +98,17 @@ async function centreOf(text) {
   }, text);
 }
 
+async function dragAcross(locator) {
+  await locator.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(100);
+  const box = await locator.boundingBox();
+  if (!box) throw new Error('image has no rendered box');
+  await page.mouse.move(box.x + 12, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width - 12, box.y + box.height / 2, { steps: 8 });
+  await page.mouse.up();
+}
+
 const shot = (name, target = page) =>
   target.screenshot({ path: path.join(OUT, `${name}.png`) });
 
@@ -151,7 +164,7 @@ await ready(PMC);
 await select('calibration of');
 await page.locator('[data-locus-toolbar] .swatch[data-color="yellow"]').click();
 await page.waitForTimeout(300);
-await page.locator('#fig1').click();
+await dragAcross(page.locator('#fig1'));
 await page.locator('[data-locus-toolbar]').waitFor();
 await page.keyboard.press('3');
 await page.waitForTimeout(500);
@@ -179,12 +192,49 @@ async function mode(name) {
   await library.waitForTimeout(400);
 }
 
+async function spreadTimelineAcrossMonths() {
+  const DAY = 86_400_000;
+  const offsets = [0, 1, 3, 40, 41, 95];
+  await library.evaluate(
+    ({ offsets, day }) =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open('locus');
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const db = open.result;
+          const tx = db.transaction('annotations', 'readwrite');
+          const store = tx.objectStore('annotations');
+          const all = store.getAll();
+          all.onsuccess = () => {
+            const rows = all.result.sort((a, b) => a.createdAt - b.createdAt);
+            rows.forEach((row, index) => {
+              const back = offsets[index % offsets.length] * day;
+              store.put({ ...row, createdAt: row.createdAt - back, updatedAt: row.updatedAt - back });
+            });
+          };
+          tx.oncomplete = () => {
+            db.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    { offsets, day: DAY },
+  );
+}
+
 await mode('page');
+await library.screenshot({
+  path: path.join(OUT, 'store-shot-5-library.png'),
+  clip: { x: 0, y: 0, width: 1280, height: 800 },
+});
 await fittedShot('shot-library', library);
 
 await mode('site');
 await fittedShot('gallery-library-sites', library);
 
+await spreadTimelineAcrossMonths();
+await library.reload();
 await mode('timeline');
 await fittedShot('gallery-library-timeline', library);
 

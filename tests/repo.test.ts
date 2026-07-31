@@ -2,7 +2,12 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as repo from '@/db/repo';
 import { db } from '@/db/schema';
-import type { AnchorData, ColorKey, CustomColor } from '@/domain/types';
+import {
+  effectiveColorUpdatedAt,
+  type AnchorData,
+  type ColorKey,
+  type CustomColor,
+} from '@/domain/types';
 
 const anchor: AnchorData = {
   exact: 'selected words',
@@ -25,6 +30,16 @@ async function createOne(color: ColorKey = 'yellow') {
     comment: '',
     anchor,
   });
+}
+
+async function colorExpectation(color: ColorKey) {
+  return (await db.annotations.where('deletedAt').equals(0).toArray())
+    .filter((annotation) => annotation.color === color)
+    .map((annotation) => ({
+      id: annotation.id,
+      updatedAt: annotation.updatedAt,
+      colorUpdatedAt: effectiveColorUpdatedAt(annotation),
+    }));
 }
 
 beforeEach(async () => {
@@ -73,6 +88,177 @@ describe('repo (U8–U10)', () => {
 
     await repo.undeleteMany([first.annotation.id, second.annotation.id]);
     expect((await repo.listForUrl(URL_A)).items).toHaveLength(2);
+  });
+
+  it('replaces a live color across the library, including detached but not deleted rows', async () => {
+    const first = await createOne();
+    const second = await createOne();
+    const deleted = await createOne();
+    const existingTarget = await createOne('teal');
+    await repo.tombstone(deleted.annotation.id);
+    await db.anchorStates.put({
+      annotationId: second.annotation.id,
+      detached: true,
+      checkedAt: Date.now(),
+    });
+
+    const result = await repo.replaceAnnotationColor(
+      'yellow',
+      'teal',
+      2,
+      await colorExpectation('yellow'),
+    );
+    expect(result.updated).toBe(2);
+    expect(result.annotationIds.sort()).toEqual(
+      [first.annotation.id, second.annotation.id].sort(),
+    );
+
+    const rows = await db.annotations.toArray();
+    expect(rows.filter((row) => row.deletedAt === 0 && row.color === 'teal')).toHaveLength(3);
+    expect((await db.annotations.get(deleted.annotation.id))?.color).toBe('yellow');
+    expect((await db.anchorStates.get(second.annotation.id))?.detached).toBe(true);
+    expect((await db.annotations.get(existingTarget.annotation.id))?.updatedAt).toBe(
+      existingTarget.annotation.updatedAt,
+    );
+
+    db.close();
+    await db.open();
+    expect((await db.annotations.get(first.annotation.id))?.color).toBe('teal');
+    expect((await db.annotations.get(second.annotation.id))?.color).toBe('teal');
+  });
+
+  it('does nothing when source and target match or the source count is zero', async () => {
+    const created = await createOne();
+    const before = await db.annotations.get(created.annotation.id);
+
+    await expect(
+      repo.replaceAnnotationColor('yellow', 'yellow', 1, await colorExpectation('yellow')),
+    ).resolves.toEqual({
+      updated: 0,
+      annotationIds: [],
+    });
+    await expect(repo.replaceAnnotationColor('pink', 'teal', 0, [])).resolves.toEqual({
+      updated: 0,
+      annotationIds: [],
+    });
+    expect(await db.annotations.get(created.annotation.id)).toEqual(before);
+  });
+
+  it('uses the same color mutation rule for a single live annotation', async () => {
+    const first = await createOne();
+    const second = await createOne();
+
+    await expect(repo.setAnnotationColor(first.annotation.id, 'teal')).resolves.toBe(true);
+    const recolored = await db.annotations.get(first.annotation.id);
+    expect(recolored?.color).toBe('teal');
+    expect((await db.annotations.get(second.annotation.id))?.color).toBe('yellow');
+    expect(recolored?.updatedAt).toBe(first.annotation.updatedAt);
+    expect(recolored?.colorUpdatedAt).toBeGreaterThan(
+      effectiveColorUpdatedAt(first.annotation),
+    );
+  });
+
+  it('accepts the exact preview for a legacy row whose note was edited later', async () => {
+    const created = await createOne();
+    const legacyUpdatedAt = created.annotation.updatedAt + 100;
+    await db.annotations.update(created.annotation.id, {
+      colorUpdatedAt: undefined,
+      comment: 'edited before upgrading',
+      updatedAt: legacyUpdatedAt,
+    });
+
+    await expect(
+      repo.replaceAnnotationColor(
+        'yellow',
+        'teal',
+        1,
+        await colorExpectation('yellow'),
+      ),
+    ).resolves.toMatchObject({ updated: 1 });
+    expect(await db.annotations.get(created.annotation.id)).toMatchObject({
+      color: 'teal',
+      comment: 'edited before upgrading',
+      updatedAt: legacyUpdatedAt,
+    });
+  });
+
+  it('rejects a stale preview snapshot and a target outside the existing palette', async () => {
+    const first = await createOne();
+    const second = await createOne();
+    const before = await db.annotations.bulkGet([
+      first.annotation.id,
+      second.annotation.id,
+    ]);
+
+    await expect(
+      repo.replaceAnnotationColor('yellow', 'teal', 1, [
+        {
+          id: first.annotation.id,
+          updatedAt: first.annotation.updatedAt,
+          colorUpdatedAt: effectiveColorUpdatedAt(first.annotation),
+        },
+      ]),
+    ).rejects.toThrow(
+      'annotations changed',
+    );
+    await expect(
+      repo.replaceAnnotationColor(
+        'yellow',
+        'not-a-palette-color',
+        2,
+        await colorExpectation('yellow'),
+      ),
+    ).rejects.toThrow('not in the current Locus palette');
+    expect(await db.annotations.bulkGet([first.annotation.id, second.annotation.id])).toEqual(
+      before,
+    );
+  });
+
+  it('rejects a different source set even when its live count is unchanged', async () => {
+    const first = await createOne();
+    const second = await createOne();
+    const expected = await colorExpectation('yellow');
+
+    await repo.tombstone(first.annotation.id);
+    const replacement = await createOne();
+    await expect(
+      repo.replaceAnnotationColor('yellow', 'teal', 2, expected),
+    ).rejects.toThrow('annotations changed');
+
+    expect((await db.annotations.get(first.annotation.id))?.color).toBe('yellow');
+    expect((await db.annotations.get(second.annotation.id))?.color).toBe('yellow');
+    expect((await db.annotations.get(replacement.annotation.id))?.color).toBe('yellow');
+  });
+
+  it('rolls the whole color replacement back when a later row write fails', async () => {
+    const first = await createOne();
+    const second = await createOne();
+    const before = await db.annotations.bulkGet([
+      first.annotation.id,
+      second.annotation.id,
+    ]);
+    let writes = 0;
+    const failSecondWrite = () => {
+      writes += 1;
+      if (writes === 2) throw new Error('injected database failure');
+    };
+    db.annotations.hook('updating', failSecondWrite);
+    try {
+      await expect(
+        repo.replaceAnnotationColor(
+          'yellow',
+          'teal',
+          2,
+          await colorExpectation('yellow'),
+        ),
+      ).rejects.toThrow('injected database failure');
+    } finally {
+      db.annotations.hook('updating').unsubscribe(failSecondWrite);
+    }
+
+    expect(await db.annotations.bulkGet([first.annotation.id, second.annotation.id])).toEqual(
+      before,
+    );
   });
 
   it('remembers the last-used color (U10)', async () => {

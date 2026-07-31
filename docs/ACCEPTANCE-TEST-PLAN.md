@@ -2,9 +2,9 @@
 
 Scope: milestone 1 (HTML annotation, local persistence, side panel).
 Layers: unit (Vitest, jsdom + fake-indexeddb) and extension e2e
-(Playwright, real Chromium with the `--mode e2e` build, which pre-grants
-`http://localhost/*` so the un-automatable native permission prompt is
-bypassed while still exercising the dynamic registration code path).
+(Playwright, real Chromium with the `--mode e2e` build and the same HTTP(S)
+host permission as production; tests stay on localhost fixtures while still
+exercising the dynamic registration and per-site disable paths).
 
 ## Unit (Vitest)
 
@@ -28,7 +28,7 @@ bypassed while still exercising the dynamic registration code path).
 | U16 | doi | normalize/extract DOIs from citation meta and URL paths (ovid-style tilde suffixes, case folding) |
 | U17 | version | dotted version comparison for the update check |
 | U18 | doi/repo | recordDoi + findAltVersion return the annotated sibling version only |
-| U19 | backup/parse | rejects foreign JSON and newer formats; drops malformed rows; strips volatile settings |
+| U19 | backup/parse | v0.7 exports format v2 while still reading legacy v1; older clients reject v2 instead of overwriting colour-clock data; foreign/newer formats are rejected, malformed rows dropped and volatile settings stripped |
 | U20 | backup/round trip | export→wipe→import restores annotations, anchors and notes; importing twice adds nothing |
 | U21 | backup/tombstones | an older backup never resurrects a deleted annotation; a newer deletion propagates |
 | U22 | backup/merge | another machine's rows attach to the local page by urlKey (one document, no duplicates); unseen pages are added; DOI backfilled; list prefs unioned |
@@ -49,6 +49,8 @@ bypassed while still exercising the dynamic registration code path).
 | U37 | selection overlap | partial/contained/exact DOM Range overlaps match; disjoint, boundary-only and collapsed ranges do not, including nested text nodes |
 | U38 | page colors | additions/removals are isolated by normalized page URL; legacy pages infer at most two custom choices; append-only removal events survive backup union without resurrection |
 | U39 | library/timeline | day distance across months and years; relative wording gives way to dates past a week; consecutive days group into one era per month; depth is ranked by position so an uneven history still recedes evenly; single-day and empty histories do not divide by zero |
+| U40 | repo/color replace | single and bulk recolouring share the same mutation rule; whole-library replacement includes live detached rows, excludes tombstones, persists across reopen, rejects an exact stale preview (including same-count membership changes) and unknown palette keys, and rolls the complete transaction back when any row write fails |
+| U41 | backup/colour conflict | colour uses an independent conflict clock, so a later recolour merges with — rather than overwrites or resurrects — a newer remote note/deletion |
 
 ## E2E (Playwright, loaded extension)
 
@@ -72,7 +74,7 @@ for observability without page-world coupling.
 | E12 | svg/mathjax/iframe | fixtures load without errors; annotating HTML text near SVG/MathJax-like markup works; selection inside a cross-frame iframe is ignored gracefully |
 | E13 | shortcuts | with the toolbar open, pressing 2 highlights in the second color and dismisses the toolbar |
 | E14 | undo | Cmd/Ctrl+Z tombstones the most recent highlight |
-| E15 | image | clicking a plain or linked image offers the toolbar without navigating and shortcut 1 rings it (ring tracks the image box, survives reload, lists in the panel); modified clicks keep the link available |
+| E15 | image | ordinary clicks on plain, linked and already-ringed images remain entirely native; sub-8 px jitter, modifier gestures and mouseup on linked padding also stay native; unmodified horizontal/vertical drags past the 8 px threshold open the toolbar without firing page click/navigation, shortcut 1 creates a persistent ring, and dragging an existing ring opens its note without duplicating it |
 | E16 | note keys | Enter saves the note (Shift+Enter = newline); Delete with an empty note (or ⌘/Ctrl+Delete anytime) removes the highlight |
 | E17 | custom color | the toolbar "+" adds a picker color; it appears with the next shortcut digit, highlights, and survives reload |
 | E18 | placement | position pref: below (default) / above / auto — auto flips above when another floating UI overlaps the below band |
@@ -81,6 +83,8 @@ for observability without page-world coupling.
 | E22 | backup | Export produces a real download; wiping the DB and importing that file restores the annotation, its Markdown note and a working anchor; re-importing adds nothing |
 | E23 | sync | two independent installs (separate profiles) converge in both directions through a mock WebDAV server; a deletion on one propagates and repeated syncs never resurrect it; a real export contains neither the sync username nor password |
 | E24 | sync/errors | a wrong app password surfaces an actionable message instead of failing silently |
+| E42 | library/bulk colour | whole-library replacement changes filtered and hidden live rows to an existing palette colour, includes detached rows, excludes deleted rows, refreshes an open page, migrates only the active source-colour filter, refreshes statistics and persists after reload; same/empty choices remain disabled and the pending dialog blocks card actions |
+| E43 | sync/bulk colour | a failed WebDAV push leaves one complete local colour transaction rather than a partial update; after credentials are fixed, retry uploads the complete batch together, and a recolour made during an active slow push is queued and reaches the remote file in a follow-up pass |
 | E44 | timeline | days group into eras with one rail tick each; backdating a history splits it into two eras and four days, and relative labels read Today / 2 days ago |
 | E45 | timeline | clicking a rail tick travels to that day, marks it current and clears the previous one |
 | E46 | timeline | depth rises monotonically from nearest to oldest layer, while quote text stays fully opaque — receding must never mean harder to read |
@@ -100,9 +104,11 @@ for observability without page-world coupling.
 
 ## Manual checklist (pre-release)
 
-- Install-time permission dialog requests no host access.
-- Popup enable/disable round-trip on a real publisher page (e.g. any HTML
-  article) — enable injects immediately, revoke stops on next navigation.
+- Install/store disclosure clearly requests access to HTTP(S) pages and matches
+  the broad-host justification in the listing materials.
+- Popup disable/enable round-trip on a real publisher page (e.g. any HTML
+  article) — disable makes Locus dormant immediately and enable restores it
+  without a reload.
 - Edge: side panel opens and lists annotations (Edge ≥ 114).
 - Keyboard: toolbar buttons reachable; comment box supports IME input
   (Chinese) without the page stealing keys.

@@ -243,6 +243,70 @@ describe('PageNote ZIP adapter', () => {
     expect((await db.annotations.get('pagenote:light:light-1'))?.comment).toBe('');
   });
 
+  it('keeps linked-note time separate from the PageNote highlight color clock', async () => {
+    const makeArchive = (
+      bg: string,
+      highlightUpdatedAt: number,
+      markdown: string,
+      noteUpdatedAt: number,
+    ) =>
+      pageNoteZip({
+        lights: [
+          light({
+            tip: '',
+            noteKey: 'linked-note',
+            bg,
+            updateAt: highlightUpdatedAt,
+          }),
+        ],
+        notes: [
+          {
+            key: 'linked-note',
+            markdown,
+            updateAt: noteUpdatedAt,
+            deleted: false,
+          },
+        ],
+      });
+
+    const first = await parsePageNoteZip(
+      await makeArchive('#FFE534', 140, 'First body', 150),
+      '0.7.0',
+    );
+    if (!('file' in first)) throw new Error(first.error);
+    await repo.importBackup(first.file);
+    await db.annotations.update('pagenote:light:light-1', {
+      color: 'teal',
+      colorUpdatedAt: 200,
+    });
+
+    const noteOnly = await parsePageNoteZip(
+      await makeArchive('#FFE534', 140, 'Revised body', 300),
+      '0.7.0',
+    );
+    if (!('file' in noteOnly)) throw new Error(noteOnly.error);
+    await repo.importBackup(noteOnly.file);
+    expect(await db.annotations.get('pagenote:light:light-1')).toMatchObject({
+      color: 'teal',
+      colorUpdatedAt: 200,
+      comment: 'Revised body',
+      updatedAt: 300,
+    });
+
+    const recolored = await parsePageNoteZip(
+      await makeArchive('#112233', 400, 'Revised body', 300),
+      '0.7.0',
+    );
+    if (!('file' in recolored)) throw new Error(recolored.error);
+    await repo.importBackup(recolored.file);
+    expect(await db.annotations.get('pagenote:light:light-1')).toMatchObject({
+      color: 'c112233',
+      colorUpdatedAt: 400,
+      comment: 'Revised body',
+      updatedAt: 400,
+    });
+  });
+
   it('rejects unrelated ZIPs and skips deleted or incomplete highlights', async () => {
     const unrelated = new JSZip();
     unrelated.file('readme.txt', 'not PageNote');

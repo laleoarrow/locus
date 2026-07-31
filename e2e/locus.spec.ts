@@ -271,7 +271,7 @@ test('E14: Cmd/Ctrl+Z undoes the last highlight', async ({ context, serviceWorke
   await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '0');
 });
 
-test('E15: clicking an image rings it; the ring and panel entry survive reload', async ({
+test('E15: image clicks stay native; dragging selects an image for a persistent ring', async ({
   context,
   serviceWorker,
   extensionId,
@@ -281,16 +281,77 @@ test('E15: clicking an image rings it; the ring and panel entry survive reload',
   await expect(page.locator('html')).toHaveAttribute('data-locus-ready', '1');
   await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
 
-  // A linked image is annotatable without following its link.
+  // A normal click remains completely native: linked images navigate and do
+  // not open Locus. This is essential for publisher full-text badges and
+  // figures whose page handler opens a zoom/lightbox.
   await page.click('#figure-linked');
+  await expect(page).toHaveURL(`${IMAGES}#somewhere`);
+  await expect(page.locator('[data-locus-toolbar]')).toBeHidden();
+
+  await page.goto(IMAGES);
+  await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
+  await page.click('#figure-1');
+  await expect(page.locator('#native-image-clicks')).toHaveText('1');
+  await expect(page.locator('#figure-1')).toHaveClass(/zoomed/);
+  await expect(page.locator('[data-locus-toolbar]')).toBeHidden();
+
+  // Motion below the threshold is still an ordinary page click. Native
+  // dragstart can occur before 8 px, so it must not promote this jitter into a
+  // Locus selection.
+  const jitterBox = await page.locator('#figure-1').boundingBox();
+  if (!jitterBox) throw new Error('plain image has no box for jitter test');
+  await page.mouse.move(jitterBox.x + 30, jitterBox.y + 30);
+  await page.mouse.down();
+  await page.mouse.move(jitterBox.x + 34, jitterBox.y + 30);
+  await page.mouse.up();
+  await expect(page.locator('#native-image-clicks')).toHaveText('2');
+  await expect(page.locator('[data-locus-toolbar]')).toBeHidden();
+
+  // Modifier-assisted gestures belong to the page/browser as well. They must
+  // never be converted into an image annotation gesture.
+  await page.keyboard.down(process.platform === 'darwin' ? 'Meta' : 'Control');
+  await page.mouse.move(jitterBox.x + 12, jitterBox.y + jitterBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(jitterBox.x + jitterBox.width - 12, jitterBox.y + jitterBox.height / 2, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  await page.keyboard.up(process.platform === 'darwin' ? 'Meta' : 'Control');
+  await expect(page.locator('[data-locus-toolbar]')).toBeHidden();
+  await expect(page.locator('#native-image-clicks')).toHaveText('2');
+
+  // A deliberate primary-button drag across a linked image selects it for
+  // Locus without following the link. Horizontal and vertical movement share
+  // the same distance threshold; this fixture exercises the horizontal path.
+  const linkedBox = await page.locator('#figure-linked').boundingBox();
+  if (!linkedBox) throw new Error('linked image has no box');
+  await page.mouse.move(linkedBox.x + 12, linkedBox.y + linkedBox.height / 2);
+  await page.mouse.down();
+  // End in the wrapping link's padding. Chromium then targets the synthetic
+  // click at the common ancestor <a>, not necessarily at its child <img>.
+  await page.mouse.move(linkedBox.x + linkedBox.width + 6, linkedBox.y + linkedBox.height / 2, {
+    steps: 8,
+  });
+  await page.mouse.up();
   await expect(page).toHaveURL(IMAGES);
   await expect(page.locator('[data-locus-toolbar]')).toBeVisible();
   await page.click('#probe-3');
   await expect(page.locator('[data-locus-toolbar]')).toBeHidden();
 
-  // A plain image also offers the toolbar; shortcut 1 = fluorescent yellow ring.
-  await page.click('#figure-1');
+  // Dragging a plain image offers the toolbar without invoking the page's
+  // click-to-zoom handler; shortcut 1 creates the fluorescent yellow ring.
+  const plainBox = await page.locator('#figure-1').boundingBox();
+  if (!plainBox) throw new Error('plain image has no box');
+  await page.mouse.move(plainBox.x + plainBox.width / 2, plainBox.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(
+    plainBox.x + plainBox.width / 2,
+    plainBox.y + plainBox.height - 10,
+    { steps: 8 },
+  );
+  await page.mouse.up();
   await expect(page.locator('[data-locus-toolbar]')).toBeVisible();
+  await expect(page.locator('#native-image-clicks')).toHaveText('2');
   await page.keyboard.press('1');
   await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
   const ring = page.locator('[data-locus-ring]');
@@ -299,6 +360,33 @@ test('E15: clicking an image rings it; the ring and panel entry survive reload',
   const ringBox = await ring.boundingBox();
   expect(Math.abs((ringBox?.x ?? 0) - ((imgBox?.x ?? 0) - 4))).toBeLessThan(2);
   expect(Math.abs((ringBox?.y ?? 0) - ((imgBox?.y ?? 0) - 4))).toBeLessThan(2);
+
+  // Even after an image has a Locus ring, an ordinary click remains the
+  // page's click. It must neither reopen the toolbar nor steal the click for a
+  // Locus note editor.
+  await page.click('#figure-1');
+  await expect(page.locator('#native-image-clicks')).toHaveText('3');
+  await expect(page.locator('#figure-1')).toHaveClass(/zoomed/);
+  await expect(page.locator('[data-locus-toolbar]')).toBeHidden();
+  await expect(page.locator('[data-locus-note]')).toBeHidden();
+
+  // The same explicit gesture reopens an existing image annotation instead
+  // of creating a duplicate; its ordinary click remains reserved for the page.
+  const annotatedBox = await page.locator('#figure-1').boundingBox();
+  if (!annotatedBox) throw new Error('annotated image has no box');
+  await page.mouse.move(annotatedBox.x + 12, annotatedBox.y + annotatedBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    annotatedBox.x + annotatedBox.width - 12,
+    annotatedBox.y + annotatedBox.height / 2,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  await expect(page.locator('[data-locus-note]')).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+  await expect(page.locator('#native-image-clicks')).toHaveText('3');
+  await page.click('#probe-3');
+  await expect(page.locator('[data-locus-note]')).toBeHidden();
 
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');

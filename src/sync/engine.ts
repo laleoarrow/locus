@@ -28,9 +28,10 @@ const MAX_ATTEMPTS = 3;
  * push the merged result back under an If-Match guard.
  *
  * Correctness rests on `repo.importBackup` being a convergent merge (rows
- * merged by id, newer `updatedAt` wins, tombstones never resurrected), so
- * whichever device syncs last ends up with the union of both — and a device
- * that syncs twice reaches the same state as one that synced once.
+ * merged by id, newer `updatedAt` wins for notes/deletions, and colour has an
+ * independent conflict clock), so whichever device syncs last ends up with
+ * the union of both — and a device that syncs twice reaches the same state as
+ * one that synced once.
  */
 export async function runSync(
   config: SyncConfig,

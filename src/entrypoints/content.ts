@@ -29,6 +29,8 @@ const MUTATION_WATCH_MS = 15_000;
 /** Delay before re-checking placement, to catch rivals that render late. */
 const PLACEMENT_RECHECK_MS = 350;
 const MUTATION_DEBOUNCE_MS = 300;
+/** Separates an intentional image-selection drag from ordinary click jitter. */
+const IMAGE_DRAG_THRESHOLD_PX = 8;
 
 interface Entry {
   item: AnnotationWithAnchor;
@@ -40,6 +42,13 @@ type PendingTarget =
   | { type: 'image'; image: HTMLImageElement };
 
 type UndoAction = { action: 'create' | 'delete'; annotationIds: string[] };
+
+interface ImageDragGesture {
+  image: HTMLImageElement;
+  startX: number;
+  startY: number;
+  moved: boolean;
+}
 
 function isEditableKeyEvent(event: KeyboardEvent): boolean {
   if (event.isComposing) return true;
@@ -75,6 +84,9 @@ class LocusContent {
   /** Per-tab undo stack for Cmd/Ctrl+Z (creates and note-editor deletes). */
   private readonly undoStack: UndoAction[] = [];
   private placementRecheck: ReturnType<typeof setTimeout> | undefined;
+  private imageDrag: ImageDragGesture | null = null;
+  private suppressImageClick = false;
+  private suppressImageClickTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor() {
     this.ui = new LocusUI(this.doc, {
@@ -106,6 +118,8 @@ class LocusContent {
   private deactivate(): void {
     this.active = false;
     this.pending = null;
+    this.imageDrag = null;
+    this.clearSuppressedImageClick();
     this.renderer.clearAll();
     this.ui.hideToolbar();
     this.ui.closeNoteEditor();
@@ -335,24 +349,94 @@ class LocusContent {
   }
 
   private wirePointer(): void {
-    this.doc.addEventListener('mouseup', (event) => {
-      if (!this.active || this.ui.containsEvent(event)) return;
-      // Link-wrapped images are handled by the click listener below so the
-      // link can be cancelled before navigation.
-      if (event.target instanceof HTMLImageElement && event.target.closest('a')) return;
-      setTimeout(() => this.handlePointerUp(event), 0);
-    });
+    this.doc.addEventListener(
+      'mousedown',
+      (event) => {
+        // A new physical gesture can never belong to the previous drag's
+        // synthetic click. Clear any token that outlived its event turn.
+        this.clearSuppressedImageClick();
+        this.imageDrag =
+          this.active &&
+          event.button === 0 &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          !event.altKey &&
+          event.target instanceof HTMLImageElement &&
+          !this.ui.containsEvent(event)
+            ? {
+                image: event.target,
+                startX: event.clientX,
+                startY: event.clientY,
+                moved: false,
+              }
+            : null;
+      },
+      true,
+    );
+    this.doc.addEventListener(
+      'mousemove',
+      (event) => {
+        const gesture = this.imageDrag;
+        if (!gesture || (event.buttons & 1) === 0) return;
+        if (
+          Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) >=
+          IMAGE_DRAG_THRESHOLD_PX
+        ) {
+          gesture.moved = true;
+          // Once the threshold is crossed, this gesture belongs to Locus rather
+          // than the browser's native image/link drag operation.
+          event.preventDefault();
+        }
+      },
+      true,
+    );
+    this.doc.addEventListener(
+      'dragstart',
+      (event) => {
+        const gesture = this.imageDrag;
+        if (!gesture || event.target !== gesture.image) return;
+        // Chromium starts native image/link dragging before our deliberate
+        // 8 px selection threshold. Cancel native DnD so mousemove continues,
+        // but do not turn ordinary click jitter into a Locus gesture.
+        event.preventDefault();
+      },
+      true,
+    );
+    this.doc.addEventListener(
+      'mouseup',
+      (event) => {
+        const gesture = this.imageDrag;
+        this.imageDrag = null;
+        if (!this.active || this.ui.containsEvent(event)) return;
+        if (
+          gesture?.moved &&
+          event.button === 0 &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          !event.altKey
+        ) {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          this.suppressFollowingImageClick();
+          this.presentImageSelection(gesture.image);
+          return;
+        }
+        // Even an already-ringed image keeps its ordinary click. Image notes
+        // reopen through the explicit drag gesture or the side panel.
+        if (gesture) return;
+        setTimeout(() => this.handlePointerUp(event), 0);
+      },
+      true,
+    );
     this.doc.addEventListener(
       'click',
       (event) => {
-        if (!this.active || this.ui.containsEvent(event)) return;
-        const target = event.target;
-        if (!(target instanceof HTMLImageElement) || !target.closest('a')) return;
-        // Keep modified clicks available for opening the underlying link.
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        if (!this.suppressImageClick) return;
+        this.clearSuppressedImageClick();
         event.preventDefault();
-        event.stopPropagation();
-        this.handlePointerUp(event);
+        event.stopImmediatePropagation();
       },
       true,
     );
@@ -370,23 +454,44 @@ class LocusContent {
     });
   }
 
+  private clearSuppressedImageClick(): void {
+    clearTimeout(this.suppressImageClickTimer);
+    this.suppressImageClickTimer = undefined;
+    this.suppressImageClick = false;
+  }
+
+  /** Suppress only the synthetic click immediately following a completed drag. */
+  private suppressFollowingImageClick(): void {
+    this.clearSuppressedImageClick();
+    this.suppressImageClick = true;
+    this.suppressImageClickTimer = setTimeout(() => this.clearSuppressedImageClick(), 0);
+  }
+
+  private presentImageSelection(image: HTMLImageElement): void {
+    const rect = image.getBoundingClientRect();
+    const existing = [...this.entries].find(
+      ([id, entry]) =>
+        entry.item.annotation.kind === 'image' && this.renderer.getImage(id) === image,
+    );
+    if (existing) {
+      this.openNoteFor(existing[0], rect);
+      return;
+    }
+    this.doc.getSelection()?.removeAllRanges();
+    this.pending = { type: 'image', image };
+    this.presentToolbar(rect);
+  }
+
   private handlePointerUp(event: MouseEvent): void {
     if (this.showToolbarForSelection()) return;
 
-    // Collapsed click: an existing highlight opens its note; an image offers
-    // the ring toolbar. Link-wrapped images reach here through the click
-    // listener, which prevents the unmodified click from navigating.
+    // Collapsed click: an existing text highlight opens its note. Images are
+    // deliberately excluded here so their links and lightboxes stay native.
     const hitId = this.renderer.annotationAtPoint(event.clientX, event.clientY);
     if (hitId) {
+      if (this.entries.get(hitId)?.item.annotation.kind === 'image') return;
       const range = this.renderer.getRange(hitId);
       this.openNoteFor(hitId, range?.getBoundingClientRect() ?? new DOMRect(event.clientX, event.clientY, 0, 0));
-      return;
-    }
-    const target = event.target;
-    if (target instanceof HTMLImageElement) {
-      const rect = target.getBoundingClientRect();
-      this.pending = { type: 'image', image: target };
-      this.presentToolbar(rect);
     }
   }
 

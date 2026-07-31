@@ -477,9 +477,12 @@ export async function parsePageNoteZip(
       const rawKey = firstText(stringField(row, 'key'), stringField(row, 'lightId'));
       const linkedNote = linkedNoteFor(row, noteMaps);
       const createdAt = firstTimestamp(row, 'createAt', 'time', 'updateAt');
-      const updatedAt = Math.max(
+      const highlightUpdatedAt = Math.max(
         createdAt,
         firstTimestamp(row, 'updateAt', 'time', 'createAt'),
+      );
+      const updatedAt = Math.max(
+        highlightUpdatedAt,
         linkedNote ? firstTimestamp(linkedNote.row, 'updateAt', 'createAt') : 0,
       );
       exportedAt = Math.max(exportedAt, updatedAt);
@@ -509,6 +512,10 @@ export async function parsePageNoteZip(
         sourceId: page.source.id,
         kind: 'text',
         color: colorFor(row, customColors),
+        // A linked note can be edited long after the highlight without
+        // changing its colour. Only the PageNote highlight row owns this
+        // clock, so note-only imports cannot roll back a Locus recolour.
+        colorUpdatedAt: highlightUpdatedAt,
         comment,
         exact,
         createdAt,

@@ -28,8 +28,10 @@ This file is the coordination board for concurrent work in this repository.
 
 
 | Rework README hero + add a collapsible gallery | Claude (main line) | done | `README.md`, `assets/shot-*.png`, `assets/gallery-*.png` (new), `fixtures/showcase/**` (new), `scripts/readme-shots.mjs` (new) | The library screenshot was dropped in bare, with no caption, and it showed test fixtures (`Fixture: nested text nodes`, `localhost`) rather than anything a reader recognises. Regenerating it from realistic demo pages and giving it the same captioned treatment as the existing three-column table, plus a `<details>` gallery. Docs and assets only — no product source. **Done.** Screenshots are regenerated from `fixtures/showcase/` served at realistic academic URLs via Playwright request interception, so the library shows real paper titles, DOIs and three distinct site families instead of localhost fixtures. Verified by rendering README.md through the GitHub markdown API: the `<details>` block expands with its four captioned images. Files released. |
-| Bulk replace live annotation colors | Codex `/root` | ready for UI review | `src/db/repo.ts`, `src/messaging/protocol.ts`, `src/entrypoints/background.ts`, `src/entrypoints/library/App.tsx`, `src/entrypoints/library/components/BulkColorActions.tsx` (new), `src/entrypoints/library/style.css`, `tests/repo.test.ts`, `e2e/library.spec.ts`, `todo.md` | Atomic whole-library replacement is complete. Detached rows participate, tombstones do not; stale preview counts abort the transaction, a selected source-color filter migrates to the target while all other filters stay intact, and the pending shield covers the viewport through a body portal. Final gates: typecheck, 124 unit, 36 E2E, Chrome + Edge production builds. Edge was reloaded in place at the fixed ID and still shows 19/19 live annotations. No version bump, commit, push or release until the user approves the UI. Screenshot remains outside `assets/shot-*`. |
+| Bulk replace live annotation colors | Codex `/root` | validated for v0.7.0 | `src/domain/types.ts`, `src/domain/backup.ts`, `src/db/repo.ts`, `src/messaging/protocol.ts`, `src/entrypoints/background.ts`, `src/entrypoints/library/App.tsx`, `src/entrypoints/library/components/BulkColorActions.tsx` (new), `src/entrypoints/library/style.css`, `src/sync/engine.ts`, `tests/repo.test.ts`, `tests/backup.test.ts`, `tests/pagenote.test.ts`, `e2e/library.spec.ts`, `e2e/serve.mjs`, docs and release assets | The user approved the UI. Atomic whole-library replacement includes Detached rows and excludes tombstones; an exact stale snapshot aborts the transaction, the active source-colour filter migrates to the target, and the pending shield covers the viewport. Colour has an independent conflict clock, legacy/PageNote timestamps are normalized, and backup format v2 prevents old clients overwriting the new semantics. Edits during an active WebDAV pass queue a follow-up sync, and open-page palettes refresh after bulk changes. Final gates: typecheck, 128 unit, 39 E2E, Chrome + Edge production builds. Verified v0.7.0 store ZIP SHA-256: `909b832f9886e72976b5a4b717c261c6253e53ec5b94da4c379281c72329e641`. |
 | Timeline as a journey, not a list | Claude (main line) | done | `src/entrypoints/library/components/Timeline.tsx`, `src/entrypoints/library/components/Timeline.css` (new), `src/domain/library.ts`, `tests/library.test.ts` | Redesign the timeline projection to read as travelling back through a history — a navigable time rail, era markers and receding depth — rather than a flat chronological list. The mode stays named "Timeline" everywhere the user can see it. **Deliberately avoiding every file the active bulk-color task claims**: no `App.tsx` (the `Timeline` props stay identical), no `style.css` (all new rules live in a separate `Timeline.css` under a `tl-` prefix), no `e2e/library.spec.ts`, no test plan. The legacy `.timeline-day` / `.timeline-entry` / `.page-title-inline` class names and their nesting are preserved because E32/E33 assert on them. E2E and plan updates are deferred until those files are released. **Done.** Depth is applied to card surfaces, never to text, so an older note looks further away rather than harder to read; the rail carries a persistent day number so it reads as a ruler and does not reflow on hover. Checks: typecheck, 124 unit (6 new, U36), 36 E2E including the bulk-color suite that was mid-flight in the working tree, Chrome + Edge builds. Only my own files were staged — the other task's uncommitted work was left untouched. Files released. |
+| Preserve native image clicks; annotate only after an image drag | Codex `/root` | validated for v0.7.0 | `src/entrypoints/content.ts`, `fixtures/images.html`, `e2e/locus.spec.ts`, `README.md`, `ARCHITECTURE.md`, `scripts/store-fields.mjs`, `scripts/readme-shots.mjs`, `scripts/store-shots.mjs`, `docs/STORE-SUBMISSION.md`, `docs/ACCEPTANCE-TEST-PLAN.md`, `todo.md` | Ordinary image clicks remain entirely native for links, zoomers and page handlers, including already annotated images. A primary-button drag starting on an image and crossing an 8 px threshold becomes the explicit Locus image-selection gesture; repeating it on an existing image annotation opens its note instead of duplicating it. Text selection and double-click selection are unchanged. E15 covers clicks, sub-threshold jitter, modifiers, linked-image padding, horizontal/vertical drags and duplicate prevention. Screenshot helpers scroll figures into view before dragging, so their generated image-ring examples exercise the real gesture. Final gates: typecheck, 128 unit, 39 E2E, Chrome + Edge production builds. |
+| Separate note and deletion conflict clocks | unclaimed | backlog | `src/domain/types.ts`, `src/domain/backup.ts`, `src/db/repo.ts`, sync tests and migration docs | Existing technical debt: notes and tombstones still share the row-level `updatedAt`. A truly concurrent later note on one device and deletion on another can make whole-row LWW choose one field set. v0.7 isolates colour from that conflict and does not introduce it; a future format revision should give note/deletion independent conflict state before claiming arbitrary concurrent convergence. |
 
 ## Shared context (read before editing)
 
@@ -38,8 +40,8 @@ server, which the Playwright config starts on port 8137.
 
 ```bash
 pnpm typecheck                          # TS strict
-pnpm test                               # Vitest, currently 113
-pnpm build:e2e && npx playwright test   # Playwright, currently 34
+pnpm test                               # Vitest, currently 128
+pnpm build:e2e && npx playwright test   # Playwright, currently 39
 pnpm build && pnpm build:edge           # Chrome + Edge from one source
 ```
 
@@ -49,15 +51,18 @@ pnpm build && pnpm build:edge           # Chrome + Edge from one source
   silently deleted** (e2e E8).
 - Creating a highlight causes **zero layout shift** (e2e E11 compares probe
   bounding boxes pixel-for-pixel).
-- Backup merge is **idempotent**, tombstones are **never resurrected**, and the
-  newer `updatedAt` wins (unit U20/U21/U22).
+- Backup merge is **idempotent**; an older row cannot resurrect a newer
+  tombstone, and `colorUpdatedAt` resolves colour independently without
+  changing note/deletion state (unit U20/U21/U22/U41). Fully concurrent
+  note-vs-deletion clocks remain explicitly tracked above as technical debt.
 - Sync credentials **never appear in an exported backup** (e2e E23 asserts on a
   real downloaded file).
 - Chrome and Edge build from the same source; manifests differ only in version.
 
-**Versioning:** `v0.6.2` is the current release (side-panel Library entry and
-manifest version); `v0.6.1` added compact Library cards, live site filters and
-site families. `package.json` sits at `0.6.2`.
+**Versioning:** `v0.7.0` is the validated release candidate (Timeline journey,
+atomic whole-library colour replacement and native-safe image gestures);
+`v0.6.2` remains the latest published release until the tag is cut.
+`package.json` sits at `0.7.0`.
 
 ## Messages
 

@@ -12,6 +12,7 @@ import {
   resolvePageColorEvents,
 } from '@/domain/colors';
 import type { GroupMode } from '@/domain/library';
+import { effectiveColorUpdatedAt } from '@/domain/types';
 import type {
   AnchorPayload,
   AnchorRecord,
@@ -84,6 +85,7 @@ export async function createAnnotation(input: CreateAnnotationInput): Promise<An
     sourceId: input.sourceId,
     kind: isImage ? 'image' : 'text',
     color: input.color,
+    colorUpdatedAt: now,
     comment: input.comment,
     exact: input.anchor.kind === 'image' ? input.anchor.alt : input.anchor.exact,
     createdAt: now,
@@ -165,6 +167,138 @@ export async function tombstoneMany(ids: string[]): Promise<void> {
 /** Restore a batch in one transaction. */
 export async function undeleteMany(ids: string[]): Promise<void> {
   await setDeletedStateMany(ids, false);
+}
+
+export interface ReplaceAnnotationColorResult {
+  updated: number;
+  annotationIds: string[];
+}
+
+export interface AnnotationColorExpectation {
+  id: string;
+  updatedAt: number;
+  colorUpdatedAt: number;
+}
+
+function withAnnotationColor(
+  annotation: AnnotationRecord,
+  color: ColorKey,
+  colorUpdatedAt: number,
+): AnnotationRecord {
+  return { ...annotation, color, colorUpdatedAt };
+}
+
+async function assertTargetColorExists(
+  targetColor: ColorKey,
+  liveAnnotations: AnnotationRecord[],
+): Promise<void> {
+  const catalogRecord = await db.settings.get(CUSTOM_COLORS_KEY);
+  const customColors = Array.isArray(catalogRecord?.value)
+    ? (catalogRecord.value as CustomColor[])
+    : [];
+  const targetExists =
+    (BUILTIN_COLOR_KEYS as readonly string[]).includes(targetColor) ||
+    customColors.some((color) => color.key === targetColor) ||
+    liveAnnotations.some((annotation) => annotation.color === targetColor);
+  if (!targetExists) {
+    throw new Error('Target color is not in the current Locus palette.');
+  }
+}
+
+/** Canonical single-row color mutation used by future single-item controls. */
+export async function setAnnotationColor(
+  id: string,
+  targetColor: ColorKey,
+): Promise<boolean> {
+  return db.transaction('rw', db.annotations, db.settings, async () => {
+    const annotation = await db.annotations.get(id);
+    if (!annotation || annotation.deletedAt !== 0 || annotation.color === targetColor) {
+      return false;
+    }
+    const liveAnnotations = await db.annotations.where('deletedAt').equals(0).toArray();
+    await assertTargetColorExists(targetColor, liveAnnotations);
+    await db.annotations.put(
+      withAnnotationColor(
+        annotation,
+        targetColor,
+        Math.max(Date.now(), effectiveColorUpdatedAt(annotation) + 1),
+      ),
+    );
+    return true;
+  });
+}
+
+/**
+ * Replace one live color across the whole local library in one transaction.
+ *
+ * Detached annotations are ordinary live rows and are therefore included.
+ * Tombstones are deliberately excluded. Returning the changed ids lets the
+ * background reuse the normal page-broadcast and sync pipeline after commit.
+ */
+export async function replaceAnnotationColor(
+  sourceColor: ColorKey,
+  targetColor: ColorKey,
+  expectedCount: number,
+  expectedAnnotations: AnnotationColorExpectation[],
+): Promise<ReplaceAnnotationColorResult> {
+  if (!Number.isSafeInteger(expectedCount) || expectedCount < 0) {
+    throw new Error('Expected annotation count must be a non-negative integer.');
+  }
+  if (!Array.isArray(expectedAnnotations) || expectedAnnotations.length !== expectedCount) {
+    throw new Error('The annotation preview is invalid. Review the updated count and try again.');
+  }
+  const expectedById = new Map<string, AnnotationColorExpectation>();
+  for (const expected of expectedAnnotations) {
+    if (
+      !expected ||
+      typeof expected.id !== 'string' ||
+      !Number.isFinite(expected.updatedAt) ||
+      !Number.isFinite(expected.colorUpdatedAt) ||
+      expectedById.has(expected.id)
+    ) {
+      throw new Error('The annotation preview is invalid. Review the updated count and try again.');
+    }
+    expectedById.set(expected.id, expected);
+  }
+  if (sourceColor === targetColor) return { updated: 0, annotationIds: [] };
+
+  return db.transaction('rw', db.annotations, db.settings, async () => {
+    const liveAnnotations = await db.annotations.where('deletedAt').equals(0).toArray();
+    const matches = liveAnnotations.filter((annotation) => annotation.color === sourceColor);
+    const previewChanged =
+      matches.length !== expectedCount ||
+      matches.some((annotation) => {
+        const expected = expectedById.get(annotation.id);
+        return (
+          !expected ||
+          expected.updatedAt !== annotation.updatedAt ||
+          expected.colorUpdatedAt !== effectiveColorUpdatedAt(annotation)
+        );
+      });
+    if (previewChanged) {
+      throw new Error(
+        `The live ${sourceColor} annotations changed. Review the updated count and confirm again.`,
+      );
+    }
+    if (matches.length === 0) return { updated: 0, annotationIds: [] };
+
+    await assertTargetColorExists(targetColor, liveAnnotations);
+
+    const now = Date.now();
+    await db.annotations.bulkPut(
+      matches.map((annotation) =>
+        withAnnotationColor(
+          annotation,
+          targetColor,
+          Math.max(now, effectiveColorUpdatedAt(annotation) + 1),
+        ),
+      ),
+    );
+    return {
+      updated: matches.length,
+      annotationIds: matches.map((annotation) => annotation.id),
+    };
+  });
 }
 
 export async function getAnnotation(id: string): Promise<AnnotationRecord | undefined> {
@@ -263,8 +397,9 @@ function isSameAnnotation(
  *
  * - Pages are matched by `urlKey`, so annotations from another machine attach
  *   to the local document/source instead of creating a duplicate page.
- * - Rows are merged by id; the newer `updatedAt` wins, so a deletion made on
- *   either side survives (tombstones are never resurrected by an older copy).
+ * - Rows are merged by id; the newer `updatedAt` wins for notes/deletions,
+ *   while color has its own clock so recolouring cannot resurrect an older
+ *   whole row.
  * - An incoming annotation identical to a local one in every meaningful field
  *   is treated as already present rather than duplicated on the page.
  */
@@ -325,17 +460,36 @@ export async function importBackup(file: BackupFile): Promise<ImportSummary> {
         const sourceId = sourceIdMap.get(incoming.sourceId);
         const documentId = documentIdMap.get(incoming.documentId);
         if (!sourceId || !documentId) continue; // its page never made it in
-        const annotation: AnnotationRecord = { ...incoming, sourceId, documentId };
+        const annotation: AnnotationRecord = {
+          ...incoming,
+          sourceId,
+          documentId,
+          colorUpdatedAt: incoming.colorUpdatedAt ?? incoming.createdAt,
+        };
         const anchor = incomingAnchors.get(incoming.id);
 
         const local = await db.annotations.get(annotation.id);
         if (local) {
-          if (local.updatedAt >= annotation.updatedAt) {
+          const incomingBaseWins = annotation.updatedAt > local.updatedAt;
+          const localColorAt = effectiveColorUpdatedAt(local);
+          const incomingColorAt = effectiveColorUpdatedAt(annotation);
+          const incomingColorWins =
+            incomingColorAt > localColorAt ||
+            (incomingColorAt === localColorAt && annotation.color > local.color);
+          const mergedColor = incomingColorWins ? annotation.color : local.color;
+          const mergedColorAt = Math.max(localColorAt, incomingColorAt);
+          const colorChanged =
+            mergedColor !== local.color || mergedColorAt !== effectiveColorUpdatedAt(local);
+          if (!incomingBaseWins && !colorChanged) {
             summary.annotationsSkipped++;
             continue;
           }
-          await db.annotations.put(annotation);
-          if (anchor) {
+          await db.annotations.put({
+            ...(incomingBaseWins ? annotation : local),
+            color: mergedColor,
+            colorUpdatedAt: mergedColorAt,
+          });
+          if (incomingBaseWins && anchor) {
             await db.anchors.where('annotationId').equals(annotation.id).delete();
             await db.anchors.put({ ...anchor, annotationId: annotation.id });
           }

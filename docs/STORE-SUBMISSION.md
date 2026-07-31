@@ -30,11 +30,15 @@ upload the sideload zips from the GitHub release — those carry a pinned key.
 | Screenshot 2 | 1280×800 | `store-shot-2-note.png` | both |
 | Screenshot 3 | 1280×800 | `store-shot-3-figure.png` | both |
 | Screenshot 4 | 1280×800 | `store-shot-4-panel.png` | both |
-| Screenshot 5 | 1280×800 | `shot-library.png` | both |
+| Screenshot 5 | 1280×800 | `store-shot-5-library.png` | both |
 
 Regenerate screenshots after UI changes:
 
 ```bash
+# README/gallery assets plus the 1280×800 Library store screenshot
+pnpm build && node scripts/readme-shots.mjs
+
+# Store screenshots 1–4
 node e2e/serve.mjs &
 pnpm build:e2e && node scripts/store-shots.mjs
 ```
@@ -66,10 +70,12 @@ WHAT IT DOES
   pick one from the keyboard. Add page-specific colours without cluttering
   other pages.
 • Click a highlight to write a note in Markdown, with a live preview.
-• Click a figure to ring it in colour — images are annotatable too.
+• Drag across a figure to ring it in colour. Ordinary clicks still open the
+  page's link or image viewer.
 • A side panel lists every annotation on the page; click one to scroll to it.
-• Open the Library to search every annotation across sites, group by page, site
-  or timeline, edit notes, and restore deleted items.
+• Open the Library to search every annotation across sites, travel through a
+  day-by-day timeline, edit notes, restore deleted items, or replace one
+  annotation colour across the whole live library.
 • Cmd/Ctrl+Z undoes your last highlight. Deletes are undoable, never silent.
 • Highlights come back after reload, and keep working when the page changes:
   each one records its text, surrounding context, character offsets and DOM
@@ -110,9 +116,10 @@ Locus / 文迹 是一个安静的网页阅读标注层。选中文字、选颜�
 功能
 • 选中文字弹出三色工具条，按 1 / 2 / 3 即可用键盘选色；自定义颜色只属于当前页面，不会挤满其他页面。
 • 点击高亮即可写 Markdown 笔记，带实时预览。
-• 点击插图可为图片加一圈彩色高亮环。
+• 在插图上拖动即可为图片加一圈彩色高亮环；普通单击仍用于打开网页原有的链接或图片查看器。
 • 侧边栏列出本页所有标注，点击即滚动定位并闪烁提示。
-• 打开资料库可跨网站搜索全部标注，按页面、站点或时间线分组，编辑笔记并恢复已删除项目。
+• 打开资料库可跨网站搜索全部标注，沿逐日时间线回顾阅读历程，编辑笔记、恢复已删除项目，
+  或在整个未删除资料库中批量替换一种标注颜色。
 • Cmd/Ctrl+Z 撤销上一次高亮；删除可撤销，不会静默丢失。
 • 刷新后标注自动恢复，页面结构改变也能重新定位：每条标注同时记录原文、上下文、
   字符位置与 DOM 路径，按可用的线索依次恢复。若原文确实已不存在，标注会显示为
