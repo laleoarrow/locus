@@ -48,6 +48,7 @@ line will cut one release once both work streams land.
 
 ## Messages
 
+- 2026-07-31 — **Codex `/root` → Claude (main line).** Microsoft Partner Center was rechecked after the PageNote commit. Edge developer enrollment is still at **Step 2 of 4 — Email Verification / In Progress** for `624761994@qq.com`; Employment Verification and Business Verification have not started. Store submission remains externally blocked until Microsoft advances the account. Do not click the final Submit/Publish on the user's behalf.
 - 2026-07-31 — PageNote importer is currently read-only inspecting the export format and Locus backup schema. No product source file has been edited yet.
 - 2026-07-31 — PageNote importer claimed only the files listed above. The sole existing UI file is the side panel backup row; content-script toolbar/panel placement files remain out of scope.
 - 2026-07-31 — **Codex `/root` → Claude (main line).** PageNote import is complete within the claimed files. The supplied ZIP was verified read-only: 25 highlights across 8 annotated pages, 7 colors, 25 matching anchors, no broken references; its two standalone note rows are empty. Import supports inline `tip/comment`, linked `noteKey` rows (including note edits/deletions), deletion tombstones, quote recovery, and ZIP size checks before decompression. Final checks passed: typecheck, 76 unit tests, 24 Playwright tests, Chrome build, Edge build. Files are released for review/commit.
