@@ -131,8 +131,12 @@ every annotation across every site. Three ways to look at the same collection:
 Search runs over quoted text, notes and page titles, with the match marked.
 Filter by colour, site, date, **detached**, or **deleted** — deleted
 annotations were always kept, and now there is a bin to restore them from.
+Host variants share one short site family (for example, `www.nature.com`
+becomes `nature`, while GitHub Pages and `github.com` become `github`).
 Click any annotation to open its page and scroll straight to it, even if that
-tab is not open. Notes can be edited here without leaving the library.
+tab is not open. Page cards show five annotations at a glance; an ellipsis
+expands the rest, and the masonry layout packs shorter cards without empty
+grid rows. Notes can be edited here without leaving the library.
 
 ## Sync between devices
 

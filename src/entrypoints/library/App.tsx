@@ -1,5 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { loadLibrary } from '@/db/library';
 import { getLibraryMode, getPrefs } from '@/db/repo';
 import { buildPaletteForKeys, specFor } from '@/domain/colors';
@@ -51,9 +51,19 @@ export function App() {
 
   const customColors = prefs?.customColors ?? [];
   const allPages = useMemo(() => (input ? buildLibrary(input) : []), [input]);
+  const collectionPages = useMemo(
+    () =>
+      filterLibrary(allPages, {
+        ...EMPTY_FILTERS,
+        deletedOnly: filters.deletedOnly,
+      }),
+    [allPages, filters.deletedOnly],
+  );
   const usedColors = useMemo(
-    () => [...new Set(allPages.flatMap((page) => page.annotations.map((entry) => entry.color)))],
-    [allPages],
+    () => [
+      ...new Set(collectionPages.flatMap((page) => page.annotations.map((entry) => entry.color))),
+    ],
+    [collectionPages],
   );
   const palette = useMemo(
     () =>
@@ -62,10 +72,27 @@ export function App() {
       ),
     [customColors, usedColors],
   );
+  const origins = useMemo(() => availableOrigins(collectionPages), [collectionPages]);
   const pages = useMemo(() => filterLibrary(allPages, filters), [allPages, filters]);
-  const origins = useMemo(() => availableOrigins(allPages), [allPages]);
+  const availableColorKeys = useMemo(() => new Set(usedColors), [usedColors]);
+  const availableOriginKeys = useMemo(
+    () => new Set(origins.map((origin) => origin.origin)),
+    [origins],
+  );
 
-  const total = countAnnotations(allPages);
+  useEffect(() => {
+    setFilters((current) => {
+      const nextColors = current.colors.filter((color) => availableColorKeys.has(color));
+      const nextOrigins = current.origins.filter((origin) => availableOriginKeys.has(origin));
+      return nextColors.length === current.colors.length &&
+        nextOrigins.length === current.origins.length
+        ? current
+        : { ...current, colors: nextColors, origins: nextOrigins };
+    });
+  }, [availableColorKeys, availableOriginKeys]);
+
+  const libraryTotal = countAnnotations(allPages);
+  const total = countAnnotations(collectionPages);
   const shown = countAnnotations(pages);
 
   const patch = (next: Partial<LibraryFilters>) => setFilters((prev) => ({ ...prev, ...next }));
@@ -213,8 +240,8 @@ export function App() {
         </div>
       </header>
 
-      <main className="library-body">
-        {input === undefined ? null : total === 0 ? (
+      <main className="library-body" data-layout={mode}>
+        {input === undefined ? null : libraryTotal === 0 ? (
           <div className="empty">
             <h2>No annotations yet</h2>
             <p>Highlight something while you read and it will show up here.</p>

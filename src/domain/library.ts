@@ -49,8 +49,9 @@ export interface LibraryPage {
 }
 
 export interface LibrarySite {
+  /** Normalized site-family key, such as `nature` or `github`. */
   origin: string;
-  /** Host without the scheme, for display. */
+  /** Readable site-family label. */
   label: string;
   pages: LibraryPage[];
   annotationCount: number;
@@ -66,6 +67,7 @@ export interface TimelineDay {
 export interface LibraryFilters {
   query: string;
   colors: ColorKey[];
+  /** Normalized site-family keys, such as `nature` or `github`. */
   origins: string[];
   from: number | null;
   to: number | null;
@@ -108,14 +110,42 @@ export function originOf(url: string): string {
   }
 }
 
-/** Host for display, falling back to a readable label for unparseable URLs. */
-export function siteLabel(origin: string): string {
-  if (origin === '') return 'Unknown site';
+const GENERIC_SECOND_LEVEL_SUFFIXES = new Set(['ac', 'co', 'com', 'edu', 'gov', 'net', 'org']);
+
+/**
+ * Collapse host variants into the short family used by site grouping and
+ * filtering. The source URL itself remains exact and is never rewritten.
+ */
+export function siteFamily(origin: string): string {
+  if (origin === '') return '';
+  let hostname: string;
   try {
-    return new URL(origin).host;
+    hostname = new URL(origin).hostname.toLowerCase().replace(/\.$/, '');
   } catch {
-    return origin;
+    return '';
   }
+  if (hostname.startsWith('www.')) hostname = hostname.slice(4);
+  if (
+    hostname === 'localhost' ||
+    hostname.includes(':') ||
+    /^\d+(?:\.\d+){3}$/.test(hostname)
+  ) {
+    return hostname;
+  }
+
+  const labels = hostname.split('.').filter(Boolean);
+  if (labels.length < 2) return labels[0] ?? '';
+  const suffix = labels.at(-1) ?? '';
+  const secondLevel = labels.at(-2) ?? '';
+  const hasCompoundSuffix =
+    suffix.length === 2 && GENERIC_SECOND_LEVEL_SUFFIXES.has(secondLevel);
+  const familyIndex = labels.length - (hasCompoundSuffix ? 3 : 2);
+  return labels[Math.max(0, familyIndex)] ?? '';
+}
+
+/** Readable site-family label, falling back for unparseable URLs. */
+export function siteLabel(origin: string): string {
+  return siteFamily(origin) || 'Unknown site';
 }
 
 /** Local calendar day key, `YYYY-MM-DD`. */
@@ -199,7 +229,7 @@ export function filterLibrary(pages: LibraryPage[], filters: LibraryFilters): Li
   const out: LibraryPage[] = [];
 
   for (const page of pages) {
-    if (origins.size > 0 && !origins.has(page.origin)) continue;
+    if (origins.size > 0 && !origins.has(siteFamily(page.origin))) continue;
     const annotations = page.annotations.filter((annotation) => {
       if (annotation.deleted !== filters.deletedOnly) return false;
       if (filters.detachedOnly && !annotation.detached) return false;
@@ -219,17 +249,18 @@ export function filterLibrary(pages: LibraryPage[], filters: LibraryFilters): Li
   return out;
 }
 
-/** Collapse pages into per-origin groups, newest activity first. */
+/** Collapse pages into site-family groups, newest activity first. */
 export function groupBySite(pages: LibraryPage[]): LibrarySite[] {
   const byOrigin = new Map<string, LibraryPage[]>();
   for (const page of pages) {
-    const list = byOrigin.get(page.origin);
+    const family = siteFamily(page.origin);
+    const list = byOrigin.get(family);
     if (list) list.push(page);
-    else byOrigin.set(page.origin, [page]);
+    else byOrigin.set(family, [page]);
   }
   const sites = [...byOrigin].map(([origin, group]) => ({
     origin,
-    label: siteLabel(origin),
+    label: origin || 'Unknown site',
     pages: [...group].sort((a, b) => b.lastActivityAt - a.lastActivityAt),
     annotationCount: group.reduce((total, page) => total + page.annotations.length, 0),
     lastActivityAt: group.reduce((max, page) => Math.max(max, page.lastActivityAt), 0),

@@ -181,3 +181,123 @@ test('E36: detached annotations are surfaced and filterable', async ({
   await expect(library.locator('.annotation')).toHaveCount(1);
   await expect(library.locator('.annotation')).toHaveClass(/detached/);
 });
+
+test('E39: page cards cap at five annotations and pack without row gaps', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  await seedAnnotations(context);
+  const page = await context.newPage();
+
+  // The nested fixture already has "footnote marker" from seedAnnotations.
+  // Add five more entries so its card is substantially taller than its peers.
+  await page.goto(NESTED);
+  await highlight(page, '#probe-1', 'Deeply nested inline structure');
+  await highlight(page, '#probe-2', 'paragraph contains');
+  await highlight(page, '#probe-2', 'emphasized');
+  await highlight(page, '#probe-2', 'strongly');
+  await highlight(page, '#probe-3', 'triple-wrapped');
+
+  // A fourth, short card makes the old equal-row Grid leave a measurable hole.
+  await page.goto(`${DEMO}?paper=compact-secondary`);
+  await highlight(page, '#probe-3', 'retrospective');
+  await page.close();
+
+  const library = await openLibrary(await context.newPage(), extensionId);
+  await library.setViewportSize({ width: 1100, height: 900 });
+  const nestedCard = library
+    .locator('.page-card')
+    .filter({ has: library.locator('.page-title', { hasText: 'Fixture: nested text nodes' }) });
+
+  await expect(nestedCard.locator('.count')).toContainText('6 annotations');
+  await expect(nestedCard.locator('.annotation')).toHaveCount(5);
+  await expect(nestedCard.locator('.annotation-overflow')).toHaveAttribute(
+    'data-hidden-count',
+    '1',
+  );
+  await expect(nestedCard.locator('.quote', { hasText: 'triple-wrapped' })).toHaveCount(0);
+
+  // Overflow remains available on demand.
+  await nestedCard.locator('[data-action="toggle-annotations"]').click();
+  await expect(nestedCard.locator('.annotation')).toHaveCount(6);
+
+  // Search happens before truncation, so the sixth entry is never unreachable.
+  await library.locator('[data-library="search"]').fill('triple-wrapped');
+  await expect(library.locator('.annotation')).toHaveCount(1);
+  await expect(library.locator('.annotation .quote')).toContainText('triple-wrapped');
+  await expect(library.locator('.annotation-overflow')).toHaveCount(0);
+  await library.locator('[data-library="search"]').fill('');
+  // Changing the result set restores the default compact state.
+  await expect(nestedCard.locator('.annotation')).toHaveCount(5);
+
+  const layout = await library.locator('.page-card').evaluateAll((cards) => {
+    const rects = cards.map((card) => {
+      const rect = card.getBoundingClientRect();
+      return {
+        left: Math.round(rect.left),
+        top: rect.top,
+        bottom: rect.bottom,
+        height: rect.height,
+        fragments: card.getClientRects().length,
+      };
+    });
+    const columns = new Map<number, typeof rects>();
+    for (const rect of rects) {
+      const column = columns.get(rect.left) ?? [];
+      column.push(rect);
+      columns.set(rect.left, column);
+    }
+    const gaps: number[] = [];
+    for (const column of columns.values()) {
+      column.sort((a, b) => a.top - b.top);
+      for (let index = 1; index < column.length; index += 1) {
+        gaps.push(column[index]!.top - column[index - 1]!.bottom);
+      }
+    }
+    return {
+      columnCount: columns.size,
+      gaps,
+      heights: rects.map((rect) => rect.height),
+      fragments: rects.map((rect) => rect.fragments),
+    };
+  });
+
+  expect(layout.columnCount).toBeGreaterThanOrEqual(2);
+  expect(layout.gaps.length).toBeGreaterThan(0);
+  expect(Math.max(...layout.gaps)).toBeLessThanOrEqual(24);
+  expect(Math.max(...layout.heights) - Math.min(...layout.heights)).toBeGreaterThan(80);
+  expect(layout.fragments.every((count) => count === 1)).toBe(true);
+});
+
+test('E40: deleting the last live annotation removes its stale site filter', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  await highlight(page, '#probe-2', 'footnote marker');
+  await page.goto(`http://127.0.0.1:8137/fixtures/demo.html`);
+  await highlight(page, '#probe-2', 'scoping');
+  await page.close();
+
+  const library = await openLibrary(await context.newPage(), extensionId);
+  await expect(library.locator('[data-filter-origin="localhost"]')).toContainText('localhost');
+  await expect(library.locator('[data-filter-origin="127.0.0.1"]')).toContainText('127.0.0.1');
+
+  await library.locator('[data-filter-origin="localhost"]').click();
+  await expect(library.locator('.annotation')).toHaveCount(1);
+  await library.locator('button[data-action="delete"]').click();
+
+  // The deleted family's chip and its selected filter both disappear. The
+  // remaining live site is shown instead of leaving a hidden stale filter.
+  await expect(library.locator('[data-filter-origin="localhost"]')).toHaveCount(0);
+  await expect(library.locator('.annotation')).toHaveCount(1);
+  await expect(library.locator('.subtitle')).toContainText('1 of 1');
+
+  // The bin uses its own site universe and count.
+  await library.locator('[data-filter="deleted"]').click();
+  await expect(library.locator('.annotation')).toHaveCount(1);
+  await expect(library.locator('.subtitle')).toContainText('1 of 1');
+});

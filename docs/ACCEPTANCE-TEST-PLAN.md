@@ -90,6 +90,8 @@ for observability without page-world coupling.
 | E36 | library | a detached annotation is badged and can be filtered to |
 | E37 | selection delete | Delete/Backspace tombstones every annotation overlapped by the native selection, leaves annotations outside it alone, bypasses ordinary page bubble blockers, ignores editable controls, and restores the batch with one Cmd/Ctrl+Z |
 | E38 | page colors | a new page starts with three (at most five) choices; three manual additions persist only on that page; side-panel removal hides the choice without changing an existing annotation's rendered color |
+| E39 | library cards | page cards show at most five matching annotations by default, expose the complete remainder through an ellipsis control, keep hidden matches searchable, and pack variable-height cards without grid-row gaps |
+| E40 | library sites | site chips merge host variants into readable families; deleting the last live annotation in a selected family removes the stale chip and filter, while the deleted bin retains its own family/count universe |
 
 ## Manual checklist (pre-release)
 

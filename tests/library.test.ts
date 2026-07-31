@@ -9,6 +9,7 @@ import {
   groupBySite,
   highlightParts,
   originOf,
+  siteFamily,
   siteLabel,
   toTimeline,
   type LibraryInput,
@@ -103,8 +104,18 @@ describe('originOf / siteLabel (U27)', () => {
   it('extracts origins and falls back for unparseable URLs', () => {
     expect(originOf('https://journal.example/paper-1?x=1#y')).toBe('https://journal.example');
     expect(originOf('not a url')).toBe('');
-    expect(siteLabel('https://journal.example')).toBe('journal.example');
+    expect(siteLabel('https://journal.example')).toBe('journal');
     expect(siteLabel('')).toBe('Unknown site');
+  });
+
+  it('collapses host variants into readable site families', () => {
+    expect(siteFamily('https://www.nature.com')).toBe('nature');
+    expect(siteFamily('https://advanced.onlinelibrary.wiley.com')).toBe('wiley');
+    expect(siteFamily('https://recover.genomicsengland.co.uk')).toBe('genomicsengland');
+    expect(siteFamily('https://github.com')).toBe('github');
+    expect(siteFamily('https://kaz-yos.github.io')).toBe('github');
+    expect(siteFamily('http://localhost:8137')).toBe('localhost');
+    expect(siteFamily('http://127.0.0.1:8137')).toBe('127.0.0.1');
   });
 });
 
@@ -186,11 +197,11 @@ describe('filterLibrary (U29)', () => {
     expect(countAnnotations(filterLibrary(pages, { ...EMPTY_FILTERS, query: 'nothing here' }))).toBe(0);
   });
 
-  it('filters by colour, origin and detached state', () => {
+  it('filters by colour, site family and detached state', () => {
     const teal = filterLibrary(pages, { ...EMPTY_FILTERS, colors: ['teal' as ColorKey] });
     expect(teal.flatMap((p) => p.annotations).map((a) => a.id)).toEqual(['a2']);
 
-    const pmc = filterLibrary(pages, { ...EMPTY_FILTERS, origins: ['https://pmc.example'] });
+    const pmc = filterLibrary(pages, { ...EMPTY_FILTERS, origins: ['pmc'] });
     expect(pmc.map((p) => p.sourceId)).toEqual(['s2']);
 
     const detached = filterLibrary(pages, { ...EMPTY_FILTERS, detachedOnly: true });
@@ -207,7 +218,7 @@ describe('filterLibrary (U29)', () => {
   it('combines filters and drops pages left with nothing', () => {
     const combined = filterLibrary(pages, {
       ...EMPTY_FILTERS,
-      origins: ['https://journal.example'],
+      origins: ['journal'],
       colors: ['yellow' as ColorKey],
       query: 'quote',
     });
@@ -219,9 +230,9 @@ describe('filterLibrary (U29)', () => {
 });
 
 describe('groupBySite (U30)', () => {
-  it('collapses pages by origin with counts, newest first', () => {
+  it('collapses pages by site family with counts, newest first', () => {
     const sites = groupBySite(filterLibrary(buildLibrary(library()), EMPTY_FILTERS));
-    expect(sites.map((s) => s.label)).toEqual(['journal.example', 'pmc.example']);
+    expect(sites.map((s) => s.label)).toEqual(['journal', 'pmc']);
     const journal = sites[0];
     expect(journal?.pages.map((p) => p.sourceId)).toEqual(['s3', 's1']);
     expect(journal?.annotationCount).toBe(3);
@@ -230,9 +241,30 @@ describe('groupBySite (U30)', () => {
   it('lists distinct origins for the filter bar', () => {
     const origins = availableOrigins(filterLibrary(buildLibrary(library()), EMPTY_FILTERS));
     expect(origins.map((o) => [o.label, o.count])).toEqual([
-      ['journal.example', 3],
-      ['pmc.example', 1],
+      ['journal', 3],
+      ['pmc', 1],
     ]);
+  });
+
+  it('merges different subdomains and suffixes under one family', () => {
+    const input = library();
+    input.sources = [
+      source('s1', 'd1', 'https://github.com/laleoarrow/locus'),
+      source('s2', 'd2', 'https://kaz-yos.github.io/demo'),
+      source('s3', 'd3', 'https://www.nature.com/articles/example'),
+    ];
+    const pages = filterLibrary(buildLibrary(input), EMPTY_FILTERS);
+    const sites = groupBySite(pages);
+
+    expect(sites.map((site) => [site.origin, site.annotationCount])).toEqual([
+      ['nature', 1],
+      ['github', 3],
+    ]);
+    expect(
+      filterLibrary(pages, { ...EMPTY_FILTERS, origins: ['github'] }).map(
+        (page) => page.sourceId,
+      ),
+    ).toEqual(['s2', 's1']);
   });
 });
 
