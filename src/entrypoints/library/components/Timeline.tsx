@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { buildTimeMachine, siteLabel, type TimelineDay } from '@/domain/library';
+import { buildTimeline, siteLabel, type TimelineDay } from '@/domain/library';
 import type { CustomColor } from '@/domain/types';
 import { AnnotationRow, Marked } from './AnnotationRow';
 import './Timeline.css';
 
 /**
- * The timeline projection, staged like Time Machine: a rail you can travel
- * along, eras you pass on the way, and layers that recede as they get older.
+ * The timeline projection, staged as a journey rather than a list: a rail you
+ * can travel along, eras you pass on the way, and layers that recede as they
+ * get older.
  *
  * The legacy `timeline`, `timeline-day`, `timeline-entry` and
  * `page-title-inline` class names are kept exactly as they were — the library
  * E2E suite asserts on them — with the new presentation layered on through
- * `tm-` classes in Timeline.css.
+ * `tl-` classes in Timeline.css.
  */
 export function Timeline({
   days,
@@ -28,7 +29,7 @@ export function Timeline({
   yesterday: string;
 }) {
   void yesterday;
-  const eras = useMemo(() => buildTimeMachine(days, today), [days, today]);
+  const eras = useMemo(() => buildTimeline(days, today), [days, today]);
   const allDays = useMemo(() => eras.flatMap((era) => era.days), [eras]);
   const [activeDay, setActiveDay] = useState(allDays[0]?.day ?? '');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -68,13 +69,13 @@ export function Timeline({
   const oldest = allDays[allDays.length - 1];
 
   return (
-    <div className="timeline tm-root" ref={scrollRef}>
-      <div className="tm-stage">
+    <div className="timeline tl-root" ref={scrollRef}>
+      <div className="tl-stage">
         {eras.map((era) => (
-          <section key={era.key} className="tm-era">
-            <header className="tm-era-head">
-              <span className="tm-era-label">{era.label}</span>
-              <span className="tm-era-count">
+          <section key={era.key} className="tl-era">
+            <header className="tl-era-head">
+              <span className="tl-era-label">{era.label}</span>
+              <span className="tl-era-count">
                 {era.count} mark{era.count === 1 ? '' : 's'}
               </span>
             </header>
@@ -82,26 +83,26 @@ export function Timeline({
             {era.days.map((day) => (
               <section
                 key={day.day}
-                className="timeline-day tm-layer"
+                className="timeline-day tl-layer"
                 data-day={day.day}
                 data-active={day.day === activeDay ? 'true' : undefined}
                 // Depth drives how far the layer sits back; clamped in CSS so
                 // a long history never fades into unreadability.
-                style={{ '--tm-depth': day.depth } as React.CSSProperties}
+                style={{ '--tl-depth': day.depth } as React.CSSProperties}
               >
-                <h2 className="tm-day-label">
-                  <span className="tm-node" aria-hidden="true" />
-                  <span className="tm-when">{day.label}</span>
-                  <span className="tm-date">{day.fullDate}</span>
-                  <span className="tm-count">
+                <h2 className="tl-day-label">
+                  <span className="tl-node" aria-hidden="true" />
+                  <span className="tl-when">{day.label}</span>
+                  <span className="tl-date">{day.fullDate}</span>
+                  <span className="tl-count">
                     {day.count} mark{day.count === 1 ? '' : 's'}
                   </span>
                 </h2>
 
-                <ul className="annotations tm-cards">
+                <ul className="annotations tl-cards">
                   {day.entries.map(({ page, annotation }) => (
-                    <li key={annotation.id} className="timeline-entry tm-entry">
-                      <p className="timeline-source tm-source">
+                    <li key={annotation.id} className="timeline-entry tl-entry">
+                      <p className="timeline-source tl-source">
                         <span className="site">{siteLabel(page.origin)}</span>
                         <span className="page-title-inline">
                           <Marked text={page.title} query={query} />
@@ -123,7 +124,7 @@ export function Timeline({
           </section>
         ))}
 
-        <p className="tm-horizon">
+        <p className="tl-horizon">
           <span>{totalMarks} marks</span>
           <span>·</span>
           <span>back to {oldest?.fullDate}</span>
@@ -131,15 +132,15 @@ export function Timeline({
       </div>
 
       {/* The rail: one tick per day, taller where an era begins. */}
-      <nav className="tm-rail" aria-label="Timeline">
+      <nav className="tl-rail" aria-label="Timeline">
         {eras.map((era) => (
-          <div key={era.key} className="tm-rail-era">
-            <span className="tm-rail-era-label">{era.label}</span>
+          <div key={era.key} className="tl-rail-era">
+            <span className="tl-rail-era-label">{era.label}</span>
             {era.days.map((day) => (
               <button
                 key={day.day}
                 type="button"
-                className="tm-tick"
+                className="tl-tick"
                 data-tick={day.day}
                 data-active={day.day === activeDay ? 'true' : undefined}
                 aria-current={day.day === activeDay ? 'true' : undefined}
@@ -147,15 +148,15 @@ export function Timeline({
                 onClick={() => travelTo(day.day)}
               >
                 <span
-                  className="tm-tick-bar"
+                  className="tl-tick-bar"
                   // Longer bar for a busier day, capped so one heavy day does
                   // not squash the rest of the rail.
-                  style={{ '--tm-weight': Math.min(day.count, 6) } as React.CSSProperties}
+                  style={{ '--tl-weight': Math.min(day.count, 6) } as React.CSSProperties}
                 />
                 {/* A persistent day number turns the rail into a ruler; the
                     wordier label stays in the tooltip so the column keeps its
                     width and nothing shifts on hover. */}
-                <span className="tm-tick-day">{Number(day.day.slice(-2))}</span>
+                <span className="tl-tick-day">{Number(day.day.slice(-2))}</span>
               </button>
             ))}
           </div>

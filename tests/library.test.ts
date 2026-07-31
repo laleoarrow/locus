@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   availableOrigins,
   buildLibrary,
-  buildTimeMachine,
+  buildTimeline,
   daysBetween,
   eraKeyOf,
   eraLabelOf,
@@ -304,7 +304,7 @@ describe('highlightParts (U32)', () => {
   });
 });
 
-describe('Time Machine projection (U36)', () => {
+describe('timeline structure (U36)', () => {
   const TODAY = '2026-07-31';
 
   /** Minimal TimelineDay: only `day` and the entry count matter here. */
@@ -315,7 +315,7 @@ describe('Time Machine projection (U36)', () => {
         page: { title: `page ${i}` },
         annotation: { id: `${day}-${i}` },
       })),
-    } as unknown as Parameters<typeof buildTimeMachine>[0][number];
+    } as unknown as Parameters<typeof buildTimeline>[0][number];
   }
 
   it('counts whole days back, including across months and years', () => {
@@ -337,7 +337,7 @@ describe('Time Machine projection (U36)', () => {
   });
 
   it('groups consecutive days into one era per calendar month', () => {
-    const eras = buildTimeMachine(
+    const eras = buildTimeline(
       [tlDay('2026-07-31', 2), tlDay('2026-07-19', 1), tlDay('2026-06-21', 1), tlDay('2026-04-27', 3)],
       TODAY,
     );
@@ -351,7 +351,7 @@ describe('Time Machine projection (U36)', () => {
   it('ranks depth by position so an uneven history still recedes evenly', () => {
     // Three days, but the last one is a year old: depth must not collapse to
     // two extremes just because the elapsed time does.
-    const eras = buildTimeMachine(
+    const eras = buildTimeline(
       [tlDay('2026-07-31', 1), tlDay('2026-07-30', 1), tlDay('2025-07-30', 1)],
       TODAY,
     );
@@ -360,7 +360,7 @@ describe('Time Machine projection (U36)', () => {
   });
 
   it('carries per-day counts and both labels through', () => {
-    const [era] = buildTimeMachine([tlDay('2026-07-30', 4)], TODAY);
+    const [era] = buildTimeline([tlDay('2026-07-30', 4)], TODAY);
     const day = era?.days[0];
     expect(day?.count).toBe(4);
     expect(day?.daysAgo).toBe(1);
@@ -369,7 +369,7 @@ describe('Time Machine projection (U36)', () => {
   });
 
   it('handles a single day and an empty history without dividing by zero', () => {
-    expect(buildTimeMachine([tlDay('2026-07-31', 1)], TODAY)[0]?.days[0]?.depth).toBe(0);
-    expect(buildTimeMachine([], TODAY)).toEqual([]);
+    expect(buildTimeline([tlDay('2026-07-31', 1)], TODAY)[0]?.days[0]?.depth).toBe(0);
+    expect(buildTimeline([], TODAY)).toEqual([]);
   });
 });

@@ -134,7 +134,7 @@ const height = await library.evaluate(() => {
   return Math.ceil(Math.min(Math.max(bottom + 20, 400), window.innerHeight));
 });
 await library.screenshot({
-  path: path.join(OUT, 'timeline-machine.png'),
+  path: path.join(OUT, 'timeline-view.png'),
   clip: { x: 0, y: 0, width: 1280, height },
 });
 
@@ -142,7 +142,7 @@ await library.screenshot({
 await library.emulateMedia({ colorScheme: 'dark' });
 await library.waitForTimeout(400);
 await library.screenshot({
-  path: path.join(OUT, 'timeline-machine-dark.png'),
+  path: path.join(OUT, 'timeline-view-dark.png'),
   clip: { x: 0, y: 0, width: 1280, height },
 });
 

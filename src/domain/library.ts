@@ -320,14 +320,14 @@ export function highlightParts(text: string, needle: string): { text: string; hi
   return parts.length > 0 ? parts : [{ text, hit: false }];
 }
 
-/* ── Time Machine projection ─────────────────────────────────────────────
+/* ── Timeline structure ──────────────────────────────────────────────────
  *
- * The timeline is not just "records in order": it is meant to read as
- * travelling back through a history. That needs structure the flat list does
- * not carry — how far back a day sits (which drives the receding depth), and
- * where one era ends and the next begins (the markers you pass on the way).
- * All of it is derived here, from the day keys alone, so it stays pure and
- * testable; `todayKey` is a parameter rather than a call to the clock.
+ * The timeline is not just "records in order": it should read as travelling
+ * back through a history. That needs structure the flat list does not carry —
+ * how far back a day sits (which drives the receding depth) and where one era
+ * ends and the next begins (the markers passed along the way). All of it is
+ * derived here from the day keys alone, so it stays pure and testable;
+ * `todayKey` is a parameter rather than a call to the clock.
  */
 
 /** Parse a `YYYY-MM-DD` key back to a local Date at midnight. */
@@ -371,7 +371,7 @@ export function eraLabelOf(day: string): string {
   return parseDayKey(day).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 }
 
-export interface TimeMachineDay extends TimelineDay {
+export interface TimelineDayView extends TimelineDay {
   /** "Today" / "Yesterday" / "5 days ago" / "12 March". */
   label: string;
   fullDate: string;
@@ -386,10 +386,10 @@ export interface TimeMachineDay extends TimelineDay {
   count: number;
 }
 
-export interface TimeMachineEra {
+export interface TimelineEra {
   key: string;
   label: string;
-  days: TimeMachineDay[];
+  days: TimelineDayView[];
   count: number;
 }
 
@@ -400,11 +400,11 @@ export interface TimeMachineEra {
  * activity last year and nothing since should still see an even recession, not
  * one near layer and a wall of identical far ones.
  */
-export function buildTimeMachine(days: TimelineDay[], todayKey: string): TimeMachineEra[] {
+export function buildTimeline(days: TimelineDay[], todayKey: string): TimelineEra[] {
   const total = days.length;
-  const eras: TimeMachineEra[] = [];
+  const eras: TimelineEra[] = [];
   days.forEach((day, index) => {
-    const entry: TimeMachineDay = {
+    const entry: TimelineDayView = {
       ...day,
       label: relativeDayLabel(day.day, todayKey),
       fullDate: fullDayLabel(day.day),
