@@ -12,11 +12,51 @@
 A minimal, **local-first annotation layer for academic reading**, shipped as a
 Manifest V3 extension for Chrome and Microsoft Edge.
 
+### While you read
+
 | Liquid-glass toolbar | Markdown notes | Image rings |
 |---|---|---|
 | ![Selection toolbar](assets/shot-toolbar.png) | ![Note editor](assets/shot-note.png) | ![Image ring](assets/shot-ring.png) |
+| Select any text and a compact toolbar appears. Click a colour, or press **1 / 2 / 3** without leaving the keyboard. | Click a highlight to write a note in **Markdown**, with a live preview underneath. **Enter** saves. | Click a figure to ring it in colour. Images are annotatable too, links still work. |
+
+### Afterwards — everything in one place
+
+Reading happens across dozens of tabs and comes back to you weeks later. The
+**library** is a full page listing every annotation you have made, on every
+site: grouped, searchable, and one click away from the passage it came from.
 
 ![The annotation library](assets/shot-library.png)
+
+<details>
+<summary><b>More screenshots</b> — grouping, search, and the side panel</summary>
+
+<br>
+
+**Group by site.** The same collection folded by domain, so you can walk back
+through "what did I read on PMC" rather than hunting for a title you half
+remember.
+
+![Library grouped by site](assets/gallery-library-sites.png)
+
+**Timeline.** Every annotation newest-first, split by day — the view for "I
+marked something on Tuesday and cannot recall which paper it was in."
+
+![Library timeline](assets/gallery-library-timeline.png)
+
+**Search across the whole library.** Matches quoted text, your notes and page
+titles at once, and marks the hit so you can see *why* a result came back. A
+note that matches is shown as plain text rather than rendered Markdown,
+precisely so the match stays visible.
+
+![Searching the library](assets/gallery-library-search.png)
+
+**Side panel, for the page in front of you.** Chrome and Edge's native side
+panel lists this page's annotations; click one to scroll to it and watch it
+pulse. Backup, sync and per-page colours live at the bottom.
+
+<img src="assets/gallery-sidepanel.png" alt="Side panel" width="380">
+
+</details>
 
 Locus is not a reference manager. It does one thing: let you highlight and
 annotate the HTML pages you read, keep those annotations on your machine, and
@@ -46,6 +86,11 @@ bring them back reliably — even when the page shifts under you.
   Other pages stay compact, and removing a choice never recolors annotations
   already made with it. The toolbar shows below the selection by default, or
   set it to *above* / *auto* — auto dodges other extensions' floating toolbars.
+- **One library for everything.** A full page listing every annotation across
+  every site — grouped by page, by site, or as a timeline; searchable over
+  quotes, notes and titles; filterable by colour, site, date, detached or
+  deleted. Deleted annotations land in a bin you can restore from, and any
+  result is one click from the passage it came from.
 - **Sync through storage you own.** Point Locus at a WebDAV folder (坚果云 /
   Nutstore, Nextcloud, anything WebDAV) once, and every device keeps itself
   merged — no account, no server of ours. Or just use **Export / Import** for a
@@ -117,26 +162,27 @@ build starts with an empty library. To carry your annotations across, run
 then `pnpm build:edge`, reload again and import it. (The script prints these
 steps.) Skip this if you have nothing worth keeping yet.
 
-## The library — everything you have annotated
+## The library
 
-Click the extension icon → **All annotations →** to open a full-page view of
-every annotation across every site. Three ways to look at the same collection:
+Open it from the extension icon → **All annotations →**, or from the side
+panel. The three groupings are shown in the screenshots above; this is what
+else it does.
 
-| Mode | What you see |
-|---|---|
-| **By page** | One card per annotated page, listing its highlights and notes |
-| **By site** | Pages collapsed under their domain |
-| **Timeline** | Everything newest-first, split by day |
+**Filters** — colour, site, date range, **detached**, and **deleted**. The
+deleted filter is a bin: nothing is ever hard-deleted, so anything you removed
+is still there to restore.
 
-Search runs over quoted text, notes and page titles, with the match marked.
-Filter by colour, site, date, **detached**, or **deleted** — deleted
-annotations were always kept, and now there is a bin to restore them from.
-Host variants share one short site family (for example, `www.nature.com`
-becomes `nature`, while GitHub Pages and `github.com` become `github`).
-Click any annotation to open its page and scroll straight to it, even if that
-tab is not open. Page cards show five annotations at a glance; an ellipsis
-expands the rest, and the masonry layout packs shorter cards without empty
-grid rows. Notes can be edited here without leaving the library.
+**Jump back** — clicking an annotation opens its page and scrolls to it, even
+if that tab is not open. Notes are editable without leaving the library.
+
+**Sites are grouped by family**, not by exact host, so `www.nature.com` and
+`nature.com` fold together as `nature`, and GitHub Pages sits with
+`github.com`. This keeps the site filter short on collections that span many
+subdomains.
+
+**Long pages stay readable** — a card shows five annotations, with an ellipsis
+to expand the rest, and the masonry layout packs shorter cards instead of
+leaving empty grid rows.
 
 ## Sync between devices
 

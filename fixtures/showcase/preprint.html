@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Calibration Drift in Clinical Risk Models: A Multi-Site Analysis</title>
+  <style>
+    :root { color-scheme: light; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.7 'Latin Modern Roman', Georgia, serif; color: #111; background: #fff; }
+    header.bar { border-bottom: 2px solid #b31b1b; padding: 12px 0; }
+    .wrap { max-width: 700px; margin: 0 auto; padding: 0 30px; }
+    .tag { font: 600 12px/1 -apple-system, sans-serif; letter-spacing: 0.1em; text-transform: uppercase; color: #b31b1b; }
+    h1 { font-size: 27px; line-height: 1.3; margin: 26px 0 8px; }
+    .authors { font-size: 15px; color: #444; margin: 0 0 4px; }
+    .meta { font: 13px -apple-system, sans-serif; color: #888; margin: 0 0 26px; }
+    h2 { font-size: 17px; margin: 26px 0 10px; }
+    p { margin: 0 0 16px; }
+  </style>
+</head>
+<body>
+  <header class="bar"><div class="wrap"><span class="tag">Preprint · Not peer reviewed</span></div></header>
+  <main class="wrap">
+    <h1 id="p1">Calibration Drift in Clinical Risk Models: A Multi-Site Analysis</h1>
+    <p class="authors">Demo content for screenshots</p>
+    <p class="meta">Submitted 2026 · cs.LG</p>
+
+    <h2>Abstract</h2>
+    <p id="p2">Risk models deployed across several hospitals lose calibration faster than they lose
+      discrimination. We quantify this gap and argue that recalibration schedules, not retraining,
+      should be the default maintenance strategy for deployed models.</p>
+
+    <h2>Discussion</h2>
+    <p id="p3">Discrimination is the metric most often reported, yet it is calibration that decides
+      whether a predicted probability can be acted on at the bedside. A model with unchanged AUC and
+      drifted calibration will quietly mislead every threshold-based decision built on top of it.</p>
+    <p id="p4">We therefore recommend that deployment reports include a calibration curve for each
+      site and each year, rather than a single pooled figure.</p>
+  </main>
+</body>
+</html>
