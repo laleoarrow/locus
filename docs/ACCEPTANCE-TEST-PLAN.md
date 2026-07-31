@@ -48,7 +48,7 @@ bypassed while still exercising the dynamic registration code path).
 | U36 | library/prefs | grouping mode defaults safely, persists across Library tabs and rejects an invalid stored value |
 | U37 | selection overlap | partial/contained/exact DOM Range overlaps match; disjoint, boundary-only and collapsed ranges do not, including nested text nodes |
 | U38 | page colors | additions/removals are isolated by normalized page URL; legacy pages infer at most two custom choices; append-only removal events survive backup union without resurrection |
-| U36 | library/timeline | day distance across months and years; relative wording gives way to dates past a week; consecutive days group into one era per month; depth is ranked by position so an uneven history still recedes evenly; single-day and empty histories do not divide by zero |
+| U39 | library/timeline | day distance across months and years; relative wording gives way to dates past a week; consecutive days group into one era per month; depth is ranked by position so an uneven history still recedes evenly; single-day and empty histories do not divide by zero |
 
 ## E2E (Playwright, loaded extension)
 

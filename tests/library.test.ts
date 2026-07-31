@@ -304,7 +304,7 @@ describe('highlightParts (U32)', () => {
   });
 });
 
-describe('timeline structure (U36)', () => {
+describe('timeline structure (U39)', () => {
   const TODAY = '2026-07-31';
 
   /** Minimal TimelineDay: only `day` and the entry count matter here. */
