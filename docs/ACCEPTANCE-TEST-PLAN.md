@@ -23,7 +23,7 @@ bypassed while still exercising the dynamic registration code path).
 | U11 | repo | image annotations store `kind: image` with alt text as `exact` |
 | U12 | markdown | renderer covers headings/lists/quotes/code/links; escapes raw HTML; rejects non-http(s) URLs |
 | U13 | image anchor | capture stores src/alt/index/path; resolves via path, falls back to src+index, detaches when gone |
-| U14 | palette | custom colors build from hex, order after builtins (shortcut digits), unknown keys fall back to yellow |
+| U14 | palette | custom colors build from hex, order after builtins, canonical `c<rrggbb>` keys recover their color without a catalog entry, invalid keys fall back to yellow |
 | U15 | prefs | placement, custom colors, disabled sites, and toggles persist; adds dedupe |
 | U16 | doi | normalize/extract DOIs from citation meta and URL paths (ovid-style tilde suffixes, case folding) |
 | U17 | version | dotted version comparison for the update check |
@@ -46,6 +46,8 @@ bypassed while still exercising the dynamic registration code path).
 | U34 | library/db | anchor state is written only when it actually changes; empty reports ignored |
 | U35 | library/db | anchor state never appears in an exported backup and survives an import |
 | U36 | library/prefs | grouping mode defaults safely, persists across Library tabs and rejects an invalid stored value |
+| U37 | selection overlap | partial/contained/exact DOM Range overlaps match; disjoint, boundary-only and collapsed ranges do not, including nested text nodes |
+| U38 | page colors | additions/removals are isolated by normalized page URL; legacy pages infer at most two custom choices; append-only removal events survive backup union without resurrection |
 
 ## E2E (Playwright, loaded extension)
 
@@ -86,6 +88,8 @@ for observability without page-world coupling.
 | E34 | library | clicking an annotation opens a page that was **not** already open and scrolls to it — the path that fails silently if the reveal is fired at a fresh tab |
 | E35 | library | editing a note, deleting and restoring from the library, each reflected on the open page |
 | E36 | library | a detached annotation is badged and can be filtered to |
+| E37 | selection delete | Delete/Backspace tombstones every annotation overlapped by the native selection, leaves annotations outside it alone, bypasses ordinary page bubble blockers, ignores editable controls, and restores the batch with one Cmd/Ctrl+Z |
+| E38 | page colors | a new page starts with three (at most five) choices; three manual additions persist only on that page; side-panel removal hides the choice without changing an existing annotation's rendered color |
 
 ## Manual checklist (pre-release)
 
@@ -95,3 +99,5 @@ for observability without page-world coupling.
 - Edge: side panel opens and lists annotations (Edge ≥ 114).
 - Keyboard: toolbar buttons reachable; comment box supports IME input
   (Chinese) without the page stealing keys.
+- Keyboard: native selection across multiple highlights deletes as one batch;
+  focused input/textarea/contenteditable controls keep their own Delete keys.

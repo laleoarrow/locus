@@ -40,6 +40,8 @@ export interface ImportSummary {
   /** Incoming sources recognised as a page already known locally. */
   sourcesLinked: number;
   sourcesAdded: number;
+  /** Portable settings inserted or extended by the incoming backup. */
+  settingsUpdated: number;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {

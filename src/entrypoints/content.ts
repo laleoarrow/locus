@@ -9,6 +9,7 @@ import { extractDoi } from '@/domain/doi';
 import type { Box } from '@/domain/placement';
 import {
   buildPalette,
+  buildPaletteForKeys,
   colorForDigit,
   customColorFromHex,
   DEFAULT_COLOR,
@@ -38,7 +39,17 @@ type PendingTarget =
   | { type: 'text'; range: Range }
   | { type: 'image'; image: HTMLImageElement };
 
-type UndoAction = { action: 'create' | 'delete'; annotationId: string };
+type UndoAction = { action: 'create' | 'delete'; annotationIds: string[] };
+
+function isEditableKeyEvent(event: KeyboardEvent): boolean {
+  if (event.isComposing) return true;
+  return event.composedPath().some((target) => {
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.isContentEditable || target.matches('input, textarea, select')) return true;
+    const role = target.getAttribute('role');
+    return role === 'textbox' || role === 'searchbox' || role === 'combobox';
+  });
+}
 
 class LocusContent {
   private readonly doc = document;
@@ -56,6 +67,7 @@ class LocusContent {
     detectDoi: true,
     checkUpdates: true,
   };
+  private pageColors: ColorKey[] = [];
   private palette: PaletteEntry[] = buildPalette([]);
   /** Locus is on everywhere by default; false while this origin is switched off. */
   private active = true;
@@ -72,11 +84,20 @@ class LocusContent {
     });
   }
 
+  private syncPalettes(): void {
+    this.palette = buildPaletteForKeys(this.pageColors, this.prefs.customColors);
+    const renderKeys = [
+      ...this.pageColors,
+      ...[...this.entries.values()].map((entry) => entry.item.annotation.color),
+    ];
+    const renderPalette = buildPaletteForKeys(renderKeys, this.prefs.customColors);
+    this.renderer.setPalette(renderPalette);
+    this.ui.setPalette(this.palette, renderPalette);
+  }
+
   private applyPrefs(prefs: Prefs): void {
     this.prefs = prefs;
-    this.palette = buildPalette(prefs.customColors);
-    this.renderer.setPalette(this.palette);
-    this.ui.setPalette(this.palette);
+    this.syncPalettes();
     const disabled = prefs.disabledSites.includes(this.origin);
     if (disabled && this.active) this.deactivate();
     else if (!disabled && !this.active) this.activate();
@@ -113,8 +134,11 @@ class LocusContent {
   private async addColor(hex: string): Promise<void> {
     const color = customColorFromHex(hex);
     if (!color) return;
-    const result = await requestBg({ type: 'prefs:add-color', color });
-    if (result) this.applyPrefs(result.prefs);
+    const result = await requestBg({ type: 'page-colors:add', url: location.href, color });
+    if (result) {
+      this.pageColors = result.colors;
+      this.syncPalettes();
+    }
   }
 
   /** Toolbar default: last-used color if it still exists, else yellow. */
@@ -135,6 +159,7 @@ class LocusContent {
     if (!bootstrap) return;
     this.lastColor = bootstrap.lastColor;
     this.urlKey = bootstrap.source.urlKey;
+    this.pageColors = bootstrap.pageColors;
     this.setItems(bootstrap.items);
     this.applyPrefs(bootstrap.prefs);
     if (this.active) {
@@ -165,6 +190,7 @@ class LocusContent {
         { item, state: previous.get(item.annotation.id)?.state ?? 'detached' } satisfies Entry,
       ]),
     );
+    this.syncPalettes();
   }
 
   /** Re-anchor and re-render everything against a fresh text index. */
@@ -257,20 +283,36 @@ class LocusContent {
     });
     if (!created) return;
     this.lastColor = color;
-    this.undoStack.push({ action: 'create', annotationId: created.item.annotation.id });
+    this.undoStack.push({ action: 'create', annotationIds: [created.item.annotation.id] });
+    await this.refresh();
+  }
+
+  private async deleteAnnotations(annotationIds: string[]): Promise<void> {
+    const ids = [...new Set(annotationIds)];
+    if (ids.length === 0) return;
+    const response = await requestBg({ type: 'annotations:delete', ids });
+    if (!response?.ok) return;
+    this.undoStack.push({ action: 'delete', annotationIds: ids });
     await this.refresh();
   }
 
   private async performUndo(): Promise<boolean> {
     const last = this.undoStack.pop();
     if (!last) return false;
-    if (last.action === 'create') {
-      await requestBg({ type: 'annotation:delete', id: last.annotationId });
-    } else {
-      await requestBg({ type: 'annotation:undelete', id: last.annotationId });
+    try {
+      const response = last.action === 'create'
+        ? await requestBg({ type: 'annotations:delete', ids: last.annotationIds })
+        : await requestBg({ type: 'annotations:undelete', ids: last.annotationIds });
+      if (!response?.ok) {
+        this.undoStack.push(last);
+        return false;
+      }
+      await this.refresh();
+      return true;
+    } catch {
+      this.undoStack.push(last);
+      return false;
     }
-    await this.refresh();
-    return true;
   }
 
   private openNoteFor(id: string, at: DOMRect): void {
@@ -287,8 +329,7 @@ class LocusContent {
         );
       },
       onDelete: () => {
-        this.undoStack.push({ action: 'delete', annotationId: id });
-        void requestBg({ type: 'annotation:delete', id }).then(() => this.refresh());
+        void this.deleteAnnotations([id]);
       },
     });
   }
@@ -428,34 +469,65 @@ class LocusContent {
   }
 
   private wireKeyboard(): void {
-    this.doc.addEventListener('keydown', (event) => {
-      if (!this.active || this.ui.containsEvent(event)) return;
-      const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')
-      ) {
-        return;
-      }
-      // Digits pick a palette color for the pending selection or image.
-      if (!event.metaKey && !event.ctrlKey && !event.altKey && this.ui.isToolbarVisible()) {
-        const color = colorForDigit(Number(event.key), this.palette);
-        if (color) {
-          event.preventDefault();
-          event.stopPropagation();
-          void this.createFromPending(color);
-          return;
+    this.doc.addEventListener(
+      'keydown',
+      (event) => {
+        if (!this.active || this.ui.containsEvent(event) || isEditableKeyEvent(event)) return;
+
+        if (
+          !event.repeat &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.altKey &&
+          !event.shiftKey &&
+          (event.key === 'Delete' || event.key === 'Backspace')
+        ) {
+          const selection = this.doc.getSelection();
+          const ids = new Set<string>();
+          if (selection && !selection.isCollapsed) {
+            for (let i = 0; i < selection.rangeCount; i++) {
+              const range = selection.getRangeAt(i);
+              if (!this.doc.body.contains(range.commonAncestorContainer)) continue;
+              for (const id of this.renderer.annotationIdsIntersecting(range)) ids.add(id);
+            }
+          }
+          if (ids.size > 0) {
+            event.preventDefault();
+            event.stopPropagation();
+            this.ui.hideToolbar();
+            this.pending = null;
+            selection?.removeAllRanges();
+            void this.deleteAnnotations([...ids]);
+            return;
+          }
         }
-      }
-      // Cmd+Z (mac) / Ctrl+Z (win): undo the last Locus action in this tab.
-      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z') {
-        if (this.undoStack.length > 0) {
+
+        // Digits pick a palette color for the pending selection or image.
+        if (!event.metaKey && !event.ctrlKey && !event.altKey && this.ui.isToolbarVisible()) {
+          const color = colorForDigit(Number(event.key), this.palette);
+          if (color) {
+            event.preventDefault();
+            event.stopPropagation();
+            void this.createFromPending(color);
+            return;
+          }
+        }
+
+        // Cmd+Z (mac) / Ctrl+Z (win): undo the last Locus action in this tab.
+        if (
+          !event.altKey &&
+          (event.metaKey || event.ctrlKey) &&
+          !event.shiftKey &&
+          event.key.toLowerCase() === 'z' &&
+          this.undoStack.length > 0
+        ) {
           event.preventDefault();
           event.stopPropagation();
           void this.performUndo();
         }
-      }
-    });
+      },
+      { capture: true },
+    );
   }
 
   private reveal(id: string): void {
@@ -487,6 +559,12 @@ class LocusContent {
             return false;
           case 'prefs:changed':
             this.applyPrefs(message.prefs);
+            if (this.active) this.anchorAll();
+            return false;
+          case 'page-colors:changed':
+            if (message.urlKey !== this.urlKey) return false;
+            this.pageColors = message.colors;
+            this.syncPalettes();
             if (this.active) this.anchorAll();
             return false;
           default:

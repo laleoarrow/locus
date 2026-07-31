@@ -354,10 +354,13 @@ export class LocusUI {
     doc.documentElement.appendChild(this.host);
   }
 
-  /** Rebuild the toolbar swatches for the current palette (builtin + custom). */
-  setPalette(palette: PaletteEntry[]): void {
+  /**
+   * Rebuild toolbar choices while retaining every color needed to render note
+   * cards for annotations that are not offered in this page's toolbar.
+   */
+  setPalette(palette: PaletteEntry[], renderPalette: PaletteEntry[] = palette): void {
     this.palette = palette;
-    this.customColors = palette.slice(3);
+    this.customColors = renderPalette.slice(3);
     this.toolbar.textContent = '';
     palette.forEach((entry, i) => {
       const swatch = this.doc.createElement('button');
@@ -371,7 +374,7 @@ export class LocusUI {
     });
     const addWrap = this.doc.createElement('span');
     addWrap.className = 'add-wrap';
-    addWrap.title = 'Add a custom color';
+    addWrap.title = 'Add a custom color to this page';
     const add = this.doc.createElement('span');
     add.className = 'add-color';
     add.textContent = '+';

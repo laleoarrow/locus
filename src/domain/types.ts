@@ -13,6 +13,16 @@ export interface CustomColor {
   bg: string;
 }
 
+/** Append-only per-page palette state; newer events win for the same key. */
+export interface PageColorEvent {
+  key: ColorKey;
+  enabled: boolean;
+  /** Stable ordering for enabled colors. */
+  addedAt: number;
+  /** Conflict clock used when backup/WebDAV unions events. */
+  updatedAt: number;
+}
+
 export type ToolbarPlacement = 'below' | 'above' | 'auto';
 
 /** User preferences, persisted in settings and pushed to content scripts. */

@@ -11,6 +11,21 @@ export function supportsCustomHighlights(): boolean {
   );
 }
 
+/** True only when two non-collapsed DOM ranges share actual content. */
+export function rangesOverlap(first: Range, second: Range): boolean {
+  if (first.collapsed || second.collapsed) return false;
+  try {
+    return (
+      first.compareBoundaryPoints(Range.START_TO_END, second) > 0 &&
+      first.compareBoundaryPoints(Range.END_TO_START, second) < 0
+    );
+  } catch {
+    // Ranges from different documents, or detached ranges in a changing page,
+    // cannot overlap.
+    return false;
+  }
+}
+
 function textNodesInRange(range: Range): Text[] {
   if (range.startContainer === range.endContainer && range.startContainer.nodeType === Node.TEXT_NODE) {
     return [range.startContainer as Text];
@@ -225,6 +240,17 @@ export class HighlightRenderer {
     range.setStartBefore(first);
     range.setEndAfter(last);
     return range;
+  }
+
+  /** Text annotation ids whose live ranges overlap the supplied page selection. */
+  annotationIdsIntersecting(selectionRange: Range): string[] {
+    const ids: string[] = [];
+    for (const [id, entry] of this.entries) {
+      if (entry.image) continue;
+      const annotationRange = this.getRange(id);
+      if (annotationRange && rangesOverlap(selectionRange, annotationRange)) ids.push(id);
+    }
+    return ids;
   }
 
   /** Hit-test a viewport point against all rendered annotations. */

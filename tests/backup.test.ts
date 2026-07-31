@@ -167,6 +167,28 @@ describe('export/import round trip (U20)', () => {
     expect(summary.annotationsUpdated).toBe(1);
     expect((await repo.listForUrl(URL_A)).items).toHaveLength(0);
   });
+
+  it('round-trips page colors and does not resurrect a removed color', async () => {
+    const color = {
+      key: 'c123456',
+      label: '#123456',
+      swatch: '#123456',
+      bg: 'rgba(18, 52, 86, 0.45)',
+    };
+    await repo.addPageColor(URL_A, color);
+    const beforeRemoval = await repo.exportBackup('0.5.1');
+    await repo.removePageColor(URL_A, color.key);
+    const afterRemoval = await repo.exportBackup('0.5.1');
+
+    await clearDb();
+    const restored = await repo.importBackup(afterRemoval);
+    const stale = await repo.importBackup(beforeRemoval);
+    expect(restored.settingsUpdated).toBe(2);
+    expect(stale.settingsUpdated).toBe(0);
+    expect(await repo.getPageColorKeys(URL_A)).toEqual([]);
+    expect((await repo.getPrefs()).customColors).toContainEqual(color);
+    expect(await repo.getPageColorKeys('https://example.com/other')).toEqual([]);
+  });
 });
 
 describe('cross-machine merge (U22)', () => {

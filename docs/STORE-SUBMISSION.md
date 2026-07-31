@@ -63,7 +63,8 @@ upsell.
 
 WHAT IT DOES
 • Select text to get a compact toolbar with three colours; press 1, 2 or 3 to
-  pick one from the keyboard. Add your own colours if you like.
+  pick one from the keyboard. Add page-specific colours without cluttering
+  other pages.
 • Click a highlight to write a note in Markdown, with a live preview.
 • Click a figure to ring it in colour — images are annotatable too.
 • A side panel lists every annotation on the page; click one to scroll to it.
@@ -107,7 +108,7 @@ Locus / 文迹 是一个安静的网页阅读标注层。选中文字、选颜�
 就这些——不需要注册，没有仪表盘，不推销任何东西。
 
 功能
-• 选中文字弹出三色工具条，按 1 / 2 / 3 即可用键盘选色，也可添加自定义颜色。
+• 选中文字弹出三色工具条，按 1 / 2 / 3 即可用键盘选色；自定义颜色只属于当前页面，不会挤满其他页面。
 • 点击高亮即可写 Markdown 笔记，带实时预览。
 • 点击插图可为图片加一圈彩色高亮环。
 • 侧边栏列出本页所有标注，点击即滚动定位并闪烁提示。

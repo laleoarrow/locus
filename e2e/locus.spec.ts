@@ -9,6 +9,7 @@ import {
   highlight,
   launchSeparateProfile,
   readAnnotationRow,
+  selectContents,
   selectText,
   test,
 } from './extension';
@@ -317,6 +318,51 @@ test('E16: Enter saves the note; Delete on an empty note removes the highlight',
   await expect(panel.locator('.annotation-item')).toHaveCount(0);
 });
 
+test('E37: Delete/Backspace removes every selected annotation as one undoable batch', async ({
+  context,
+  serviceWorker,
+}) => {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  await highlight(page, '#probe-2', 'footnote marker');
+  await highlight(page, '#probe-2', 'hyperlink that spans');
+  await highlight(page, '#probe-3', 'second paragraph');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '3');
+
+  // A site-level bubble handler must not be able to make Locus shortcuts
+  // intermittently disappear.
+  await page.locator('#probe-2').evaluate((probe) => {
+    probe.addEventListener('keydown', (event) => event.stopImmediatePropagation());
+  });
+  await selectContents(page, '#probe-2', true);
+  await page.keyboard.press('Delete');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+
+  // The two tombstones form one undo action.
+  await page.keyboard.press('ControlOrMeta+z');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '3');
+
+  // An editable target keeps its native key behavior even while the old page
+  // selection still overlaps both annotations.
+  const textarea = page.locator('textarea[data-shortcut-probe]');
+  await page.locator('body').evaluate((body) => {
+    const input = document.createElement('textarea');
+    input.dataset['shortcutProbe'] = '';
+    input.value = 'abc';
+    body.appendChild(input);
+  });
+  await textarea.focus();
+  await textarea.press('End');
+  await textarea.press('Backspace');
+  await expect(textarea).toHaveValue('ab');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '3');
+
+  await textarea.evaluate((element) => element.remove());
+  await selectContents(page, '#probe-2', true);
+  await page.keyboard.press('Backspace');
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+});
+
 test('E17: a custom color can be added and used with the next shortcut digit', async ({
   context,
   serviceWorker,
@@ -346,6 +392,70 @@ test('E17: a custom color can be added and used with the next shortcut digit', a
   // The custom color survives reload (rules are palette-driven).
   await page.reload();
   await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+});
+
+test('E38: custom colors stay on their page without changing existing annotation colors', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  await selectText(page, '#probe-2', 'footnote marker');
+  const toolbar = page.locator('[data-locus-toolbar]');
+  await expect(toolbar.locator('.swatch')).toHaveCount(3);
+
+  for (const hex of ['#111111', '#222222', '#333333']) {
+    await page.evaluate((value) => {
+      const input = document
+        .getElementById('locus-host')
+        ?.shadowRoot?.querySelector<HTMLInputElement>('input[type="color"]');
+      if (!input) throw new Error('no Locus color input');
+      input.value = value;
+      input.dispatchEvent(new Event('change'));
+    }, hex);
+    await expect(toolbar.locator(`.swatch[data-color="c${hex.slice(1)}"]`)).toBeVisible();
+  }
+  await expect(toolbar.locator('.swatch')).toHaveCount(6);
+  await toolbar.locator('.swatch[data-color="c333333"]').click();
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+
+  // The current page remembers all three additions.
+  await page.reload();
+  await selectText(page, '#probe-3', 'second paragraph');
+  await expect(toolbar.locator('.swatch')).toHaveCount(6);
+
+  // An unrelated page starts clean and never inherits those choices.
+  await page.goto(REPEATED);
+  await selectText(page, '#occurrence-1 p', 'powerhouse');
+  await expect(toolbar.locator('.swatch')).toHaveCount(3);
+  for (const key of ['c111111', 'c222222', 'c333333']) {
+    await expect(toolbar.locator(`.swatch[data-color="${key}"]`)).toHaveCount(0);
+  }
+
+  // Returning restores only this page's additions, and the side panel manages
+  // the same page-scoped list.
+  await page.goto(NESTED);
+  await selectText(page, '#probe-3', 'second paragraph');
+  await expect(toolbar.locator('.swatch')).toHaveCount(6);
+  const panel = await openPanelFor(page, serviceWorker, extensionId, NESTED);
+  const pageColors = panel.locator('[data-page-colors]');
+  await expect(pageColors.locator('.color-chip')).toHaveCount(3);
+
+  // Removing a choice affects future toolbar picks only. The annotation
+  // already painted with that color keeps both its range and its exact color.
+  await pageColors.locator('button[aria-label="Remove #333333"]').click();
+  await expect(toolbar.locator('.swatch[data-color="c333333"]')).toHaveCount(0);
+  await expect(page.locator('html')).toHaveAttribute('data-locus-anchored', '1');
+  const rendered = await page.evaluate(() => {
+    const custom = CSS.highlights.get('locus-c333333');
+    return custom ? [...(custom as unknown as Iterable<Range>)].length : 0;
+  });
+  expect(rendered).toBe(1);
+  await expect(panel.locator('.annotation-item .color-dot')).toHaveCSS(
+    'background-color',
+    'rgb(51, 51, 51)',
+  );
 });
 
 test('E18: toolbar placement can be set to above, and auto dodges other floating UI', async ({
@@ -633,6 +743,35 @@ test('E23: two independent installs converge through WebDAV sync', async ({
     await pageB.goto(NESTED);
     await expect(pageB.locator('html')).toHaveAttribute('data-locus-anchored', '1');
     await expect(pageB.locator('html')).toHaveAttribute('data-locus-detached', '0');
+
+    // Settings-only changes also converge and refresh an already-open page.
+    const color = {
+      key: 'c345678',
+      label: '#345678',
+      swatch: '#345678',
+      bg: 'rgba(52, 86, 120, 0.45)',
+    };
+    const addedColor = await panelB.evaluate(
+      ({ url, color }) =>
+        chrome.runtime.sendMessage({ type: 'page-colors:add', url, color }),
+      { url: NESTED, color },
+    );
+    expect(addedColor.colors).toContain(color.key);
+    const colorPush = await panelB.evaluate(() =>
+      chrome.runtime.sendMessage({ type: 'sync:now' }),
+    );
+    expect(colorPush.result.ok).toBe(true);
+    const colorPull = await panelA.evaluate(() =>
+      chrome.runtime.sendMessage({ type: 'sync:now' }),
+    );
+    expect(colorPull.result.ok).toBe(true);
+    expect(colorPull.result.pulled).toBe(0);
+    expect(colorPull.result.settingsPulled).toBeGreaterThan(0);
+    await selectText(pageA, '#probe-3', 'second paragraph');
+    await expect(
+      pageA.locator('[data-locus-toolbar] .swatch[data-color="c345678"]'),
+    ).toBeVisible();
+    await pageA.keyboard.press('Escape');
 
     // ── B adds its own note and pushes; A pulls and ends up with both.
     await highlight(pageB, '#probe-3', 'triple-wrapped');

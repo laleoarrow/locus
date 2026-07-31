@@ -5,7 +5,12 @@ import {
   type BackupFile,
   type ImportSummary,
 } from '@/domain/backup';
-import { DEFAULT_COLOR } from '@/domain/colors';
+import {
+  BUILTIN_COLOR_KEYS,
+  DEFAULT_COLOR,
+  DEFAULT_TOOLBAR_COLOR_LIMIT,
+  resolvePageColorEvents,
+} from '@/domain/colors';
 import type { GroupMode } from '@/domain/library';
 import type {
   AnchorPayload,
@@ -15,6 +20,7 @@ import type {
   ColorKey,
   CustomColor,
   DocumentRecord,
+  PageColorEvent,
   Prefs,
   SourceRecord,
   ToolbarPlacement,
@@ -132,6 +138,35 @@ export async function undelete(id: string): Promise<void> {
   await db.annotations.update(id, { deletedAt: 0, updatedAt: Date.now() });
 }
 
+async function setDeletedStateMany(ids: string[], deleted: boolean): Promise<void> {
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length === 0) return;
+  await db.transaction('rw', db.annotations, async () => {
+    const annotations = await db.annotations.bulkGet(uniqueIds);
+    if (annotations.some((annotation) => !annotation)) {
+      throw new Error('Cannot update an annotation that does not exist.');
+    }
+    const now = Date.now();
+    await db.annotations.bulkPut(
+      annotations.map((annotation) => ({
+        ...(annotation as AnnotationRecord),
+        deletedAt: deleted ? now : 0,
+        updatedAt: now,
+      })),
+    );
+  });
+}
+
+/** Tombstone a batch in one transaction so a failed request cannot partly apply. */
+export async function tombstoneMany(ids: string[]): Promise<void> {
+  await setDeletedStateMany(ids, true);
+}
+
+/** Restore a batch in one transaction. */
+export async function undeleteMany(ids: string[]): Promise<void> {
+  await setDeletedStateMany(ids, false);
+}
+
 export async function getAnnotation(id: string): Promise<AnnotationRecord | undefined> {
   return db.annotations.get(id);
 }
@@ -240,6 +275,7 @@ export async function importBackup(file: BackupFile): Promise<ImportSummary> {
     annotationsSkipped: 0,
     sourcesLinked: 0,
     sourcesAdded: 0,
+    settingsUpdated: 0,
   };
   const incomingDocs = new Map(file.documents.map((d) => [d.id, d]));
   const incomingAnchors = new Map(file.anchors.map((a) => [a.annotationId, a]));
@@ -332,6 +368,7 @@ export async function importBackup(file: BackupFile): Promise<ImportSummary> {
         const local = await db.settings.get(setting.key);
         if (!local) {
           await db.settings.put(setting);
+          summary.settingsUpdated++;
           continue;
         }
         if (Array.isArray(local.value) && Array.isArray(setting.value)) {
@@ -340,7 +377,10 @@ export async function importBackup(file: BackupFile): Promise<ImportSummary> {
             const known = merged.some((existing) => JSON.stringify(existing) === JSON.stringify(item));
             if (!known) merged.push(item);
           }
-          await db.settings.put({ key: setting.key, value: merged });
+          if (merged.length !== local.value.length) {
+            await db.settings.put({ key: setting.key, value: merged });
+            summary.settingsUpdated++;
+          }
         }
       }
     },
@@ -356,6 +396,7 @@ export async function getLastColor(): Promise<ColorKey> {
 
 const PLACEMENT_KEY = 'toolbarPlacement';
 const CUSTOM_COLORS_KEY = 'customColors';
+const PAGE_COLORS_PREFIX = 'pageColors:';
 const DISABLED_SITES_KEY = 'disabledSites';
 const DETECT_DOI_KEY = 'detectDoi';
 const CHECK_UPDATES_KEY = 'checkUpdates';
@@ -429,5 +470,107 @@ export async function removeCustomColor(key: string): Promise<void> {
   await db.settings.put({
     key: CUSTOM_COLORS_KEY,
     value: prefs.customColors.filter((c) => c.key !== key),
+  });
+}
+
+function pageColorsSettingKey(url: string): string {
+  return `${PAGE_COLORS_PREFIX}${toUrlKey(url)}`;
+}
+
+function validPageColorEvents(value: unknown): PageColorEvent[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (event): event is PageColorEvent =>
+      typeof event === 'object' &&
+      event !== null &&
+      typeof (event as PageColorEvent).key === 'string' &&
+      typeof (event as PageColorEvent).enabled === 'boolean' &&
+      Number.isFinite((event as PageColorEvent).addedAt) &&
+      Number.isFinite((event as PageColorEvent).updatedAt),
+  );
+}
+
+async function inferPageColorEvents(url: string): Promise<PageColorEvent[]> {
+  const source = await db.sources.where('urlKey').equals(toUrlKey(url)).first();
+  if (!source) return [];
+  const annotations = await db.annotations
+    .where('sourceId')
+    .equals(source.id)
+    .filter((annotation) => annotation.deletedAt === 0)
+    .sortBy('createdAt');
+  const builtin = new Set<string>(BUILTIN_COLOR_KEYS);
+  const limit = Math.max(0, DEFAULT_TOOLBAR_COLOR_LIMIT - BUILTIN_COLOR_KEYS.length);
+  const seen = new Set<string>();
+  const events: PageColorEvent[] = [];
+  for (const annotation of annotations) {
+    if (builtin.has(annotation.color) || seen.has(annotation.color)) continue;
+    seen.add(annotation.color);
+    events.push({
+      key: annotation.color,
+      enabled: true,
+      addedAt: annotation.createdAt,
+      updatedAt: annotation.createdAt,
+    });
+    if (events.length === limit) break;
+  }
+  return events;
+}
+
+async function readOrInferPageColorEvents(url: string): Promise<PageColorEvent[]> {
+  const settingKey = pageColorsSettingKey(url);
+  const record = await db.settings.get(settingKey);
+  if (record) return validPageColorEvents(record.value);
+  return inferPageColorEvents(url);
+}
+
+/** Custom color keys offered on this concrete normalized page. */
+export async function getPageColorKeys(url: string): Promise<ColorKey[]> {
+  return db.transaction('r', db.settings, db.sources, db.annotations, async () =>
+    resolvePageColorEvents(await readOrInferPageColorEvents(url)).map((event) => event.key),
+  );
+}
+
+/** Add a picker color to one page without changing any other page's toolbar. */
+export async function addPageColor(url: string, color: CustomColor): Promise<void> {
+  await db.transaction('rw', db.settings, db.sources, db.annotations, async () => {
+    const catalogRecord = await db.settings.get(CUSTOM_COLORS_KEY);
+    const catalog = Array.isArray(catalogRecord?.value)
+      ? (catalogRecord.value as CustomColor[])
+      : [];
+    if (!catalog.some((entry) => entry.key === color.key)) {
+      await db.settings.put({ key: CUSTOM_COLORS_KEY, value: [...catalog, color] });
+    }
+
+    const events = await readOrInferPageColorEvents(url);
+    const active = resolvePageColorEvents(events).find((event) => event.key === color.key);
+    if (active) return;
+    const previousUpdatedAt = events
+      .filter((event) => event.key === color.key)
+      .reduce((latest, event) => Math.max(latest, event.updatedAt), 0);
+    const now = Math.max(Date.now(), previousUpdatedAt + 1);
+    await db.settings.put({
+      key: pageColorsSettingKey(url),
+      value: [...events, { key: color.key, enabled: true, addedAt: now, updatedAt: now }],
+    });
+  });
+}
+
+/** Hide a color from one page; its catalog entry and existing annotations remain. */
+export async function removePageColor(url: string, key: ColorKey): Promise<void> {
+  await db.transaction('rw', db.settings, db.sources, db.annotations, async () => {
+    const events = await readOrInferPageColorEvents(url);
+    const active = resolvePageColorEvents(events).find((event) => event.key === key);
+    if (!active) return;
+    const latest = events
+      .filter((event) => event.key === key)
+      .reduce((time, event) => Math.max(time, event.updatedAt), 0);
+    const now = Math.max(Date.now(), latest + 1);
+    await db.settings.put({
+      key: pageColorsSettingKey(url),
+      value: [
+        ...events,
+        { key, enabled: false, addedAt: active.addedAt, updatedAt: now },
+      ],
+    });
   });
 }

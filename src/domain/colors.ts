@@ -1,4 +1,4 @@
-import type { BuiltinColorKey, ColorKey, CustomColor } from './types';
+import type { BuiltinColorKey, ColorKey, CustomColor, PageColorEvent } from './types';
 
 export interface ColorSpec {
   label: string;
@@ -22,6 +22,34 @@ export const COLORS: Record<BuiltinColorKey, ColorSpec> = {
 };
 
 export const DEFAULT_COLOR: BuiltinColorKey = 'yellow';
+/** Automatic choices: three builtins plus at most two legacy page colors. */
+export const DEFAULT_TOOLBAR_COLOR_LIMIT = 5;
+
+/**
+ * Resolve append-only page-color events deterministically on every device.
+ * A removal wins an exact timestamp tie; otherwise the original (earliest)
+ * added position wins so shortcut ordering cannot depend on backup union order.
+ */
+export function resolvePageColorEvents(events: PageColorEvent[]): PageColorEvent[] {
+  const latest = new Map<ColorKey, PageColorEvent>();
+  for (const event of events) {
+    const previous = latest.get(event.key);
+    const replacesPrevious =
+      !previous ||
+      event.updatedAt > previous.updatedAt ||
+      (event.updatedAt === previous.updatedAt &&
+        (previous.enabled !== event.enabled
+          ? !event.enabled
+          : event.addedAt < previous.addedAt));
+    if (replacesPrevious) latest.set(event.key, event);
+  }
+  return [...latest.values()]
+    .filter((event) => event.enabled)
+    .sort((a, b) =>
+      a.addedAt - b.addedAt ||
+      (a.key < b.key ? -1 : a.key > b.key ? 1 : 0),
+    );
+}
 
 /** Builtins first (fixed shortcuts 1–3), then user colors in added order. */
 export function buildPalette(customColors: CustomColor[]): PaletteEntry[] {
@@ -31,10 +59,37 @@ export function buildPalette(customColors: CustomColor[]): PaletteEntry[] {
   ];
 }
 
-/** Spec for any color key; unknown (e.g. removed custom) keys fall back to yellow. */
+/** Recover a picker-created color from its canonical `c<rrggbb>` key. */
+export function customColorFromKey(key: ColorKey): CustomColor | null {
+  const match = /^c([0-9a-f]{6})$/i.exec(key);
+  return match ? customColorFromHex(`#${match[1]}`) : null;
+}
+
+/**
+ * Builtins plus only the requested custom keys. Catalog-only colors never
+ * leak into an unrelated page; canonical picker keys remain self-describing.
+ */
+export function buildPaletteForKeys(
+  keys: ColorKey[],
+  catalog: CustomColor[],
+): PaletteEntry[] {
+  const byKey = new Map(catalog.map((color) => [color.key, color]));
+  const seen = new Set<string>();
+  const custom: CustomColor[] = [];
+  for (const key of keys) {
+    if ((BUILTIN_COLOR_KEYS as readonly string[]).includes(key) || seen.has(key)) continue;
+    const color = byKey.get(key) ?? customColorFromKey(key);
+    if (!color) continue;
+    seen.add(key);
+    custom.push(color);
+  }
+  return buildPalette(custom);
+}
+
+/** Spec for any color key; invalid unknown keys fall back to yellow. */
 export function specFor(key: ColorKey, customColors: CustomColor[]): ColorSpec {
   const entry = buildPalette(customColors).find((c) => c.key === key);
-  return entry ?? COLORS[DEFAULT_COLOR];
+  return entry ?? customColorFromKey(key) ?? COLORS[DEFAULT_COLOR];
 }
 
 /** Shortcut digit (1-based, palette order) → color key. */

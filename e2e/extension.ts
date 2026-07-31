@@ -116,6 +116,32 @@ export async function selectText(page: Page, selector: string, text: string): Pr
   await page.evaluate(() => document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true })));
 }
 
+/** Select all text inside `selector`, optionally focusing it as the keyboard event target. */
+export async function selectContents(
+  page: Page,
+  selector: string,
+  focusTarget = false,
+): Promise<void> {
+  await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
+  await page.evaluate(
+    ({ selector, focusTarget }) => {
+      const scope = document.querySelector<HTMLElement>(selector);
+      if (!scope) throw new Error(`no element for ${selector}`);
+      if (focusTarget) {
+        scope.tabIndex = -1;
+        scope.focus();
+      }
+      const range = document.createRange();
+      range.selectNodeContents(scope);
+      const selection = getSelection();
+      selection?.removeAllRanges();
+      selection?.addRange(range);
+      document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    },
+    { selector, focusTarget },
+  );
+}
+
 /**
  * Create a highlight over `text` using the floating toolbar, and wait until it
  * is actually persisted. Without the wait, a follow-up action can race the

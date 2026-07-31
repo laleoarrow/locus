@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useMemo, useState } from 'react';
 import { loadLibrary } from '@/db/library';
 import { getLibraryMode, getPrefs } from '@/db/repo';
-import { buildPalette, specFor } from '@/domain/colors';
+import { buildPaletteForKeys, specFor } from '@/domain/colors';
 import {
   availableOrigins,
   buildLibrary,
@@ -50,9 +50,18 @@ export function App() {
   const [toText, setToText] = useState('');
 
   const customColors = prefs?.customColors ?? [];
-  const palette = useMemo(() => buildPalette(customColors), [customColors]);
-
   const allPages = useMemo(() => (input ? buildLibrary(input) : []), [input]);
+  const usedColors = useMemo(
+    () => [...new Set(allPages.flatMap((page) => page.annotations.map((entry) => entry.color)))],
+    [allPages],
+  );
+  const palette = useMemo(
+    () =>
+      buildPaletteForKeys(usedColors, customColors).filter((entry) =>
+        usedColors.includes(entry.key),
+      ),
+    [customColors, usedColors],
+  );
   const pages = useMemo(() => filterLibrary(allPages, filters), [allPages, filters]);
   const origins = useMemo(() => availableOrigins(allPages), [allPages]);
 

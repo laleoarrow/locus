@@ -2,12 +2,13 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   exportBackup as repoExportBackup,
+  getPageColorKeys,
   getPrefs,
   importBackup as repoImportBackup,
   listForUrl,
 } from '@/db/repo';
 import { backupFileName, parseBackup, type BackupFile } from '@/domain/backup';
-import { specFor } from '@/domain/colors';
+import { buildPaletteForKeys, specFor } from '@/domain/colors';
 import { parsePageNoteZip, type PageNoteImportStats } from '@/domain/pagenote';
 import type { SyncConfig, SyncState } from '@/domain/sync';
 import type { SyncConfigView } from '@/sync/store';
@@ -221,6 +222,12 @@ export function App() {
     detectDoi: true,
     checkUpdates: true,
   };
+  const pageColorKeys =
+    useLiveQuery(
+      () => (target ? getPageColorKeys(target.url) : Promise.resolve([])),
+      [target?.url],
+    ) ?? [];
+  const pageColors = buildPaletteForKeys(pageColorKeys, prefs.customColors).slice(3);
   const items = data?.items ?? [];
   const supported = target !== null && /^https?:/.test(target.url);
 
@@ -313,11 +320,11 @@ export function App() {
             <span />
           </label>
         </div>
-        {prefs.customColors.length > 0 && (
-          <div className="pref-row">
-            <span className="pref-label">Custom colors</span>
+        {pageColors.length > 0 && target && (
+          <div className="pref-row" data-page-colors>
+            <span className="pref-label">Colors on this page</span>
             <div className="custom-colors">
-              {prefs.customColors.map((color) => (
+              {pageColors.map((color) => (
                 <span
                   key={color.key}
                   className="color-chip"
@@ -326,7 +333,13 @@ export function App() {
                 >
                   <button
                     aria-label={`Remove ${color.label}`}
-                    onClick={() => void requestBg({ type: 'prefs:remove-color', key: color.key })}
+                    onClick={() =>
+                      void requestBg({
+                        type: 'page-colors:remove',
+                        url: target.url,
+                        key: color.key,
+                      })
+                    }
                   >
                     ×
                   </button>

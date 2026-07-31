@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as repo from '@/db/repo';
 import { db } from '@/db/schema';
-import type { AnchorData } from '@/domain/types';
+import type { AnchorData, ColorKey, CustomColor } from '@/domain/types';
 
 const anchor: AnchorData = {
   exact: 'selected words',
@@ -16,7 +16,7 @@ const anchor: AnchorData = {
 
 const URL_A = 'https://example.com/paper?id=1';
 
-async function createOne(color: 'yellow' | 'teal' = 'yellow') {
+async function createOne(color: ColorKey = 'yellow') {
   const source = await repo.ensureSource(URL_A, 'A Paper');
   return repo.createAnnotation({
     sourceId: source.id,
@@ -58,6 +58,23 @@ describe('repo (U8–U10)', () => {
     expect((await repo.listForUrl(URL_A)).items).toHaveLength(1);
   });
 
+  it('deletes and restores a batch atomically (U37)', async () => {
+    const first = await createOne();
+    const second = await createOne('teal');
+
+    await expect(
+      repo.tombstoneMany([first.annotation.id, 'missing-annotation']),
+    ).rejects.toThrow();
+    expect((await repo.listForUrl(URL_A)).items).toHaveLength(2);
+
+    await repo.tombstoneMany([first.annotation.id, second.annotation.id]);
+    expect((await repo.listForUrl(URL_A)).items).toHaveLength(0);
+    expect(await db.annotations.count()).toBe(2);
+
+    await repo.undeleteMany([first.annotation.id, second.annotation.id]);
+    expect((await repo.listForUrl(URL_A)).items).toHaveLength(2);
+  });
+
   it('remembers the last-used color (U10)', async () => {
     expect(await repo.getLastColor()).toBe('yellow');
     await createOne('teal');
@@ -91,6 +108,49 @@ describe('repo (U8–U10)', () => {
     await repo.removeCustomColor('c336699');
     expect((await repo.getPrefs()).customColors).toEqual([]);
     expect((await repo.getPrefs()).disabledSites).toEqual([]);
+  });
+
+  it('keeps manually added colors on their page and preserves page removals', async () => {
+    const colors: CustomColor[] = ['#111111', '#222222', '#333333'].map((hex) => ({
+      key: `c${hex.slice(1)}`,
+      label: hex,
+      swatch: hex,
+      bg: 'rgba(1, 1, 1, 0.45)',
+    }));
+    for (const color of colors) await repo.addPageColor(URL_A, color);
+
+    expect(await repo.getPageColorKeys(URL_A)).toEqual(colors.map((color) => color.key));
+    expect(await repo.getPageColorKeys(`${URL_A}#section`)).toEqual(
+      colors.map((color) => color.key),
+    );
+    expect(await repo.getPageColorKeys('https://example.com/other')).toEqual([]);
+    expect((await repo.getPrefs()).customColors.map((color) => color.key)).toEqual(
+      colors.map((color) => color.key),
+    );
+
+    await repo.removePageColor(URL_A, colors[1]?.key ?? '');
+    expect(await repo.getPageColorKeys(URL_A)).toEqual([colors[0]?.key, colors[2]?.key]);
+    // Removing a toolbar choice must not remove the rendering definition.
+    expect((await repo.getPrefs()).customColors).toHaveLength(3);
+  });
+
+  it('lazily seeds a legacy page with at most two custom colors it already uses', async () => {
+    const colors: CustomColor[] = ['#441111', '#442222', '#443333'].map((hex) => ({
+      key: `c${hex.slice(1)}`,
+      label: hex,
+      swatch: hex,
+      bg: 'rgba(68, 1, 1, 0.45)',
+    }));
+    for (const color of colors) {
+      await repo.addCustomColor(color);
+      await createOne(color.key);
+    }
+
+    expect(await repo.getPageColorKeys(URL_A)).toEqual([
+      colors[0]?.key,
+      colors[1]?.key,
+    ]);
+    expect(await repo.getPageColorKeys('https://example.com/new-page')).toEqual([]);
   });
 
   it('persists the Library group mode and rejects an invalid stored value (U36)', async () => {

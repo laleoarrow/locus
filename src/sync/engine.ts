@@ -13,6 +13,8 @@ export interface SyncResult {
   ok: boolean;
   /** Annotations pulled in from the remote copy this run. */
   pulled: number;
+  /** Portable settings inserted or extended from the remote copy this run. */
+  settingsPulled: number;
   /** True when the local library was pushed. */
   pushed: boolean;
   error: string;
@@ -38,31 +40,45 @@ export async function runSync(
   const base = normalizeCollectionUrl(config.url);
   if (!base || !isConfigComplete(config)) {
     return {
-      result: { ok: false, pulled: 0, pushed: false, error: 'Sync is not configured.' },
+      result: {
+        ok: false,
+        pulled: 0,
+        settingsPulled: 0,
+        pushed: false,
+        error: 'Sync is not configured.',
+      },
       state,
     };
   }
 
   const client = new WebDavClient(config, base);
   let lastError = 'Sync failed.';
+  let pulled = 0;
+  let settingsPulled = 0;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       if (attempt === 1) await client.ensureCollection();
 
       const remote = await client.get(LIBRARY_FILE);
-      let pulled = 0;
       if (remote) {
         const parsed = parseBackup(JSON.parse(remote.body));
         if ('error' in parsed) {
           // A corrupt or foreign file must not be silently overwritten.
           return {
-            result: { ok: false, pulled: 0, pushed: false, error: `Remote file rejected: ${parsed.error}` },
+            result: {
+              ok: false,
+              pulled,
+              settingsPulled,
+              pushed: false,
+              error: `Remote file rejected: ${parsed.error}`,
+            },
             state: { ...state, lastError: parsed.error },
           };
         }
         const summary = await repo.importBackup(parsed.file);
-        pulled = summary.annotationsAdded + summary.annotationsUpdated;
+        pulled += summary.annotationsAdded + summary.annotationsUpdated;
+        settingsPulled += summary.settingsUpdated;
       }
 
       const merged = await repo.exportBackup(appVersion);
@@ -74,7 +90,7 @@ export async function runSync(
 
       const now = Date.now();
       return {
-        result: { ok: true, pulled, pushed: true, error: '' },
+        result: { ok: true, pulled, settingsPulled, pushed: true, error: '' },
         state: { lastSyncAt: now, lastError: '', etag },
       };
     } catch (error) {
@@ -92,7 +108,7 @@ export async function runSync(
   }
 
   return {
-    result: { ok: false, pulled: 0, pushed: false, error: lastError },
+    result: { ok: false, pulled, settingsPulled, pushed: false, error: lastError },
     state: { ...state, lastError },
   };
 }

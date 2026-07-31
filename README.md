@@ -35,14 +35,17 @@ bring them back reliably — even when the page shifts under you.
   highlight opens a **Markdown** note editor with live preview — **Enter**
   saves (Shift+Enter for a newline), **Delete** on an empty note (or
   **⌘/Ctrl+Delete** anytime) removes the highlight. **Cmd+Z / Ctrl+Z** undoes
-  your last highlight.
+  your last highlight. Select across several existing highlights and press
+  **Delete / Backspace** to remove them together; one undo restores the batch.
 - **Images too.** Clicking a figure — including one wrapped in a link — offers
   the same toolbar and draws a glowing ring around the image. Cmd/Ctrl-click
   still follows the underlying link.
-- **Your palette, your layout.** The toolbar's **+** orb adds custom colors
-  (they get the next shortcut digits; manage them in the side panel). The
-  toolbar shows below the selection by default, or set it to *above* /
-  *auto* — auto dodges other extensions' floating toolbars.
+- **Your palette, your layout.** A page starts with at most five color choices.
+  The toolbar's **+** orb can add more for that page only (they get the next
+  shortcut digits; manage them under *Colors on this page* in the side panel).
+  Other pages stay compact, and removing a choice never recolors annotations
+  already made with it. The toolbar shows below the selection by default, or
+  set it to *above* / *auto* — auto dodges other extensions' floating toolbars.
 - **Sync through storage you own.** Point Locus at a WebDAV folder (坚果云 /
   Nutstore, Nextcloud, anything WebDAV) once, and every device keeps itself
   merged — no account, no server of ours. Or just use **Export / Import** for a

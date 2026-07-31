@@ -28,6 +28,8 @@ export interface BootstrapResult {
   items: AnnotationWithAnchor[];
   lastColor: ColorKey;
   prefs: Prefs;
+  /** Custom color choices visible in this page's toolbar. */
+  pageColors: ColorKey[];
   /** Another annotated version of the same paper (DOI match), if any. */
   altVersion: AltVersion | null;
 }
@@ -50,9 +52,11 @@ export type BgRequest =
   | { type: 'annotation:set-comment'; id: string; comment: string }
   | { type: 'annotation:delete'; id: string }
   | { type: 'annotation:undelete'; id: string }
+  | { type: 'annotations:delete'; ids: string[] }
+  | { type: 'annotations:undelete'; ids: string[] }
   | { type: 'prefs:set-placement'; placement: ToolbarPlacement }
-  | { type: 'prefs:add-color'; color: CustomColor }
-  | { type: 'prefs:remove-color'; key: string }
+  | { type: 'page-colors:add'; url: string; color: CustomColor }
+  | { type: 'page-colors:remove'; url: string; key: ColorKey }
   | { type: 'prefs:toggle-site'; origin: string; disabled: boolean }
   | { type: 'prefs:set-detect-doi'; on: boolean }
   | { type: 'prefs:set-check-updates'; on: boolean }
@@ -76,9 +80,11 @@ export interface BgResponseMap {
   'annotation:set-comment': { ok: true };
   'annotation:delete': { ok: true };
   'annotation:undelete': { ok: true };
+  'annotations:delete': { ok: true };
+  'annotations:undelete': { ok: true };
   'prefs:set-placement': { prefs: Prefs };
-  'prefs:add-color': { prefs: Prefs };
-  'prefs:remove-color': { prefs: Prefs };
+  'page-colors:add': { colors: ColorKey[] };
+  'page-colors:remove': { colors: ColorKey[] };
   'prefs:toggle-site': { prefs: Prefs };
   'prefs:set-detect-doi': { prefs: Prefs };
   'prefs:set-check-updates': { prefs: Prefs };
@@ -106,7 +112,8 @@ export type TabMessage =
   | { type: 'annotations:changed'; urlKey: string }
   | { type: 'annotation:reveal'; id: string }
   | { type: 'anchor-state:query' }
-  | { type: 'prefs:changed'; prefs: Prefs };
+  | { type: 'prefs:changed'; prefs: Prefs }
+  | { type: 'page-colors:changed'; urlKey: string; colors: ColorKey[] };
 
 export interface AnchorStateReply {
   url: string;

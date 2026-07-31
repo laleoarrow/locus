@@ -29,10 +29,28 @@ async function syncNow(): Promise<{ result: SyncResult; state: SyncState }> {
   const config = await getSyncConfig();
   const state = await getSyncState();
   if (!config.enabled || !isConfigComplete(config)) {
-    return { result: { ok: false, pulled: 0, pushed: false, error: 'Sync is off.' }, state };
+    return {
+      result: {
+        ok: false,
+        pulled: 0,
+        settingsPulled: 0,
+        pushed: false,
+        error: 'Sync is off.',
+      },
+      state,
+    };
   }
   if (syncing) {
-    return { result: { ok: false, pulled: 0, pushed: false, error: 'Already syncing.' }, state };
+    return {
+      result: {
+        ok: false,
+        pulled: 0,
+        settingsPulled: 0,
+        pushed: false,
+        error: 'Already syncing.',
+      },
+      state,
+    };
   }
   syncing = true;
   try {
@@ -51,6 +69,9 @@ async function syncNow(): Promise<{ result: SyncResult; state: SyncState }> {
             } satisfies TabMessage),
           ),
       );
+    }
+    if (outcome.result.settingsPulled > 0) {
+      await Promise.all([broadcastPrefs(), broadcastOpenPageColors()]);
     }
     return outcome;
   } finally {
@@ -157,6 +178,38 @@ async function broadcastPrefs(): Promise<{ prefs: Awaited<ReturnType<typeof repo
   return { prefs };
 }
 
+async function broadcastPageColors(url: string): Promise<{ colors: string[] }> {
+  const urlKey = toUrlKey(url);
+  const colors = await repo.getPageColorKeys(url);
+  const message: TabMessage = { type: 'page-colors:changed', urlKey, colors };
+  const tabs = await chrome.tabs.query({});
+  await Promise.allSettled(
+    tabs
+      .filter((tab) => tab.id !== undefined && tab.url && toUrlKey(tab.url) === urlKey)
+      .map((tab) => chrome.tabs.sendMessage(tab.id as number, message)),
+  );
+  return { colors };
+}
+
+async function broadcastOpenPageColors(): Promise<void> {
+  const tabs = await chrome.tabs.query({});
+  const pages = new Map<string, { url: string; tabIds: number[] }>();
+  for (const tab of tabs) {
+    if (tab.id === undefined || !tab.url || !/^https?:/.test(tab.url)) continue;
+    const urlKey = toUrlKey(tab.url);
+    const page = pages.get(urlKey);
+    if (page) page.tabIds.push(tab.id);
+    else pages.set(urlKey, { url: tab.url, tabIds: [tab.id] });
+  }
+  await Promise.all(
+    [...pages.entries()].map(async ([urlKey, page]) => {
+      const colors = await repo.getPageColorKeys(page.url);
+      const message: TabMessage = { type: 'page-colors:changed', urlKey, colors };
+      await Promise.allSettled(page.tabIds.map((tabId) => chrome.tabs.sendMessage(tabId, message)));
+    }),
+  );
+}
+
 async function broadcastChange(urlKey: string): Promise<void> {
   const toRuntime: ChangeBroadcast = { type: 'annotations:changed', urlKey };
   chrome.runtime.sendMessage(toRuntime).catch(() => {
@@ -192,6 +245,7 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
         items,
         lastColor: await repo.getLastColor(),
         prefs,
+        pageColors: await repo.getPageColorKeys(message.url),
         altVersion,
       };
     }
@@ -224,17 +278,33 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
       await broadcastForAnnotation(message.id);
       return { ok: true };
     }
+    case 'annotations:delete': {
+      await repo.tombstoneMany(message.ids);
+      scheduleSync();
+      await bestEffortBroadcastForAnnotations(message.ids);
+      return { ok: true };
+    }
+    case 'annotations:undelete': {
+      await repo.undeleteMany(message.ids);
+      scheduleSync();
+      await bestEffortBroadcastForAnnotations(message.ids);
+      return { ok: true };
+    }
     case 'prefs:set-placement': {
       await repo.setPlacement(message.placement);
       return broadcastPrefs();
     }
-    case 'prefs:add-color': {
-      await repo.addCustomColor(message.color);
-      return broadcastPrefs();
+    case 'page-colors:add': {
+      await repo.addPageColor(message.url, message.color);
+      const result = await broadcastPageColors(message.url);
+      scheduleSync();
+      return result;
     }
-    case 'prefs:remove-color': {
-      await repo.removeCustomColor(message.key);
-      return broadcastPrefs();
+    case 'page-colors:remove': {
+      await repo.removePageColor(message.url, message.key);
+      const result = await broadcastPageColors(message.url);
+      scheduleSync();
+      return result;
     }
     case 'prefs:toggle-site': {
       await repo.setSiteDisabled(message.origin, message.disabled);
@@ -343,6 +413,36 @@ async function broadcastForAnnotation(id: string): Promise<void> {
   if (!annotation) return;
   const source = await db.sources.get(annotation.sourceId);
   if (source) await broadcastChange(source.urlKey);
+}
+
+async function broadcastForAnnotations(ids: string[]): Promise<void> {
+  const annotations = await db.annotations.bulkGet([...new Set(ids)]);
+  const sourceIds = [
+    ...new Set(
+      annotations.flatMap((annotation) => annotation ? [annotation.sourceId] : []),
+    ),
+  ];
+  const sources = await db.sources.bulkGet(sourceIds);
+  const urlKeys = [
+    ...new Set(sources.flatMap((source) => source ? [source.urlKey] : [])),
+  ];
+  await Promise.all(urlKeys.map((urlKey) => broadcastChange(urlKey)));
+}
+
+async function bestEffortBroadcastForAnnotations(ids: string[]): Promise<void> {
+  try {
+    await broadcastForAnnotations(ids);
+  } catch (error) {
+    // The database transaction has already committed. Do not report the user
+    // action as failed just because tab notification was temporarily
+    // unavailable; the initiating content script refreshes from IndexedDB.
+    console.error('[locus] annotation batch notification failed', error);
+    setTimeout(() => {
+      void broadcastForAnnotations(ids).catch((retryError: unknown) => {
+        console.error('[locus] annotation batch notification retry failed', retryError);
+      });
+    }, 500);
+  }
 }
 
 export default defineBackground(() => {
