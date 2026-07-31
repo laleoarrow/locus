@@ -48,6 +48,7 @@ bypassed while still exercising the dynamic registration code path).
 | U36 | library/prefs | grouping mode defaults safely, persists across Library tabs and rejects an invalid stored value |
 | U37 | selection overlap | partial/contained/exact DOM Range overlaps match; disjoint, boundary-only and collapsed ranges do not, including nested text nodes |
 | U38 | page colors | additions/removals are isolated by normalized page URL; legacy pages infer at most two custom choices; append-only removal events survive backup union without resurrection |
+| U36 | library/timeline | day distance across months and years; relative wording gives way to dates past a week; consecutive days group into one era per month; depth is ranked by position so an uneven history still recedes evenly; single-day and empty histories do not divide by zero |
 
 ## E2E (Playwright, loaded extension)
 
@@ -80,6 +81,9 @@ for observability without page-world coupling.
 | E22 | backup | Export produces a real download; wiping the DB and importing that file restores the annotation, its Markdown note and a working anchor; re-importing adds nothing |
 | E23 | sync | two independent installs (separate profiles) converge in both directions through a mock WebDAV server; a deletion on one propagates and repeated syncs never resurrect it; a real export contains neither the sync username nor password |
 | E24 | sync/errors | a wrong app password surfaces an actionable message instead of failing silently |
+| E44 | timeline | days group into eras with one rail tick each; backdating a history splits it into two eras and four days, and relative labels read Today / 2 days ago |
+| E45 | timeline | clicking a rail tick travels to that day, marks it current and clears the previous one |
+| E46 | timeline | depth rises monotonically from nearest to oldest layer, while quote text stays fully opaque — receding must never mean harder to read |
 | E25 | builds | production Chrome and Edge builds are loadable MV3 bundles from the same source; `pnpm zip:store*` omits the manifest key while keeping WXT in production mode, and its verifier rejects React development code or absolute local paths |
 | E26 | placement/rivals | auto dodges a rival toolbar built the way real ones are: `pointer-events: none` wrapper, `position: absolute`, shadow host nested below `<body>`, and one that renders 250 ms late |
 | E27 | PageNote import | importing a PageNote ZIP through Backup restores its highlights, URLs, notes and colors; importing the same file again adds nothing |

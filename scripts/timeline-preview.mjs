@@ -1,5 +1,5 @@
 /**
- * Preview the Time Machine timeline with a history that actually spans time.
+ * Preview the timeline with a history that actually spans time.
  *
  * Annotations are made through the real UI so every row is valid, then their
  * timestamps are spread backwards across days and months directly in the
