@@ -9,7 +9,7 @@
 把浏览器扩展 **Locus / 文迹** 提交到 **Microsoft Edge Add-ons** 和 **Chrome Web Store**。
 上架的唯一目的是让用户获得**自动更新**——sideload（开发人员模式加载）的扩展浏览器永远不会自动更新，上架后才会。
 
-仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（git 干净，已发布 v0.6.0）
+仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（git 干净，已发布 v0.6.1）
 
 ## 项目背景（够用即止）
 
@@ -19,8 +19,10 @@ Locus 是一个 Manifest V3 扩展（WXT + TypeScript + React + Dexie），功�
 
 ## 当前进度（从这里继续）
 
-- ✅ v0.6.0 已发布到 GitHub；Edge 上架包已构建并放在桌面上传目录
+- ✅ v0.6.1 已发布到 GitHub 且为 Latest；全部质量门槛通过
+- ✅ v0.6.1 Edge keyless 上架包已验证并更新到桌面上传目录
 - ✅ 素材已生成并归置到 `~/Desktop/locus-store-upload/`（按提交顺序编号）
+- ✅ 第 5 张 Library 截图已按 v0.6.1 的紧凑卡片与站点族界面重新生成
 - ✅ 中英文商店文案、权限说明、隐私问卷答案已全部撰写完毕
 - ✅ 隐私政策已上线：<https://github.com/laleoarrow/locus/blob/main/docs/PRIVACY.md>（返回 200）
 - ⏳ Microsoft Edge 开发者注册已开始，但 Partner Center 仍停在 **Step 2 of 4 — Email Verification / In Progress**。邮箱验证完成前无法继续扩展表单。
@@ -66,9 +68,9 @@ node scripts/store-copy.mjs next            # 复制下一项
 
 | 文件 | 用途 |
 |---|---|
-| `1-PACKAGE-edge-上传这个.zip` | Edge 扩展包 |
+| `1-PACKAGE-edge-上传这个.zip` | v0.6.1 Edge 扩展包（keyless，商店上传专用） |
 | `2-LOGO-300x300.png` | Edge 商店 logo |
-| `4-截图1~5-*.png` | 5 张 1280×800 Edge 截图 |
+| `4-截图1~5-*.png` | 5 张 1280×800 Edge 截图；`4-截图5-资料库.png` 已更新为 v0.6.1 Library |
 
 素材需要重新生成时：
 
@@ -89,7 +91,7 @@ pnpm build:e2e && node scripts/store-shots.mjs   # 重截前 4 张截图
 
 ## 已知坑（务必注意）
 
-1. **真正的约束是商店包的 manifest 不能含 `key`，不是桌面文件名是否带 `-store`。** GitHub Release 里的 `locus-0.6.0-edge.zip` / `-chrome.zip` 是 sideload 包，manifest 带固定 ID 用的 `key`，不能上传商店。桌面的 `1-PACKAGE-edge-上传这个.zip` 已由 `pnpm zip:store:edge` 生成并验证为 v0.6.0、无 `key`。
+1. **真正的约束是商店包的 manifest 不能含 `key`，不是桌面文件名是否带 `-store`。** GitHub Release 里的 `locus-0.6.1-edge.zip` / `-chrome.zip` 是 sideload 包，manifest 带固定 ID 用的 `key`，不能上传商店。桌面的 `1-PACKAGE-edge-上传这个.zip` 已由 `pnpm zip:store:edge` 生成并验证为 v0.6.1、无 `key`。
 2. **Edge 审核最常卡在全站权限**（`host_permissions: http://*/*, https://*/*`）。
    字段清单第 9 项「Notes for certification」专门写了：测试步骤、为何必须全站权限（用户读什么文章无法预先枚举）、页面文字仅用于定位高亮且从不外传、用户可逐站禁用。**这一项不要省略或简写。**
 3. **数据收集问卷全部声明"不收集"**。配套声明文本见字段 `data-statement`。两个可选联网功能要如实说明：WebDAV 同步发到用户自己配置的服务器；更新检查只请求 GitHub 公开的 release 信息，不含任何用户数据。
@@ -107,8 +109,8 @@ pnpm build:e2e && node scripts/store-shots.mjs   # 重截前 4 张截图
 
 ```bash
 pnpm typecheck    # TS strict
-pnpm test         # Vitest，当前 108 个
-pnpm e2e          # Playwright 扩展测试，当前 31 个
+pnpm test         # Vitest，当前 113 个
+pnpm e2e          # Playwright 扩展测试，当前 33 个
 pnpm build && pnpm build:edge   # Chrome / Edge 同源构建
 ```
 
