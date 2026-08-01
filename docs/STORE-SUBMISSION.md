@@ -208,10 +208,10 @@ statement:
 
 ## 7. Current submission status
 
-- 2026-08-01: v0.7.1 is published as GitHub Latest and the final keyless Edge
+- 2026-08-01: v0.7.2 is published as GitHub Latest and the final keyless Edge
   upload package is ready at
   `~/Desktop/locus-store-upload/1-PACKAGE-edge-上传这个.zip` (SHA-256
-  `8dcb6351822d898fb19582522faed51b26e9c6cea475795ce98e64240d116066`).
+  `0a8289f29931382c64aa14848211c2b63c6fd16f3a2f88f8beeb47a11344f5b4`).
 - Microsoft Partner Center is still at developer **Email Verification — In
   Progress (step 2 of 4)**, so no Edge listing has been submitted and there is
   no store review date yet. The final Submit/Publish action remains with the

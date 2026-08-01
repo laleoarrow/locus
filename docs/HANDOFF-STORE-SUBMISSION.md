@@ -9,7 +9,7 @@
 把浏览器扩展 **Locus / 文迹** 提交到 **Microsoft Edge Add-ons** 和 **Chrome Web Store**。
 上架的唯一目的是让用户获得**自动更新**——sideload（开发人员模式加载）的扩展浏览器永远不会自动更新，上架后才会。
 
-仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（v0.7.1 已发布；继续前先核对 git 状态）
+仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（v0.7.2 已发布；继续前先核对 git 状态）
 
 ## 项目背景（够用即止）
 
@@ -19,12 +19,12 @@ Locus 是一个 Manifest V3 扩展（WXT + TypeScript + React + Dexie），功�
 
 ## 当前进度（从这里继续）
 
-- ✅ v0.7.1 已发布为 GitHub Latest：<https://github.com/laleoarrow/locus/releases/tag/v0.7.1>
-- ⏳ 本机固定 ID `dfmekdplmdbjbefchginloeehjonjlan` 的加载目录已更新为 v0.7.1；macOS 当前锁屏，需解锁后在 `edge://extensions` 原位点 **Reload**，不要卸载
-- ✅ v0.7.1 Edge keyless 上架包已验证并同步到桌面上传目录（SHA-256 `8dcb6351822d898fb19582522faed51b26e9c6cea475795ce98e64240d116066`）
+- ✅ v0.7.2 已发布为 GitHub Latest：<https://github.com/laleoarrow/locus/releases/tag/v0.7.2>
+- ✅ 本机固定 ID `dfmekdplmdbjbefchginloeehjonjlan` 已原位 Reload 到 v0.7.2；Library 保留全部 19 条批注，Timeline 节点已目检与竖线对齐
+- ✅ v0.7.2 Edge keyless 上架包已验证并同步到桌面上传目录（SHA-256 `0a8289f29931382c64aa14848211c2b63c6fd16f3a2f88f8beeb47a11344f5b4`）
 - ✅ 素材已生成并归置到 `~/Desktop/locus-store-upload/`（按提交顺序编号）
-- ✅ 第 5 张 Library 截图已按 v0.7.1 的紧凑卡片、批量改色入口与站点族界面重新生成
-- ✅ 第 4 张侧栏截图已按 v0.7.1 的对齐操作区和版本显示重新生成
+- ✅ 第 5 张 Library 截图已按 v0.7.2 的紧凑卡片、批量改色入口与站点族界面重新生成
+- ✅ 第 4 张侧栏截图已按 v0.7.2 的对齐操作区和版本显示重新生成
 - ✅ 中英文商店文案、权限说明、隐私问卷答案已全部撰写完毕
 - ✅ 隐私政策已上线：<https://github.com/laleoarrow/locus/blob/main/docs/PRIVACY.md>（返回 200）
 - ⏳ Microsoft Edge 开发者注册已开始，但 Partner Center 仍停在 **Step 2 of 4 — Email Verification / In Progress**。邮箱验证完成前无法继续扩展表单。
@@ -70,9 +70,9 @@ node scripts/store-copy.mjs next            # 复制下一项
 
 | 文件 | 用途 |
 |---|---|
-| `1-PACKAGE-edge-上传这个.zip` | v0.7.1 Edge 扩展包（keyless，商店上传专用） |
+| `1-PACKAGE-edge-上传这个.zip` | v0.7.2 Edge 扩展包（keyless，商店上传专用） |
 | `2-LOGO-300x300.png` | Edge 商店 logo |
-| `4-截图1~5-*.png` | 5 张 1280×800 Edge 截图；侧栏和 Library 图均由 v0.7.1 生成 |
+| `4-截图1~5-*.png` | 5 张 1280×800 Edge 截图；侧栏和 Library 图均由 v0.7.2 生成 |
 
 素材需要重新生成时：
 
@@ -93,7 +93,7 @@ pnpm build && node scripts/readme-shots.mjs      # 重截 README 与第 5 张资
 
 ## 已知坑（务必注意）
 
-1. **真正的约束是商店包的 manifest 不能含 `key`，不是桌面文件名是否带 `-store`。** GitHub Release 里的 `locus-0.7.1-edge.zip` / `-chrome.zip` 是 sideload 包，manifest 带固定 ID 用的 `key`，不能上传商店。桌面的 `1-PACKAGE-edge-上传这个.zip` 已由最终 v0.7.1 源码运行 `pnpm zip:store:edge` 生成并验证为无 `key`。
+1. **真正的约束是商店包的 manifest 不能含 `key`，不是桌面文件名是否带 `-store`。** GitHub Release 里的 `locus-0.7.2-edge.zip` / `-chrome.zip` 是 sideload 包，manifest 带固定 ID 用的 `key`，不能上传商店。桌面的 `1-PACKAGE-edge-上传这个.zip` 已由最终 v0.7.2 源码运行 `pnpm zip:store:edge` 生成并验证为无 `key`。
 2. **Edge 审核最常卡在全站权限**（`host_permissions: http://*/*, https://*/*`）。
    字段清单第 9 项「Notes for certification」专门写了：测试步骤、为何必须全站权限（用户读什么文章无法预先枚举）、页面文字仅用于定位高亮且从不外传、用户可逐站禁用。**这一项不要省略或简写。**
 3. **数据收集问卷全部声明"不收集"**。配套声明文本见字段 `data-statement`。两个可选联网功能要如实说明：WebDAV 同步发到用户自己配置的服务器；更新检查只请求 GitHub 公开的 release 信息，不含任何用户数据。
@@ -112,7 +112,7 @@ pnpm build && node scripts/readme-shots.mjs      # 重截 README 与第 5 张资
 ```bash
 pnpm typecheck    # TS strict
 pnpm test         # Vitest，当前 128 个（若新增测试，以实际输出为准）
-pnpm e2e          # Playwright 扩展测试，当前 41 个
+pnpm e2e          # Playwright 扩展测试，当前 42 个
 pnpm build && pnpm build:edge   # Chrome / Edge 同源构建
 ```
 
