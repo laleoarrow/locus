@@ -195,3 +195,37 @@ test('E48: timeline cards never paint beneath the navigation rail', async ({
     await library.evaluate(() => innerWidth),
   );
 });
+
+test('E49: every day node stays centred on the timeline spine', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  await seedHistory(context, []);
+  const library = await openTimeline(context, extensionId);
+  await library.emulateMedia({ reducedMotion: 'reduce' });
+  await backdate(library, HISTORY_OFFSETS);
+
+  const { spineCenter, nodeCenters, depths } = await library
+    .locator('.tl-stage')
+    .evaluate((stage) => {
+      const stageRect = stage.getBoundingClientRect();
+      const spine = getComputedStyle(stage, '::before');
+      const center =
+        stageRect.left + Number.parseFloat(spine.left) + Number.parseFloat(spine.width) / 2;
+      const nodes = [...stage.querySelectorAll('.tl-node')].map((node) => {
+        const rect = node.getBoundingClientRect();
+        return rect.left + rect.width / 2;
+      });
+      const layerDepths = [...stage.querySelectorAll<HTMLElement>('.tl-layer')].map((layer) =>
+        Number(getComputedStyle(layer).getPropertyValue('--tl-depth')),
+      );
+      return { spineCenter: center, nodeCenters: nodes, depths: layerDepths };
+    });
+
+  expect(nodeCenters).toHaveLength(4);
+  expect(Math.max(...depths)).toBeGreaterThan(0);
+  for (const nodeCenter of nodeCenters) {
+    expect(Math.abs(nodeCenter - spineCenter)).toBeLessThanOrEqual(0.5);
+  }
+});

@@ -90,35 +90,37 @@ export function Timeline({
                 // a long history never fades into unreadability.
                 style={{ '--tl-depth': day.depth } as React.CSSProperties}
               >
-                <h2 className="tl-day-label">
-                  <span className="tl-node" aria-hidden="true" />
-                  <span className="tl-when">{day.label}</span>
-                  <span className="tl-date">{day.fullDate}</span>
-                  <span className="tl-count">
-                    {day.count} mark{day.count === 1 ? '' : 's'}
-                  </span>
-                </h2>
+                <span className="tl-node" aria-hidden="true" />
+                <div className="tl-layer-content">
+                  <h2 className="tl-day-label">
+                    <span className="tl-when">{day.label}</span>
+                    <span className="tl-date">{day.fullDate}</span>
+                    <span className="tl-count">
+                      {day.count} mark{day.count === 1 ? '' : 's'}
+                    </span>
+                  </h2>
 
-                <ul className="annotations tl-cards">
-                  {day.entries.map(({ page, annotation }) => (
-                    <li key={annotation.id} className="timeline-entry tl-entry">
-                      <p className="timeline-source tl-source">
-                        <span className="site">{siteLabel(page.origin)}</span>
-                        <span className="page-title-inline">
-                          <Marked text={page.title} query={query} />
-                        </span>
-                      </p>
-                      <ul className="annotations">
-                        <AnnotationRow
-                          page={page}
-                          annotation={annotation}
-                          query={query}
-                          customColors={customColors}
-                        />
-                      </ul>
-                    </li>
-                  ))}
-                </ul>
+                  <ul className="annotations tl-cards">
+                    {day.entries.map(({ page, annotation }) => (
+                      <li key={annotation.id} className="timeline-entry tl-entry">
+                        <p className="timeline-source tl-source">
+                          <span className="site">{siteLabel(page.origin)}</span>
+                          <span className="page-title-inline">
+                            <Marked text={page.title} query={query} />
+                          </span>
+                        </p>
+                        <ul className="annotations">
+                          <AnnotationRow
+                            page={page}
+                            annotation={annotation}
+                            query={query}
+                            customColors={customColors}
+                          />
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </section>
             ))}
           </section>

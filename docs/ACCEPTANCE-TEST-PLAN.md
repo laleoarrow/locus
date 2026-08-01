@@ -103,6 +103,7 @@ for observability without page-world coupling.
 | E41 | side panel navigation | the panel displays the version from its manifest; at a real 320 px side-panel width, Open Library aligns exactly with the combined Export + gap + Import width; the control opens the full Library page |
 | E47 | image-only selection | a native non-collapsed DOM Range containing exactly one linked image opens the image toolbar even though `Range.toString()` is empty; choosing a colour creates one persistent image ring without following the link |
 | E48 | timeline containment | long publisher titles and unbroken accessible-image text stay inside the card column without painting beneath the rail or causing horizontal overflow; at 720 px the rail hides and the page still does not overflow |
+| E49 | timeline axis | every day node, including inactive older layers with non-zero depth, has its centre within 0.5 px of the fixed timeline spine |
 
 ## Manual checklist (pre-release)
 

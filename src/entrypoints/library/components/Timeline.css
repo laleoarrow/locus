@@ -72,11 +72,13 @@
      should look further away, not harder to read. */
   --tl-inset: calc(var(--tl-depth, 0) * 14px);
   --tl-recede: calc(var(--tl-depth, 0) * 0.72);
+}
+.tl-layer-content {
   transform: translateX(var(--tl-inset)) scale(calc(1 - var(--tl-depth, 0) * 0.012));
   transform-origin: left center;
   transition: transform 0.25s ease;
 }
-.timeline-day.tl-layer[data-active='true'] {
+.timeline-day.tl-layer[data-active='true'] .tl-layer-content {
   --tl-recede: 0;
   transform: none;
 }
@@ -230,7 +232,7 @@
 /* ── Arrival ──────────────────────────────────────────────────────────── */
 
 @media (prefers-reduced-motion: no-preference) {
-  .timeline-day.tl-layer {
+  .tl-layer-content {
     animation: tl-arrive 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) both;
     animation-delay: calc(var(--tl-depth, 0) * 0.18s);
   }
