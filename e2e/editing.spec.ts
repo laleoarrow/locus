@@ -1,0 +1,195 @@
+import type { BrowserContext, Page } from '@playwright/test';
+import { BASE_URL, expect, highlight, test } from './extension';
+
+const NESTED = `${BASE_URL}/fixtures/nested.html`;
+const DEMO = `${BASE_URL}/fixtures/demo.html`;
+
+async function seed(context: BrowserContext): Promise<void> {
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  await highlight(page, '#probe-2', 'footnote marker');
+  await highlight(page, '#probe-1', 'Deeply nested inline structure');
+  await page.goto(DEMO);
+  await highlight(page, '#probe-2', 'scoping', 'pink');
+  await page.close();
+}
+
+async function openLibrary(context: BrowserContext, extensionId: string): Promise<Page> {
+  const library = await context.newPage();
+  await library.goto(`chrome-extension://${extensionId}/library.html`);
+  await library.locator('.library-header').waitFor();
+  return library;
+}
+
+function annotation(library: Page, quote: string) {
+  return library.locator('.annotation').filter({ has: library.locator('.quote', { hasText: quote }) });
+}
+
+async function enterSelection(library: Page): Promise<void> {
+  await library.locator('[data-bulk-action="menu"]').click();
+  await library.getByRole('menuitem', { name: 'Edit selected annotations', exact: false }).click();
+  await expect(library.locator('.bulk-edit-panel')).toBeVisible();
+}
+
+test('E53: selected colour, note, delete and restore actions preserve unselected annotations', async ({
+  context, serviceWorker, extensionId,
+}) => {
+  await seed(context);
+  const library = await openLibrary(context, extensionId);
+  const first = annotation(library, 'footnote marker');
+  const second = annotation(library, 'scoping');
+  const untouched = annotation(library, 'Deeply nested inline structure');
+  await first.locator('[data-action="edit"]').click();
+  await first.locator('textarea').fill('Original note');
+  await first.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(first.locator('.note')).toHaveText('Original note');
+  await enterSelection(library);
+  await first.locator('.annotation-select').check();
+  await second.locator('.annotation-select').check();
+  await expect(library.locator('[data-selection="count"]')).toHaveText('2 selected · 2 pages');
+
+  await library.locator('[data-selection="color"]').click();
+  await library.locator('[data-selection="target-color"]').selectOption('teal');
+  await library.locator('[data-selection="apply"]').click();
+  await expect(first).toHaveAttribute('data-color', 'teal');
+  await expect(second).toHaveAttribute('data-color', 'teal');
+  await expect(untouched).toHaveAttribute('data-color', 'yellow');
+
+  await first.locator('.annotation-select').check();
+  await second.locator('.annotation-select').check();
+  await library.locator('[data-selection="comment"]').click();
+  await expect(library.locator('[data-selection="note-mode"]')).toHaveValue('append');
+  await library.locator('[data-selection="note-text"]').fill('Batch addition');
+  await library.locator('[data-selection="apply"]').click();
+  await expect(first.locator('.note')).toContainText('Original note');
+  await expect(first.locator('.note')).toContainText('Batch addition');
+  await expect(second.locator('.note')).toHaveText('Batch addition');
+  await expect(untouched.locator('.note')).toHaveCount(0);
+
+  await first.locator('.annotation-select').check();
+  await second.locator('.annotation-select').check();
+  await library.locator('[data-selection="comment"]').click();
+  await library.locator('[data-selection="note-mode"]').selectOption('replace');
+  await library.locator('[data-selection="note-text"]').fill('Replacement note');
+  await expect(library.locator('[data-selection="preview"]')).toContainText('Replace the existing note');
+  await library.locator('[data-selection="apply"]').click();
+  await expect(first.locator('.note')).toHaveText('Replacement note');
+  await expect(second.locator('.note')).toHaveText('Replacement note');
+
+  await first.locator('.annotation-select').check();
+  await second.locator('.annotation-select').check();
+  await library.locator('[data-selection="delete"]').click();
+  // Opening the confirmation must not delete anything.
+  await expect(library.locator('.annotation')).toHaveCount(3);
+  await library.locator('[data-selection="apply"]').click();
+  await expect(library.locator('.annotation')).toHaveCount(1);
+  await expect(untouched).toBeVisible();
+  await library.locator('[data-filter="deleted"]').click();
+  await expect(library.locator('.annotation')).toHaveCount(2);
+  await library.locator('[data-selection="all"]').click();
+  await library.locator('[data-selection="restore"]').click();
+  await library.locator('[data-selection="apply"]').click();
+  await expect(library.locator('.annotation')).toHaveCount(0);
+  await library.locator('[data-filter="deleted"]').click();
+  await expect(library.locator('.annotation')).toHaveCount(3);
+  await library.reload();
+  await expect(library.locator('.annotation[data-color="teal"]')).toHaveCount(2);
+  await expect(first.locator('.note')).toHaveText('Replacement note');
+  await expect(second.locator('.note')).toHaveText('Replacement note');
+  await expect(untouched.locator('.note')).toHaveCount(0);
+});
+
+test('E54: filtered and page selection includes collapsed rows and survives grouping changes', async ({
+  context, serviceWorker, extensionId,
+}) => {
+  await seed(context);
+  const page = await context.newPage();
+  await page.goto(NESTED);
+  for (const [selector, quote] of [
+    ['#probe-2', 'paragraph contains'], ['#probe-2', 'emphasized'],
+    ['#probe-2', 'strongly'], ['#probe-3', 'triple-wrapped'],
+  ]) {
+    await highlight(page, selector!, quote!);
+  }
+  await page.close();
+  const library = await openLibrary(context, extensionId);
+  const nested = library.locator('.page-card').filter({ has: library.locator('.page-title', { hasText: 'Fixture: nested' }) });
+  await expect(nested.locator('.annotation')).toHaveCount(5);
+  await enterSelection(library);
+  await library.locator('[data-selection="all"]').click();
+  await expect(library.locator('[data-selection="count"]')).toHaveText('7 selected · 2 pages');
+
+  await library.locator('[data-library="search"]').fill('footnote marker');
+  await expect(library.locator('[data-selection="count"]')).toHaveText('1 selected · 1 page');
+  await library.locator('[data-library="search"]').fill('');
+  await expect(library.locator('[data-selection="count"]')).toHaveText('1 selected · 1 page');
+  const groupCheckbox = nested.locator('header input[type="checkbox"]');
+  await expect(groupCheckbox).toHaveJSProperty('indeterminate', true);
+  await groupCheckbox.check();
+  await expect(library.locator('[data-selection="count"]')).toHaveText('6 selected · 1 page');
+  await groupCheckbox.uncheck();
+  await expect(library.locator('[data-selection="count"]')).toHaveText('0 selected · 0 pages');
+  await annotation(library, 'footnote marker').locator('.annotation-select').check();
+
+  for (const mode of ['site', 'timeline', 'page']) {
+    await library.locator(`button[data-mode="${mode}"]`).click();
+    await expect(annotation(library, 'footnote marker').locator('.annotation-select')).toBeChecked();
+    await expect(library.locator('[data-selection="count"]')).toHaveText('1 selected · 1 page');
+  }
+  await library.locator('[data-selection="exit"]').click();
+  await expect(library.locator('.annotation-select')).toHaveCount(0);
+});
+
+test('E55: pending selected edits lock controls and reject a concurrent note change atomically', async ({
+  context, serviceWorker, extensionId,
+}) => {
+  await seed(context);
+  const library = await openLibrary(context, extensionId);
+  const other = await openLibrary(context, extensionId);
+  const first = annotation(library, 'footnote marker');
+  const second = annotation(library, 'scoping');
+  const id = await first.getAttribute('data-annotation-id');
+  expect(id).toBeTruthy();
+  await enterSelection(library);
+  await first.locator('.annotation-select').check();
+  await second.locator('.annotation-select').check();
+  await library.locator('[data-selection="comment"]').click();
+  await library.locator('[data-selection="note-mode"]').selectOption('replace');
+  await library.locator('[data-selection="note-text"]').fill('Stale bulk note');
+
+  // Delay transport only: the real background transaction receives the exact
+  // selected snapshot after another Library tab has changed one of its notes.
+  await library.evaluate(() => {
+    const runtime = chrome.runtime;
+    const original = runtime.sendMessage.bind(runtime);
+    Object.defineProperty(runtime, 'sendMessage', {
+      configurable: true,
+      value: (message: unknown) => {
+        if ((message as { type?: string })?.type !== 'annotations:edit') return original(message);
+        return new Promise((resolve, reject) => {
+          (window as unknown as { releaseEdit: () => void }).releaseEdit = () => {
+            Object.defineProperty(runtime, 'sendMessage', { configurable: true, value: original });
+            void original(message).then(resolve, reject);
+          };
+        });
+      },
+    });
+  });
+  await library.locator('[data-selection="apply"]').click();
+  await expect(library.locator('.bulk-edit-panel')).toHaveAttribute('aria-busy', 'true');
+  for (const selector of ['all', 'clear', 'exit', 'apply']) {
+    await expect(library.locator(`[data-selection="${selector}"]`)).toBeDisabled();
+  }
+  await expect(first.locator('.annotation-select')).toBeDisabled();
+  await expect(first.locator('[data-action="delete"]')).toBeDisabled();
+  await expect(first.locator('[data-action="edit"]')).toBeDisabled();
+  await other.evaluate((annotationId) => chrome.runtime.sendMessage({
+    type: 'annotation:set-comment', id: annotationId, comment: 'Changed in another tab',
+  }), id);
+  await expect(first.locator('.note')).toHaveText('Changed in another tab');
+  await library.evaluate(() => (window as unknown as { releaseEdit: () => void }).releaseEdit());
+  await expect(library.locator('.bulk-edit-error')).toBeVisible();
+  await expect(library.locator('.bulk-edit-panel')).toHaveAttribute('aria-busy', 'false');
+  await expect(first.locator('.note')).toHaveText('Changed in another tab');
+  await expect(second.locator('.note')).toHaveCount(0);
+});

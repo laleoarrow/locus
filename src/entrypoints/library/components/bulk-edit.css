@@ -1,0 +1,78 @@
+.bulk-edit-panel {
+  margin-top: 12px;
+  border: 0.5px solid var(--locus-border);
+  border-radius: 12px;
+  padding: 12px;
+  background: var(--locus-card);
+  font-size: 12.5px;
+}
+.bulk-edit-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+.bulk-edit-buttons { display: flex; flex-wrap: wrap; gap: 7px; }
+.bulk-edit-panel button {
+  border: 0.5px solid var(--locus-border);
+  border-radius: 999px;
+  padding: 5px 11px;
+  background: var(--locus-subtle);
+  color: var(--locus-fg);
+  font: inherit;
+  cursor: pointer;
+}
+.bulk-edit-panel button.primary {
+  background: var(--locus-accent);
+  border-color: transparent;
+  color: #fff;
+}
+.bulk-edit-panel button.danger { color: var(--locus-danger); }
+.bulk-edit-panel button.primary.danger { background: var(--locus-danger); color: #fff; }
+.bulk-edit-panel button:disabled { opacity: 0.45; cursor: default; }
+.bulk-edit-panel button:focus-visible,
+.bulk-edit-panel select:focus-visible,
+.bulk-edit-panel textarea:focus-visible,
+.annotation-select:focus-visible {
+  outline: 2px solid var(--locus-accent);
+  outline-offset: 2px;
+}
+.bulk-edit-form {
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top: 0.5px solid var(--locus-border);
+}
+.bulk-edit-form label { display: grid; gap: 4px; margin-bottom: 8px; }
+.bulk-edit-form label > span { color: var(--locus-fg-muted); }
+.bulk-edit-form select,
+.bulk-edit-form textarea {
+  min-width: 0;
+  width: 100%;
+  border: 0.5px solid var(--locus-border);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font: inherit;
+  color: var(--locus-fg);
+  background: var(--locus-bg);
+}
+.bulk-edit-form select { max-width: 320px; }
+.bulk-edit-form textarea { resize: vertical; }
+.bulk-edit-description { margin: 8px 0 0; color: var(--locus-fg-muted); }
+.bulk-edit-confirm { margin-top: 10px; justify-content: flex-end; }
+.bulk-edit-error { margin: 8px 0 0; color: var(--locus-danger); }
+.annotation .annotation-select {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin: 3px 0 0;
+  accent-color: var(--locus-accent);
+  cursor: pointer;
+}
+.annotation .annotation-select:disabled { cursor: default; }
+.annotation[data-selected='true'] > .body {
+  border-radius: 5px;
+  outline: 3px solid color-mix(in srgb, var(--locus-accent) 15%, transparent);
+  background: color-mix(in srgb, var(--locus-accent) 7%, transparent);
+}

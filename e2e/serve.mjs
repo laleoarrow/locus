@@ -132,10 +132,67 @@ async function handleDav(req, res, pathname) {
   }
 }
 
+// --- LLM mock --------------------------------------------------------------
+// Every test owns a unique route token. Only synthetic fixture material is
+// recorded, and Authorization values are deliberately not retained.
+const llmRequests = new Map();
+const llmHeld = new Map();
+
+async function handleLlm(req, res, pathname) {
+  const match = /^\/__llm\/([\w-]+)\/(requests|release|(?:success|error|hold)\/chat\/completions)$/.exec(pathname);
+  if (!match) { res.writeHead(404); res.end(); return; }
+  const [, token, action] = match;
+  const json = (status, value) => {
+    res.writeHead(status, { 'content-type': 'application/json' });
+    res.end(JSON.stringify(value));
+  };
+  if (action === 'requests' && req.method === 'GET') {
+    json(200, { requests: llmRequests.get(token) ?? [], pending: llmHeld.get(token)?.size ?? 0 });
+    return;
+  }
+  if (action === 'release' && req.method === 'POST') {
+    for (const release of [...(llmHeld.get(token) ?? [])]) release();
+    json(200, { released: true });
+    return;
+  }
+  if (req.method !== 'POST') { json(405, { error: 'POST required' }); return; }
+  let body;
+  try { body = JSON.parse(await readBody(req)); }
+  catch { json(400, { error: 'invalid JSON' }); return; }
+  const requests = llmRequests.get(token) ?? [];
+  requests.push({ body, authorizationPresent: Boolean(req.headers.authorization), path: pathname });
+  llmRequests.set(token, requests);
+  if (action.startsWith('error/')) {
+    json(500, { error: 'PRIVATE_PROVIDER_DETAIL' });
+    return;
+  }
+  let title = 'Fixture page';
+  try { title = JSON.parse(body.messages[1].content).title; } catch { /* Test malformed payloads remain inspectable. */ }
+  const reply = () => json(200, {
+    choices: [{ message: { content: `主要内容：${title} [1]\n\n- 已根据本页笔记整理。 [1]` }, finish_reason: 'stop' }],
+  });
+  if (!action.startsWith('hold/')) { reply(); return; }
+  const held = llmHeld.get(token) ?? new Set();
+  llmHeld.set(token, held);
+  const release = () => {
+    clearTimeout(timer);
+    if (held.delete(release) && !res.destroyed) reply();
+  };
+  const timer = setTimeout(release, 8000);
+  held.add(release);
+  res.once('close', () => { clearTimeout(timer); held.delete(release); });
+}
+
 // --- Server ----------------------------------------------------------------
 createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
   const pathname = decodeURIComponent(url.pathname);
+
+  if (pathname.startsWith('/__llm/')) {
+    try { await handleLlm(req, res, pathname); }
+    catch { res.writeHead(500); res.end('mock error'); }
+    return;
+  }
 
   if (pathname.startsWith('/dav/')) {
     try {

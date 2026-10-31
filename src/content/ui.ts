@@ -1,7 +1,7 @@
 import { LOCUS_HOST_ID } from '@/domain/anchor/textIndex';
 import { specFor, type PaletteEntry } from '@/domain/colors';
 import type { ColorKey, ToolbarPlacement } from '@/domain/types';
-import { resolvePlacement, type Box } from '@/domain/placement';
+import { resolveToolbarPosition, type Box } from '@/domain/placement';
 import { markdownToHtml } from '@/lib/markdown';
 
 export interface ToolbarActions {
@@ -57,6 +57,10 @@ const SHADOW_CSS = `
 
 .toolbar {
   display: flex;
+  width: max-content;
+  max-width: calc(100vw - 16px);
+  overflow-x: auto;
+  scrollbar-width: none;
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
@@ -70,6 +74,7 @@ const SHADOW_CSS = `
 
 .swatch {
   position: relative;
+  flex: none;
   width: 26px;
   height: 26px;
   padding: 0;
@@ -309,6 +314,7 @@ export class LocusUI {
   private lastAnchor: DOMRect | null = null;
   /** What the user asked for ('auto' included) — replayed on palette changes. */
   private lastPreference: ToolbarPlacement = 'below';
+  private lastObstacles: Box[] = [];
   /** The side actually chosen last time. */
   private lastPlacement: 'below' | 'above' = 'below';
   private lastColorShown: ColorKey = 'yellow';
@@ -393,7 +399,7 @@ export class LocusUI {
     this.toolbar.appendChild(siteOff);
     // Keep the toolbar in place when the palette changes while it is open.
     if (this.isToolbarVisible() && this.lastAnchor) {
-      this.showToolbar(this.lastAnchor, this.lastColorShown, this.lastPreference);
+      this.showToolbar(this.lastAnchor, this.lastColorShown, this.lastPreference, this.lastObstacles);
     }
   }
 
@@ -418,6 +424,7 @@ export class LocusUI {
   ): void {
     this.lastAnchor = anchor;
     this.lastPreference = preference;
+    this.lastObstacles = obstacles;
     this.lastColorShown = lastColor;
     for (const swatch of this.toolbar.querySelectorAll<HTMLButtonElement>('.swatch')) {
       swatch.dataset['last'] = swatch.dataset['color'] === lastColor ? 'true' : 'false';
@@ -426,7 +433,7 @@ export class LocusUI {
     const view = this.doc.defaultView;
     const width = this.toolbar.offsetWidth;
     const height = this.toolbar.offsetHeight;
-    const placement = resolvePlacement(preference, {
+    const { placement, box } = resolveToolbarPosition(preference, {
       selection: anchor,
       toolbarWidth: width,
       toolbarHeight: height,
@@ -437,12 +444,9 @@ export class LocusUI {
       margin: 8,
     });
     this.lastPlacement = placement;
-    const maxLeft = (view?.innerWidth ?? 0) - width - 8;
-    const maxTop = (view?.innerHeight ?? 0) - height - 8;
-    const top = placement === 'below' ? anchor.bottom + 10 : anchor.top - height - 10;
     this.toolbar.dataset['placement'] = placement;
-    this.toolbar.style.left = `${clamp(anchor.left + anchor.width / 2 - width / 2, 8, maxLeft)}px`;
-    this.toolbar.style.top = `${clamp(top, 8, maxTop)}px`;
+    this.toolbar.style.left = `${box.left}px`;
+    this.toolbar.style.top = `${box.top}px`;
   }
 
   hideToolbar(): void {

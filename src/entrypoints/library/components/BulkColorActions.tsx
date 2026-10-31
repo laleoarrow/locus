@@ -4,6 +4,7 @@ import type { PaletteEntry } from '@/domain/colors';
 import type { ColorKey } from '@/domain/types';
 
 interface BulkColorActionsProps {
+  onSelect?: () => void;
   palette: PaletteEntry[];
   counts: ReadonlyMap<ColorKey, number>;
   preferredSource?: ColorKey;
@@ -17,6 +18,7 @@ interface BulkColorActionsProps {
 type OpenView = 'closed' | 'menu' | 'dialog';
 
 export function BulkColorActions({
+  onSelect,
   palette,
   counts,
   preferredSource,
@@ -158,6 +160,8 @@ export function BulkColorActions({
 
       {view === 'menu' && (
         <div className="bulk-menu" id="bulk-colour-menu" role="menu">
+          {onSelect && <button type="button" role="menuitem" data-bulk-action="select"
+            onClick={() => { close(); onSelect(); }}>Edit selected annotations…</button>}
           <button
             ref={menuItemRef}
             type="button"

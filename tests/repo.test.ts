@@ -90,6 +90,21 @@ describe('repo (U8–U10)', () => {
     expect((await repo.listForUrl(URL_A)).items).toHaveLength(2);
   });
 
+  it('keeps keyboard batch delete and undo newer than an imported future clock', async () => {
+    const created = await createOne();
+    const future = Date.now() + 60_000;
+    await db.annotations.update(created.annotation.id, { updatedAt: future });
+    await repo.tombstoneMany([created.annotation.id]);
+    const deleted = await db.annotations.get(created.annotation.id);
+    expect(deleted?.updatedAt).toBeGreaterThan(future);
+    expect(deleted?.deletedAt).toBe(deleted?.updatedAt);
+    await repo.undeleteMany([created.annotation.id]);
+    const restored = await db.annotations.get(created.annotation.id);
+    expect(restored?.updatedAt).toBeGreaterThan(deleted!.updatedAt);
+    expect(restored?.deletedAt).toBe(0);
+    expect(restored?.colorUpdatedAt).toBe(created.annotation.colorUpdatedAt);
+  });
+
   it('replaces a live color across the library, including detached but not deleted rows', async () => {
     const first = await createOne();
     const second = await createOne();

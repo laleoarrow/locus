@@ -128,16 +128,35 @@ export async function listForUrl(
 }
 
 export async function setComment(id: string, comment: string): Promise<void> {
-  await db.annotations.update(id, { comment, updatedAt: Date.now() });
+  await db.transaction('rw', db.annotations, async () => {
+    const annotation = await db.annotations.get(id);
+    if (!annotation || annotation.comment === comment) return;
+    await db.annotations.update(id, {
+      comment,
+      updatedAt: Math.max(Date.now(), annotation.updatedAt + 1, annotation.deletedAt + 1),
+    });
+  });
 }
 
 /** Tombstone an annotation. The row (and its anchor) is kept for undo/history. */
 export async function tombstone(id: string): Promise<void> {
-  await db.annotations.update(id, { deletedAt: Date.now(), updatedAt: Date.now() });
+  await db.transaction('rw', db.annotations, async () => {
+    const annotation = await db.annotations.get(id);
+    if (!annotation || annotation.deletedAt !== 0) return;
+    const now = Math.max(Date.now(), annotation.updatedAt + 1);
+    await db.annotations.update(id, { deletedAt: now, updatedAt: now });
+  });
 }
 
 export async function undelete(id: string): Promise<void> {
-  await db.annotations.update(id, { deletedAt: 0, updatedAt: Date.now() });
+  await db.transaction('rw', db.annotations, async () => {
+    const annotation = await db.annotations.get(id);
+    if (!annotation || annotation.deletedAt === 0) return;
+    await db.annotations.update(id, {
+      deletedAt: 0,
+      updatedAt: Math.max(Date.now(), annotation.updatedAt + 1, annotation.deletedAt + 1),
+    });
+  });
 }
 
 async function setDeletedStateMany(ids: string[], deleted: boolean): Promise<void> {
@@ -150,11 +169,11 @@ async function setDeletedStateMany(ids: string[], deleted: boolean): Promise<voi
     }
     const now = Date.now();
     await db.annotations.bulkPut(
-      annotations.map((annotation) => ({
-        ...(annotation as AnnotationRecord),
-        deletedAt: deleted ? now : 0,
-        updatedAt: now,
-      })),
+      annotations.map((row) => {
+        const annotation = row as AnnotationRecord;
+        const updatedAt = Math.max(now, annotation.updatedAt + 1, annotation.deletedAt + 1);
+        return { ...annotation, deletedAt: deleted ? updatedAt : 0, updatedAt };
+      }),
     );
   });
 }
@@ -354,11 +373,12 @@ export async function setUpdateInfo(info: UpdateInfo): Promise<void> {
 
 /** Snapshot the whole library into the portable backup format. */
 export async function exportBackup(appVersion: string): Promise<BackupFile> {
-  const [documents, sources, annotations, anchors, settings] = await Promise.all([
+  const [documents, sources, annotations, anchors, pageSummaries, settings] = await Promise.all([
     db.documents.toArray(),
     db.sources.toArray(),
     db.annotations.toArray(),
     db.anchors.toArray(),
+    db.pageSummaries.toArray(),
     db.settings.toArray(),
   ]);
   return {
@@ -370,6 +390,7 @@ export async function exportBackup(appVersion: string): Promise<BackupFile> {
     sources,
     annotations,
     anchors,
+    pageSummaries,
     // Tombstones are exported on purpose: a deletion must travel too, or
     // importing an older backup would resurrect deleted annotations.
     settings: settings.filter((s) => !UNPORTABLE_SETTING_KEYS.has(s.key)),
@@ -411,17 +432,14 @@ export async function importBackup(file: BackupFile): Promise<ImportSummary> {
     sourcesLinked: 0,
     sourcesAdded: 0,
     settingsUpdated: 0,
+    summariesUpdated: 0,
   };
   const incomingDocs = new Map(file.documents.map((d) => [d.id, d]));
   const incomingAnchors = new Map(file.anchors.map((a) => [a.annotationId, a]));
 
   await db.transaction(
     'rw',
-    db.documents,
-    db.sources,
-    db.annotations,
-    db.anchors,
-    db.settings,
+    [db.documents, db.sources, db.annotations, db.anchors, db.settings, db.pageSummaries],
     async () => {
       const localSources = await db.sources.toArray();
       const localByUrlKey = new Map(localSources.map((s) => [s.urlKey, s]));
@@ -517,8 +535,24 @@ export async function importBackup(file: BackupFile): Promise<ImportSummary> {
         summary.annotationsAdded++;
       }
 
+      for (const incoming of file.pageSummaries ?? []) {
+        const sourceId = sourceIdMap.get(incoming.sourceId);
+        if (!sourceId) continue;
+        const local = await db.pageSummaries.get(sourceId);
+        // Clearing wins an exact timestamp tie; other ties use codepoint order
+        // so every device resolves concurrent edits identically.
+        const incomingWins = !local || incoming.updatedAt > local.updatedAt ||
+          (incoming.updatedAt === local.updatedAt && incoming.content !== local.content &&
+            (incoming.content === '' || (local.content !== '' && incoming.content > local.content)));
+        if (incomingWins) {
+          await db.pageSummaries.put({ ...incoming, sourceId });
+          summary.summariesUpdated++;
+        }
+      }
+
       // Settings: union list-valued prefs, fill in scalars we do not have yet.
       for (const setting of file.settings) {
+        if (UNPORTABLE_SETTING_KEYS.has(setting.key)) continue;
         const local = await db.settings.get(setting.key);
         if (!local) {
           await db.settings.put(setting);

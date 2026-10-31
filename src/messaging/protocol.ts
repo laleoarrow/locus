@@ -1,5 +1,7 @@
 import type { AltVersion, AnnotationColorExpectation } from '@/db/repo';
 import type { GroupMode } from '@/domain/library';
+import type { AnnotationEditAction, AnnotationEditExpectation, SummaryChange } from '@/domain/editing';
+import type { LLMConfigPatch, LLMConfigView } from '@/domain/llm';
 import type { SyncConfig, SyncState } from '@/domain/sync';
 import type { SyncResult } from '@/sync/engine';
 import type { SyncConfigView } from '@/sync/store';
@@ -54,6 +56,11 @@ export type BgRequest =
   | { type: 'annotation:undelete'; id: string }
   | { type: 'annotations:delete'; ids: string[] }
   | { type: 'annotations:undelete'; ids: string[] }
+  | { type: 'annotations:edit'; expected: AnnotationEditExpectation[]; action: AnnotationEditAction }
+  | { type: 'summary:save'; changes: SummaryChange[] }
+  | { type: 'llm:status' }
+  | { type: 'llm:save'; patch: LLMConfigPatch }
+  | { type: 'llm:generate'; sourceId: string }
   | {
       type: 'annotations:replace-color';
       sourceColor: ColorKey;
@@ -89,6 +96,11 @@ export interface BgResponseMap {
   'annotation:undelete': { ok: true };
   'annotations:delete': { ok: true };
   'annotations:undelete': { ok: true };
+  'annotations:edit': { updated: number; error?: string };
+  'summary:save': { updated: number; error?: string };
+  'llm:status': { config: LLMConfigView };
+  'llm:save': { config: LLMConfigView; error?: string };
+  'llm:generate': { draft?: SummaryChange; error?: string };
   'annotations:replace-color': { updated: number; error?: string };
   'prefs:set-placement': { prefs: Prefs };
   'page-colors:add': { colors: ColorKey[] };

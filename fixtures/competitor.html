@@ -25,23 +25,35 @@
     //   ?mode=absolute        position:absolute rather than fixed/sticky
     //   ?mode=nested          shadow host is not a direct child of body
     //   ?mode=late            renders 250ms after mouseup, losing the race
+    //   ?mode=slow            renders after the old one-shot recheck
+    //   ?mode=deep            fixed bar under six static wrappers
+    //   ?mode=shadow-open/closed  fixed bar inside a zero-size shadow host
+    //   ?mode=moving          slides into the collision after 900ms
     // ?offset=N shifts it horizontally so a single-column probe can miss it.
     const params = new URLSearchParams(location.search);
     const mode = params.get('mode') || 'pointer-events';
     const offset = Number(params.get('offset') || 0);
-    const delay = mode === 'late' ? 250 : 0;
+    const delay = mode === 'slow' ? 900 : mode === 'late' ? 250 : 0;
 
     let host = null;
+    let bars = [];
+
+    // Tests can measure even the closed-shadow fixture without opening it.
+    function rivalBoxes() {
+      return bars.filter((bar) => bar.isConnected).map((bar) => bar.getBoundingClientRect().toJSON());
+    }
 
     function removeBar() {
       host?.remove();
       host = null;
+      bars = [];
     }
 
     function showBar(rect) {
       removeBar();
       const wrapper = document.createElement('div');
       wrapper.id = 'rival-wrapper';
+      host = wrapper;
       // The wrapper is a passive overlay layer: only the inner control is
       // clickable. This is the detail that hides it from elementsFromPoint.
       const passive = mode === 'pointer-events';
@@ -53,7 +65,17 @@
         (passive ? 'pointer-events:none;' : '');
 
       const inner = document.createElement('div');
-      if (mode === 'nested') {
+      const zeroHost = mode === 'deep' || mode.startsWith('shadow-');
+      if (zeroHost) {
+        wrapper.style.cssText = 'width:0;height:0;';
+        let parent = wrapper;
+        for (let i = 0; i < 6; i++) {
+          const shell = document.createElement('div');
+          parent.appendChild(shell);
+          parent = shell;
+        }
+        parent.appendChild(inner);
+      } else if (mode === 'nested') {
         // Shadow host buried one level down, not a direct child of <body>.
         const shell = document.createElement('div');
         shell.id = 'rival-shell';
@@ -63,15 +85,28 @@
         wrapper.appendChild(inner);
       }
 
-      const shadow = inner.attachShadow({ mode: 'open' });
+      const surface = mode === 'deep'
+        ? inner
+        : inner.attachShadow({ mode: mode === 'shadow-closed' ? 'closed' : 'open' });
       const bar = document.createElement('div');
       bar.setAttribute('data-rival-bar', '');
       bar.style.cssText =
         'width:240px;height:40px;border-radius:20px;background:#26262b;color:#fff;' +
         'font:13px/40px sans-serif;text-align:center;' +
-        (passive ? 'pointer-events:auto;' : '');
+        (passive ? 'pointer-events:auto;' : '') +
+        (zeroHost ? `position:fixed;top:${rect.bottom + 6}px;left:${rect.left + offset}px;z-index:20;` : '');
       bar.textContent = 'Rival extension toolbar';
-      shadow.appendChild(bar);
+      surface.appendChild(bar);
+      bars.push(bar);
+
+      if (mode === 'moving') {
+        wrapper.style.transform = 'translateY(140px)';
+        wrapper.style.transition = 'transform 300ms linear';
+        wrapper.addEventListener('transitionend', () => {
+          document.documentElement.setAttribute('data-rival-settled', '1');
+        }, { once: true });
+        setTimeout(() => { wrapper.style.transform = 'translateY(0)'; }, 900);
+      }
 
       document.body.appendChild(wrapper);
       document.documentElement.setAttribute('data-rival-shown', '1');
@@ -92,6 +127,7 @@
     document.addEventListener('mousedown', () => {
       removeBar();
       document.documentElement.removeAttribute('data-rival-shown');
+      document.documentElement.removeAttribute('data-rival-settled');
     });
   </script>
 </body>

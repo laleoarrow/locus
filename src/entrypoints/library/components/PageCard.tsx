@@ -3,6 +3,8 @@ import { highlightParts, siteLabel, type LibraryPage } from '@/domain/library';
 import type { CustomColor } from '@/domain/types';
 import { requestBg } from '@/messaging/protocol';
 import { AnnotationRow } from './AnnotationRow';
+import { PageSummary } from './PageSummary';
+import { useSelection } from './SelectionContext';
 
 const COMPACT_ANNOTATION_LIMIT = 5;
 
@@ -17,6 +19,9 @@ export function PageCard({
   customColors: CustomColor[];
   showSite?: boolean;
 }) {
+  const selection = useSelection();
+  const ids = page.annotations.map((annotation) => annotation.id);
+  const selectedCount = ids.filter((id) => selection.selectedIds.has(id)).length;
   const [expanded, setExpanded] = useState(false);
   const annotationListId = useId();
   const annotationSetKey = useMemo(
@@ -38,6 +43,13 @@ export function PageCard({
   return (
     <article className="page-card" data-source-id={page.sourceId}>
       <header>
+        {selection.enabled && <label className="page-select">
+          <input type="checkbox" checked={selectedCount === ids.length && ids.length > 0}
+            ref={(input) => { if (input) input.indeterminate = selectedCount > 0 && selectedCount < ids.length; }}
+            disabled={selection.busy} onChange={() => selection.toggleMany(ids)}
+            aria-label={`Select annotations from ${page.title}`} />
+          Select page · {ids.length}
+        </label>}
         <h2>
           <button className="page-title" onClick={openPage} title={page.url}>
             {highlightParts(page.title, query).map((part, index) =>
@@ -53,6 +65,7 @@ export function PageCard({
           {page.doi && <span className="doi">{page.doi}</span>}
         </p>
       </header>
+      <PageSummary sourceId={page.sourceId} />
       <ul className="annotations" id={annotationListId}>
         {visibleAnnotations.map((annotation) => (
           <AnnotationRow

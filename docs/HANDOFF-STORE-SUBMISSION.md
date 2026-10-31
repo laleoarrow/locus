@@ -9,15 +9,25 @@
 把浏览器扩展 **Locus / 文迹** 提交到 **Microsoft Edge Add-ons** 和 **Chrome Web Store**。
 上架的唯一目的是让用户获得**自动更新**——sideload（开发人员模式加载）的扩展浏览器永远不会自动更新，上架后才会。
 
-仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（v0.7.2 已发布；继续前先核对 git 状态）
+仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（当前源码版本 v0.8.0；发布、安装和上传包状态须在继续前核对，不能沿用下方 v0.7.2 的历史记录）
 
 ## 项目背景（够用即止）
 
-Locus 是一个 Manifest V3 扩展（WXT + TypeScript + React + Dexie），功能是网页阅读时高亮划词、写 Markdown 笔记、图片加高亮环、侧边栏管理标注。核心卖点是 **local-first**：无账号、无后端、不采集任何数据；只有两个可选联网功能（用户自建的 WebDAV 同步、GitHub 版本检查），默认可关。
+Locus 是一个 Manifest V3 扩展（WXT + TypeScript + React + Dexie），提供网页高亮、Markdown 笔记、图片高亮环、侧边栏和资料库。用户可以勾选标注后批量改色、追加或替换笔记、删除、恢复；每个页面另有可编辑的「主要内容」，与标注笔记分开保存。工具条的 Auto 位置会跟踪和避让网页内延迟出现、嵌套或 Shadow DOM 中的浮层，不检测浏览器原生或桌面浮层。
 
-**不要**在上架材料里把它描述成文献管理器——它刻意不做参考文献、引文格式、AI、标签、协作。
+核心卖点是 **local-first**：无需 Locus 账号、无 Locus 后端、无遥测。三项可选联网功能均可关闭：用户配置的 WebDAV 同步、GitHub 版本检查，以及默认关闭的 AI 整理。用户需自行填写兼容 OpenAI 的 API 地址、模型和 API key；提示词可编辑或恢复默认。只有明确点击 Generate，才向所配置服务发送所选页面的标题、网址及该页全部未删除的已保存摘录和笔记，连同提示词、模型选择；API key 用于向该服务认证。不另行抓取页面全文，返回结果只作为可编辑草稿，点击 Save 后才保存。
+
+AI 设置和 API key 仅保存在本机的 `chrome.storage.local` 中，不进入 JSON 备份或 WebDAV 同步。保存后的「主要内容」会随标注一起备份和同步。
+
+**不要**在上架材料里把它描述成文献管理器——它不提供参考文献、引文格式、标签或协作功能。也不要再使用「没有 AI」「页面内容从不外传」或「隐私问卷所有项目都选不收集」等旧版表述。
 
 ## 当前进度（从这里继续）
+
+v0.8.0 已通过 typecheck、203 项单元测试和全部 55 项浏览器测试，Chrome/Edge 生产安装包及 Edge keyless 商店包已构建验证。本机 Edge 已原位升级到 v0.8.0，全部 34 条有效标注保留；真实豆包浮栏避让和本机兼容 API 均已实测。GitHub 发布正在进行。当前商店包为 `.output/locus-0.8.0-edge-store.zip`；桌面旧上传目录已不存在。上传前应核验当前包的 manifest 版本、无 `key` 要求及构建校验结果；不要直接上传下方历史记录中的旧包。
+
+### 历史记录：2026-08-01，v0.7.2
+
+以下为当时的发布交接快照，不是 v0.8.0 的完成凭证；商店注册、在线材料和本机状态须重新核验。
 
 - ✅ v0.7.2 已发布为 GitHub Latest：<https://github.com/laleoarrow/locus/releases/tag/v0.7.2>
 - ✅ 本机固定 ID `dfmekdplmdbjbefchginloeehjonjlan` 已原位 Reload 到 v0.7.2；Library 保留全部 19 条批注，Timeline 节点已目检与竖线对齐
@@ -25,7 +35,7 @@ Locus 是一个 Manifest V3 扩展（WXT + TypeScript + React + Dexie），功�
 - ✅ 素材已生成并归置到 `~/Desktop/locus-store-upload/`（按提交顺序编号）
 - ✅ 第 5 张 Library 截图已按 v0.7.2 的紧凑卡片、批量改色入口与站点族界面重新生成
 - ✅ 第 4 张侧栏截图已按 v0.7.2 的对齐操作区和版本显示重新生成
-- ✅ 中英文商店文案、权限说明、隐私问卷答案已全部撰写完毕
+- ✅ v0.7.2 中英文商店文案、权限说明、隐私问卷材料已撰写完毕；当前上传须使用本次更新后的文案
 - ✅ 隐私政策已上线：<https://github.com/laleoarrow/locus/blob/main/docs/PRIVACY.md>（返回 200）
 - ⏳ Microsoft Edge 开发者注册已开始，但 Partner Center 仍停在 **Step 2 of 4 — Email Verification / In Progress**。邮箱验证完成前无法继续扩展表单。
 - ⏸️ 用户明确决定暂不做 Chrome Web Store；不要支付费用或准备 Chrome 提交。
@@ -36,8 +46,7 @@ Locus 是一个 Manifest V3 扩展（WXT + TypeScript + React + Dexie），功�
 
 1. 引导用户在 `My access` 点 `+` → 选 **Microsoft Edge** → 完成开发者注册。
    账号类型问"个人 / 公司"时选**个人（Individual）**，公司账号需要额外资质验证会拖延数天。
-2. 进入 Edge 扩展管理页后：**New extension** → 上传
-   `~/Desktop/locus-store-upload/1-PACKAGE-edge-上传这个.zip`
+2. 先确认 `~/Desktop/locus-store-upload/1-PACKAGE-edge-上传这个.zip` 已替换为当前版本并通过商店包校验，再进入 Edge 扩展管理页：**New extension** → 上传该文件。
 3. 填写商店列表信息（文案见下方"文案与素材"）。
 4. 上传 logo 与 5 张截图。
 5. Availability 选全部市场；隐私问卷按下方说明作答。
@@ -70,9 +79,9 @@ node scripts/store-copy.mjs next            # 复制下一项
 
 | 文件 | 用途 |
 |---|---|
-| `1-PACKAGE-edge-上传这个.zip` | v0.7.2 Edge 扩展包（keyless，商店上传专用） |
+| `1-PACKAGE-edge-上传这个.zip` | 当前版本 Edge 扩展包（keyless，商店上传专用）；本次目标 v0.8.0，上传前必须核验并替换历史包 |
 | `2-LOGO-300x300.png` | Edge 商店 logo |
-| `4-截图1~5-*.png` | 5 张 1280×800 Edge 截图；侧栏和 Library 图均由 v0.7.2 生成 |
+| `4-截图1~5-*.png` | 5 张 1280×800 Edge 截图；历史素材来自 v0.7.2，本次提交前须复核并与最终版本保持一致 |
 
 素材需要重新生成时：
 
@@ -93,11 +102,11 @@ pnpm build && node scripts/readme-shots.mjs      # 重截 README 与第 5 张资
 
 ## 已知坑（务必注意）
 
-1. **真正的约束是商店包的 manifest 不能含 `key`，不是桌面文件名是否带 `-store`。** GitHub Release 里的 `locus-0.7.2-edge.zip` / `-chrome.zip` 是 sideload 包，manifest 带固定 ID 用的 `key`，不能上传商店。桌面的 `1-PACKAGE-edge-上传这个.zip` 已由最终 v0.7.2 源码运行 `pnpm zip:store:edge` 生成并验证为无 `key`。
+1. **真正的约束是商店包的 manifest 不能含 `key`，不是桌面文件名是否带 `-store`。** GitHub Release 里的 `locus-<version>-edge.zip` / `-chrome.zip` 是 sideload 包，manifest 带固定 ID 用的 `key`，不能上传商店。应从当前源码运行 `pnpm zip:store:edge`，通过校验后再替换桌面的 `1-PACKAGE-edge-上传这个.zip`；v0.7.2 的历史 SHA-256 不能用于验证 v0.8.0。
 2. **Edge 审核最常卡在全站权限**（`host_permissions: http://*/*, https://*/*`）。
-   字段清单第 9 项「Notes for certification」专门写了：测试步骤、为何必须全站权限（用户读什么文章无法预先枚举）、页面文字仅用于定位高亮且从不外传、用户可逐站禁用。**这一项不要省略或简写。**
-3. **数据收集问卷全部声明"不收集"**。配套声明文本见字段 `data-statement`。两个可选联网功能要如实说明：WebDAV 同步发到用户自己配置的服务器；更新检查只请求 GitHub 公开的 release 信息，不含任何用户数据。
-4. **Remote code：选 No**。所有代码都打包在扩展内，运行时不拉取执行任何远端代码。
+   字段「Notes for certification」说明了测试步骤、为何需要任意网页的标注权限、向用户配置的 WebDAV/API 地址发起请求，以及用户可逐站关闭标注。AI 请求仅在明确生成时发送所选页面的标题、网址和该页全部未删除的已保存摘录、笔记，不另行抓取页面全文。**这一项不要省略或简写。**
+3. **按实际数据流回答隐私问卷，不一律选择「不收集」。** 配套声明见字段 `data-statement`。应披露三项可选联网功能：WebDAV 向用户配置的服务器同步标注、笔记、页面网址和已保存的主要内容；更新检查只请求 GitHub 公开版本信息，不发送标注或页面内容；AI 默认关闭，只有明确点击 Generate 才发送所选页面标题、网址及该页全部未删除的已保存摘录、笔记，连同提示词和模型选择到所配置 API。依据当前表单的具体定义勾选网页内容、网址等适用类别，并说明这些由用户控制的传输。AI 配置与 API key 仅本地保存，不进入备份或同步；API key 只用于向用户配置的服务认证。
+4. **Remote code：选 No**。所有代码都打包在扩展内，运行时不拉取执行任何远端代码。服务返回的 JSON 作为数据解析，生成文本只作为草稿显示和编辑，不作为代码执行。
 5. **上架后扩展 ID 会再变一次**。用户当前是 sideload 安装，商店安装会得到商店分配的新 ID，数据库是空的。**提醒用户在切换前**先在侧边栏 Backup → Export 导出备份，装好商店版本再 Import 导入。
 
 ## 完成后的收尾
@@ -111,8 +120,8 @@ pnpm build && node scripts/readme-shots.mjs      # 重截 README 与第 5 张资
 
 ```bash
 pnpm typecheck    # TS strict
-pnpm test         # Vitest，当前 128 个（若新增测试，以实际输出为准）
-pnpm e2e          # Playwright 扩展测试，当前 42 个
+pnpm test         # Vitest，数量与结果以本次实际输出为准
+pnpm e2e          # Playwright 扩展测试，数量与结果以本次实际输出为准
 pnpm build && pnpm build:edge   # Chrome / Edge 同源构建
 ```
 

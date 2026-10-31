@@ -3,6 +3,7 @@ import type {
   AnchorRecord,
   AnnotationRecord,
   DocumentRecord,
+  PageSummaryRecord,
   SettingRecord,
   SourceRecord,
 } from '@/domain/types';
@@ -38,6 +39,7 @@ export class LocusDB extends Dexie {
   anchors!: Table<AnchorRecord, string>;
   settings!: Table<SettingRecord, string>;
   anchorStates!: Table<AnchorStateRecord, string>;
+  pageSummaries!: Table<PageSummaryRecord, string>;
 
   constructor() {
     super('locus');
@@ -66,6 +68,10 @@ export class LocusDB extends Dexie {
     // additive — nothing to backfill, an absent row simply means "not seen".
     this.version(3).stores({
       anchorStates: 'annotationId, detached',
+    });
+    // v4: page summaries use their own conflict clock and survive clearing.
+    this.version(4).stores({
+      pageSummaries: 'sourceId, updatedAt',
     });
   }
 }

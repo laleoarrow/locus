@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, describe, expect, it } from 'vitest';
 import * as repo from '@/db/repo';
+import { getPageSummary, savePageSummaries } from '@/db/editing';
 import { db } from '@/db/schema';
 import {
   BACKUP_FORMAT,
@@ -39,12 +40,40 @@ describe('parseBackup (U19)', () => {
     sources: [],
     annotations: [],
     anchors: [],
+    pageSummaries: [],
     settings: [],
   };
 
   it('accepts a well-formed file', () => {
     const result = parseBackup(valid);
     expect('file' in result).toBe(true);
+  });
+
+  it.each([1, 2])('imports legacy format v%s without page summaries', (formatVersion) => {
+    const { pageSummaries: _, ...legacy } = valid;
+    const result = parseBackup({ ...legacy, formatVersion });
+    if (!('file' in result)) throw new Error('expected a legacy file');
+    expect(result.file.pageSummaries).toEqual([]);
+  });
+
+  it('validates page summary content and conflict clocks', () => {
+    const result = parseBackup({
+      ...valid,
+      formatVersion: 3,
+      pageSummaries: [
+        { sourceId: 's', content: 'Main findings', updatedAt: 12 },
+        { sourceId: 'cleared', content: '', updatedAt: 15 },
+        { sourceId: 'missing-content', updatedAt: 16 },
+        { sourceId: 'bad-clock', content: 'x', updatedAt: Infinity },
+        { sourceId: 'zero-clock', content: 'x', updatedAt: 0 },
+        { sourceId: '', content: 'x', updatedAt: 17 },
+      ],
+    });
+    if (!('file' in result)) throw new Error('expected a parsed file');
+    expect(result.file.pageSummaries).toEqual([
+      { sourceId: 's', content: 'Main findings', updatedAt: 12 },
+      { sourceId: 'cleared', content: '', updatedAt: 15 },
+    ]);
   });
 
   it('rejects unrelated JSON and newer formats', () => {
@@ -89,6 +118,7 @@ describe('parseBackup (U19)', () => {
       settings: [
         { key: 'customColors', value: [] },
         { key: 'updateInfo', value: { latestVersion: '9.9.9' } },
+        { key: 'locus.llm.config', value: { apiKey: 'not-a-real-key' } },
       ],
     });
     if (!('file' in result)) throw new Error('expected a parsed file');
@@ -97,6 +127,89 @@ describe('parseBackup (U19)', () => {
 
   it('names the download by date', () => {
     expect(backupFileName(new Date(2026, 6, 30))).toBe('locus-backup-2026-07-30.json');
+  });
+});
+
+describe('page summary backup and merge', () => {
+  it('round-trips page content separately from annotation notes', async () => {
+    const source = await repo.ensureSource(URL_A, 'A Paper');
+    await repo.createAnnotation({
+      sourceId: source.id,
+      documentId: source.documentId,
+      color: 'yellow',
+      comment: 'A note about one passage',
+      anchor,
+    });
+    await savePageSummaries([{ sourceId: source.id, content: '**Main findings**', expectedUpdatedAt: 0 }]);
+    const saved = await getPageSummary(source.id);
+    const file = await repo.exportBackup('test');
+    expect(file.pageSummaries).toEqual([saved]);
+    await clearDb();
+    const imported = await repo.importBackup(file);
+    expect(imported.summariesUpdated).toBe(1);
+    expect(await getPageSummary(source.id)).toEqual(saved);
+    expect((await repo.listForSource(source.id))[0]?.annotation.comment).toBe('A note about one passage');
+    expect((await repo.importBackup(file)).summariesUpdated).toBe(0);
+  });
+
+  it('remaps summary source IDs without replacing local page metadata', async () => {
+    const sourceA = await repo.ensureSource(URL_A, 'Remote title');
+    await db.pageSummaries.put({ sourceId: sourceA.id, content: 'Newer remote summary', updatedAt: 200 });
+    const remote = await repo.exportBackup('test');
+    await clearDb();
+    const sourceB = await repo.ensureSource(`${URL_A}#section`, 'Local title');
+    await db.pageSummaries.put({ sourceId: sourceB.id, content: 'Older local summary', updatedAt: 100 });
+    const result = await repo.importBackup(remote);
+    expect(result.summariesUpdated).toBe(1);
+    expect(await db.pageSummaries.toArray()).toEqual([
+      { sourceId: sourceB.id, content: 'Newer remote summary', updatedAt: 200 },
+    ]);
+    expect(await db.sources.get(sourceB.id)).toEqual(sourceB);
+    expect(await db.sources.count()).toBe(1);
+  });
+
+  it('retains a cleared summary when an older backup is imported', async () => {
+    const source = await repo.ensureSource(URL_A, 'A Paper');
+    await savePageSummaries([{ sourceId: source.id, content: 'Old summary', expectedUpdatedAt: 0 }]);
+    const old = await getPageSummary(source.id);
+    const oldBackup = await repo.exportBackup('test');
+    await savePageSummaries([{ sourceId: source.id, content: '', expectedUpdatedAt: old!.updatedAt }]);
+    const cleared = await getPageSummary(source.id);
+    const clearedBackup = await repo.exportBackup('test');
+    expect(clearedBackup.pageSummaries).toEqual([cleared]);
+    await clearDb();
+    await repo.importBackup(clearedBackup);
+    expect((await repo.importBackup(oldBackup)).summariesUpdated).toBe(0);
+    expect(await getPageSummary(source.id)).toEqual(cleared);
+  });
+
+  it('converges for equal-clock edits and clearing in either import order', async () => {
+    const source = await repo.ensureSource(URL_A, 'A Paper');
+    const base = await repo.exportBackup('test');
+    for (const contents of [['Alpha', 'Zulu'], ['Zulu', 'Alpha'], ['', 'Zulu'], ['Zulu', '']]) {
+      await db.pageSummaries.clear();
+      for (const content of contents) {
+        await repo.importBackup({
+          ...base,
+          pageSummaries: [{ sourceId: source.id, content, updatedAt: 123 }],
+        });
+      }
+      expect((await getPageSummary(source.id))?.content).toBe(contents.includes('') ? '' : 'Zulu');
+    }
+  });
+
+  it('ignores orphan summaries and excludes local LLM credentials on every backup path', async () => {
+    await db.settings.put({ key: 'locus.llm.config', value: { apiKey: 'not-a-real-key' } });
+    const file = await repo.exportBackup('test');
+    expect(JSON.stringify(file)).not.toContain('not-a-real-key');
+    await clearDb();
+    await repo.importBackup({
+      ...file,
+      pageSummaries: [{ sourceId: 'missing-page', content: 'Orphan', updatedAt: 123 }],
+      settings: [{ key: 'locus.llm.config', value: { apiKey: 'not-a-real-key' } }],
+    });
+    expect(await db.pageSummaries.count()).toBe(0);
+    expect(await db.settings.get('locus.llm.config')).toBeUndefined();
   });
 });
 
@@ -112,7 +225,7 @@ describe('export/import round trip (U20)', () => {
     });
     const file = await repo.exportBackup('0.4.0');
     expect(file.formatVersion).toBe(BACKUP_FORMAT_VERSION);
-    expect(file.formatVersion).toBe(2);
+    expect(file.formatVersion).toBe(3);
 
     await clearDb();
     expect((await repo.listForUrl(URL_A)).items).toHaveLength(0);

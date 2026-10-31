@@ -101,8 +101,16 @@ test('E44: the timeline groups days into eras with a tick per day', async ({
   await expect(library.locator('.timeline-day')).toHaveCount(4);
   await expect(library.locator('.tl-tick')).toHaveCount(4);
   await expect(library.locator('.tl-when').first()).toHaveText('Today');
+  // Relative labels stop after six days. On most dates, the previous month
+  // must therefore use a calendar label in the browser's locale.
+  const previousMonthDate = await library.evaluate((days) => {
+    const date = new Date();
+    date.setDate(date.getDate() - days);
+    return date.toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+  }, DAYS_TO_PREVIOUS_MONTH);
   await expect(library.locator('.tl-when').nth(1)).toHaveText(
-    DAYS_TO_PREVIOUS_MONTH === 1 ? 'Yesterday' : `${DAYS_TO_PREVIOUS_MONTH} days ago`,
+    DAYS_TO_PREVIOUS_MONTH === 1 ? 'Yesterday' : DAYS_TO_PREVIOUS_MONTH <= 6
+      ? `${DAYS_TO_PREVIOUS_MONTH} days ago` : previousMonthDate,
   );
 
   // Each entry is still one annotation, and the legacy hooks are intact.

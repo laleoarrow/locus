@@ -561,6 +561,7 @@ export async function parsePageNoteZip(
         sources: [...pages.values()].map((page) => page.source),
         annotations,
         anchors,
+        pageSummaries: [],
         settings:
           customColors.size > 0
             ? [{ key: 'customColors', value: [...customColors.values()] }]

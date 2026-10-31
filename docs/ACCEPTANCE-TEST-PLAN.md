@@ -51,6 +51,9 @@ exercising the dynamic registration and per-site disable paths).
 | U39 | library/timeline | day distance across months and years; relative wording gives way to dates past a week; consecutive days group into one era per month; depth is ranked by position so an uneven history still recedes evenly; single-day and empty histories do not divide by zero |
 | U40 | repo/color replace | single and bulk recolouring share the same mutation rule; whole-library replacement includes live detached rows, excludes tombstones, persists across reopen, rejects an exact stale preview (including same-count membership changes) and unknown palette keys, and rolls the complete transaction back when any row write fails |
 | U41 | backup/colour conflict | colour uses an independent conflict clock, so a later recolour merges with — rather than overwrites or resurrects — a newer remote note/deletion |
+| U42 | placement / obstacles | deep/open/closed shadow hosts, inherited overlays, hidden/fullscreen wrappers, duplicate bounds, late changes and cached measurements; clear nearby placement with gaps, selection keep-out, and viewport limits |
+| U43 | selected editing / summaries | exact atomic selection edits, append/replace, independent color clock, stale previews and same-millisecond mutations; summary compare-and-save, v4 migration, v3 backup/source remapping, clear-safe merge and credential exclusion |
+| U44 | LLM | default-off and private local configuration, masked keys, origin changes, editable prompt, URL normalization, explicit source payload, timeout/cancellation, size limits and safe provider errors |
 
 ## E2E (Playwright, loaded extension)
 
@@ -89,7 +92,7 @@ for observability without page-world coupling.
 | E45 | timeline | clicking a rail tick travels to that day, marks it current and clears the previous one |
 | E46 | timeline | depth rises monotonically from nearest to oldest layer, while quote text stays fully opaque — receding must never mean harder to read |
 | E25 | builds | production Chrome and Edge builds are loadable MV3 bundles from the same source; `pnpm zip:store*` omits the manifest key while keeping WXT in production mode, and its verifier rejects React development code or absolute local paths |
-| E26 | placement/rivals | auto dodges a rival toolbar built the way real ones are: `pointer-events: none` wrapper, `position: absolute`, shadow host nested below `<body>`, and one that renders 250 ms late |
+| E26 | placement/rivals | auto dodges passive/absolute/deep/open/closed-shadow rivals, a 900 ms late toolbar and an animated toolbar; checks actual non-overlap and viewport containment |
 | E27 | PageNote import | importing a PageNote ZIP through Backup restores its highlights, URLs, notes and colors; importing the same file again adds nothing |
 | E32 | library | annotations from three pages are listed; switching to site and timeline re-groups the same data, and the chosen mode survives reopening the Library |
 | E33 | library | search matches notes, quotes and page titles with the visible hit marked in every view; a miss shows the filtered-empty state; colour filter narrows and clears |
@@ -104,6 +107,13 @@ for observability without page-world coupling.
 | E47 | image-only selection | a native non-collapsed DOM Range containing exactly one linked image opens the image toolbar even though `Range.toString()` is empty; choosing a colour creates one persistent image ring without following the link |
 | E48 | timeline containment | long publisher titles and unbroken accessible-image text stay inside the card column without painting beneath the rail or causing horizontal overflow; at 720 px the rail hides and the page still does not overflow |
 | E49 | timeline axis | every day node, including inactive older layers with non-zero depth, has its centre within 0.5 px of the fixed timeline spine |
+| E50 | live placement | switching an open toolbar to Auto takes effect immediately and survives other preference/palette updates |
+| E51 | placement viewport | Auto follows selection scrolling and reflow; six colours remain inside a narrow viewport |
+| E52 | placement escape | when both vertical positions are blocked, Auto finds nearby clear space |
+| E53 | selected editing | selected colour/note/delete/restore changes preserve unselected rows and persist after reload |
+| E54 | selection scope | filtered/collapsed rows, page selection and all three grouping modes keep selection explicit and prune hidden records |
+| E55 | selected edit race | a concurrent note update rejects the held batch atomically; pending controls are disabled |
+| E56–E61 | main content / LLM | default-off/manual persistence, masked credentials and editable prompts, local mock API payload, editable unsaved drafts, provider errors, stale notes/settings, selected multi-page generation and summary save conflicts |
 
 ## Manual checklist (pre-release)
 

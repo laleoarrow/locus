@@ -1,0 +1,38 @@
+.library-dialog {
+  width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 48px);
+  padding: 24px; border: 1px solid var(--locus-border); border-radius: 18px;
+  color: var(--locus-fg); background: var(--locus-bg); overflow: auto;
+  box-shadow: 0 24px 80px #0005;
+}
+.library-dialog::backdrop { background: #0006; backdrop-filter: blur(3px); }
+.dialog-heading, .summary-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dialog-heading h2 { margin: 0; font-size: 18px; }
+.dialog-heading > button { border: 0; background: none; color: inherit; font-size: 24px; cursor: pointer; }
+.dialog-help, .summary-empty { color: var(--locus-fg-muted); font-size: 12px; }
+.llm-toggle { display: flex; gap: 8px; align-items: center; margin-top: 20px; font-weight: 600; }
+.llm-fields { padding: 0; border: 0; display: grid; gap: 12px; }
+.llm-fields label { display: grid; gap: 5px; font-size: 12px; font-weight: 600; }
+.library-dialog input:not([type='checkbox']), .library-dialog textarea, .page-summary textarea {
+  width: 100%; min-width: 0; border: 1px solid var(--locus-border); border-radius: 8px;
+  padding: 9px 11px; background: var(--locus-card); color: inherit; font: inherit;
+}
+.library-dialog textarea, .page-summary textarea { resize: vertical; line-height: 1.6; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.dialog-actions button { border: 1px solid var(--locus-border); border-radius: 8px; background: var(--locus-card); color: inherit; padding: 7px 14px; cursor: pointer; font: inherit; }
+.dialog-actions .primary { background: var(--locus-accent); color: white; border-color: transparent; }
+.dialog-actions button:disabled { opacity: .45; cursor: default; }
+.text-action, .summary-actions button { color: var(--locus-accent); border: 0; background: none; padding: 2px 0; cursor: pointer; font: inherit; text-align: left; }
+.text-action { margin-left: 6px; }
+.dialog-error { color: var(--locus-danger); font-size: 12px; overflow-wrap: anywhere; }
+.page-summary { margin: 12px 0 16px; padding: 12px 14px; border: 1px solid var(--locus-border); border-radius: 10px; background: var(--locus-subtle); min-width: 0; }
+.summary-heading h3 { font-size: 12px; margin: 0; letter-spacing: .03em; }
+.summary-actions { display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px; }
+.summary-empty { margin: 7px 0 0; }
+.summary-content { font-size: 12.5px; overflow-wrap: anywhere; }
+.summary-content > :last-child { margin-bottom: 0; }
+.summary-content pre { white-space: pre-wrap; }
+.summary-content a { color: var(--locus-accent); }
+.summary-drafts section + section { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--locus-border); }
+.summary-drafts h3 { font-size: 14px; overflow-wrap: anywhere; }
+.page-select { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--locus-fg-muted); margin-bottom: 8px; }
+.llm-settings-trigger { margin-left: auto; }

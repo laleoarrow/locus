@@ -1,10 +1,11 @@
 # Locus / 文迹 — Architecture
 
 A minimal, local-first annotation layer for academic reading, shipped as a
-Manifest V3 extension for Chrome and Microsoft Edge. Not a reference manager:
-no bibliographic metadata, no AI, no tags/folders, no collaboration, no
-citations, no summarization, no hosted backend, no telemetry. Optional WebDAV
-sync talks only to storage configured and controlled by the user.
+Manifest V3 extension for Chrome and Microsoft Edge. Highlights, annotation
+notes and page summaries are stored locally. Optional AI organisation uses a
+user-configured API to draft page content from saved excerpts and notes;
+WebDAV sync uses storage configured by the user. There is no reference-manager
+bibliography, citation formatting, hosted backend or telemetry.
 
 ## 1. Process topology
 
@@ -57,9 +58,12 @@ original per-site runtime-grant model is preserved in git history (≤ v0.2).
   adds the current origin. A disabled origin's content script stays dormant
   (no listeners act, nothing renders) and flips back on live when the origin
   is re-enabled — no reload needed.
-- Nothing about the page is sent to Locus or GitHub. The two optional network
-  features are WebDAV sync to a server the user configures and the update check
-  for public GitHub release metadata; neither sends page content or telemetry.
+- Three optional features use the network: WebDAV sync uploads the library to
+  user-configured storage; update checks fetch public GitHub release metadata;
+  explicit AI generation sends the chosen page's title, URL and saved live
+  excerpts/notes to the configured API. AI is off by default and opening a page
+  or saving connection settings does not trigger generation. No telemetry is
+  sent to Locus or GitHub.
 
 ## 3. Domain model
 
@@ -70,6 +74,7 @@ Defined in `src/domain/types.ts`. All timestamps are epoch milliseconds.
 |---|---|---|
 | `DocumentRecord` | A logical document being read | `id`, `title`, `createdAt`, `updatedAt` |
 | `SourceRecord` | A concrete URL where the document lives | `id`, `documentId`, `urlKey`, `url`, `title`, `firstSeenAt`, `lastSeenAt` |
+| `PageSummaryRecord` | Editable main content for one source, separate from its annotation notes | `sourceId`, `content`, `updatedAt` |
 | `AnnotationRecord` | One highlight (`kind: text \| image`) + optional Markdown note | `id`, `documentId`, `sourceId`, `kind`, `color`, `colorUpdatedAt`, `comment`, `exact`, `createdAt`, `updatedAt`, `deletedAt` |
 | `AnchorRecord` | Everything needed to re-locate the annotation | text: `exact`, `prefix`, `suffix`, `start`, `end`, `startPoint`, `endPoint` · image: `src`, `alt`, `imgIndex`, `path` |
 | `SettingRecord` | Key/value app state (e.g. `lastUsedColor`) | `key`, `value` |
@@ -121,6 +126,9 @@ Migration strategy:
   guarantees detached annotations are never silently lost.
 - Rows referencing each other (`annotation` ↔ `anchor`) are written in a
   single Dexie transaction.
+- Schema v4 adds `pageSummaries: "sourceId, updatedAt"` without changing older
+  tables. An empty summary retains its clock, so clearing can travel through
+  backup/sync without an older copy restoring the text.
 
 ## 5. Anchoring
 
@@ -201,24 +209,28 @@ fixtures) without a permanent observer cost.
 - Toolbar placement is a preference (side-panel footer): *below* (default),
   *above*, or *auto*. The decision itself is pure geometry in
   `src/domain/placement.ts` (unit-tested without a DOM): given the selection
-  box, the measured toolbar size and the boxes of other floating UI, it takes
-  the side that fits and is clear, else the clear side, else the side with
-  less overlap.
+  box, measured toolbar size and other floating rectangles, it tries the usual
+  positions above/below, then finds a nearby clear gap at obstacle edges. A
+  horizontal sweep merges forbidden vertical intervals, avoiding cubic work
+  when many controls are visible. Selection text and other surfaces receive a
+  keep-out gap; the final box stays inside the viewport. If no clear space
+  exists, it minimises overlap among bounded fallback candidates.
 
-  Obstacles are gathered in the content script by **measuring rectangles**
-  (`getBoundingClientRect` over positioned, high-z or shadow-hosting elements
-  near the top of the tree), not by hit-testing sample points. An earlier
-  `elementsFromPoint` version missed real rival toolbars for three reasons
-  worth remembering: they are routinely wrapped in a `pointer-events: none`
-  layer, which hit-testing skips entirely; they are as often `position:
-  absolute` as fixed/sticky; and a single probe column misses anything that
-  overlaps only part of our width. Full-page scrims (>60% of the viewport) are
-  ignored, or every side would look occupied.
+  `content/obstacles.ts` walks nested light DOM and open/closed shadow roots
+  using the extension DOM API. It measures fixed/sticky/raised controls,
+  including children of zero-size or fullscreen wrappers, and handles passive
+  `pointer-events: none` layers. Contained boxes are coalesced; invisible,
+  offscreen and full-page scrim rectangles are skipped. Mutation observers
+  update cached candidates, and animation checks remeasure them every 200 ms
+  only while Auto is visible. A slower check discovers shadow roots attached
+  after initial traversal. Browser-native or desktop overlays outside the page
+  DOM cannot be measured by this mechanism.
 
-  Because rival toolbars react to the same `mouseup` and often render a beat
-  later, placement is re-evaluated once ~350 ms after showing and the toolbar
-  moves if the chosen side turned out to be taken. `fixtures/competitor.html`
-  reproduces all four shapes; E26 covers them.
+  Scrolling/resizing remeasures the pending Range or image. Preference and
+  palette changes retain current avoidance information; hiding the toolbar
+  stops tracking. Long palettes scroll within the viewport. E26 and E50–E52
+  cover late/animated/nested/shadow controls, live preference changes, resize,
+  and obstacles on both sides.
 - **⌘/Ctrl-hover** on the toolbar's right edge slides out a ✕ zone that
   disables Locus on the current site (see §2).
 - **DOI version linking** (optional, on by default): the content script reads
@@ -254,6 +266,16 @@ Typed request/response pairs in `src/messaging/protocol.ts`; a single
   annotation using the selected source color, validates the exact preview
   snapshot and palette key, then schedules the same sync/invalidation path as
   single-row edits. Detached rows participate; tombstones never do.
+- `annotations:edit` (library/panel → bg): atomically applies colour,
+  append/replace note, delete or restore to explicitly selected IDs. Every row's
+  `updatedAt`, effective `colorUpdatedAt` and `deletedAt` must match the preview,
+  otherwise nothing is written. Colour edits keep their independent clock;
+  note/deletion clocks advance monotonically, including single-row edit paths.
+- `summary:save` saves page content with its expected revision. `llm:status`
+  exposes settings without the key, `llm:save` stores connection settings, and
+  `llm:generate` returns a draft for the chosen source without saving it.
+  Generation checks that configuration and source notes stayed current before
+  returning; saving separately checks the summary revision.
 - `annotation:changed` (bg → all tabs + runtime): invalidation broadcast
   carrying `urlKey`.
 - `annotation:reveal` (panel → bg → tab), `annotations:anchor-state`
@@ -269,12 +291,11 @@ Typed request/response pairs in `src/messaging/protocol.ts`; a single
 
 **Backup format** (`src/domain/backup.ts`): a versioned JSON snapshot
 (`formatVersion`, independent of the DB schema version) holding documents,
-sources, annotations, anchors and portable settings. Import validates every row
-defensively — it runs on a user-supplied file — and drops malformed rows rather
-than trusting them. `updateInfo` is excluded as volatile. v0.7 writes format v2
-for the independent colour clock while continuing to read v1; older clients
-reject v2 and therefore cannot overwrite a synced library using legacy
-whole-row colour conflict rules.
+sources, annotations, anchors, page summaries and portable settings. Import
+validates every row defensively — it runs on a user-supplied file — and drops malformed rows rather
+than trusting them. `updateInfo` and `locus.llm.config` are excluded. Current
+exports use format v3 while importing v1/v2 remains supported. Older clients
+reject v3, preventing them from silently stripping page summaries from sync.
 
 **Merge** (`repo.importBackup`) is the one algorithm both backup-import and sync
 rely on, so it must be convergent and non-destructive:
@@ -289,6 +310,10 @@ rely on, so it must be convergent and non-destructive:
 - An incoming annotation identical to a local one in every meaningful field
   (source, colour, comment, kind, anchor position) counts as already present, so
   syncing does not accumulate duplicate highlights.
+- Page summaries remap `sourceId` to the matched local page and merge using
+  their own `updatedAt`, independently of source metadata. Clearing wins an
+  exact timestamp tie; other ties use content codepoint order for convergence.
+  Empty rows travel so old backups cannot undo a clear operation.
 
 These properties make it idempotent: syncing twice equals syncing once.
 
@@ -303,6 +328,15 @@ overwritten.
 Credentials live in `chrome.storage.local`, not the Dexie settings table — that
 keeps them structurally out of export files (asserted by E23). The UI is only
 handed a view with `hasPassword: boolean`.
+
+AI settings also live only in `chrome.storage.local` under `locus.llm.config`;
+views receive `hasApiKey` rather than the secret. `llm/client.ts` sends an
+OpenAI-compatible chat-completion request only for explicit generation, with
+bounded input/response sizes, cancellation and a timeout. Redirects and browser
+cookies are excluded. Provider errors are replaced with application-authored
+messages. The default prompt treats saved material as evidence rather than
+instructions and requests traceable excerpts, but generated content remains an
+editable draft for the user to review.
 
 ## 6c. Annotation library
 
@@ -329,6 +363,11 @@ and `sidepanel/App.tsx` was already carrying the page list, backup and sync.
   source-colour filter migrates to the target after success.
 - Deleted annotations are reachable behind a *Deleted* filter with a Restore
   action — the rows were always kept, there was simply no way to see them.
+- Selected-row editing is separate from whole-library colour replacement:
+  checkbox selection defines the batch for colour, note append/replace and
+  delete/restore. Page main content is stored in `pageSummaries`, never copied
+  into annotation comments. It can be edited manually or filled from an AI
+  draft, with saving as a separate action.
 - Detached state is knowledge only a running content script has, so the content
   script reports it and the background stores it in an `anchorStates` table
   (schema v3). It is written **only when the state changes**, and it never
@@ -344,6 +383,8 @@ and `sidepanel/App.tsx` was already carrying the page list, backup and sync.
 src/
   domain/            pure logic, no chrome.*, no DOM globals at import time
     types.ts         all domain types
+    editing.ts       selected-edit and summary-save contracts
+    llm.ts           optional AI configuration and draft input contracts
     colors.ts        color palette (5 colors + CSS values)
     url.ts           urlKey normalization
     anchor/
@@ -354,6 +395,8 @@ src/
   db/
     schema.ts        Dexie database + versions
     repo.ts          repository functions (single write path)
+    editing.ts       atomic selected-row edits and page summary writes
+  llm/               local-only connection settings + explicit draft requests
   messaging/protocol.ts
   entrypoints/
     background.ts    router, registration, broadcasts
@@ -375,8 +418,9 @@ import nothing above them and are fully unit-testable.
 - Chrome and Edge builds come from the same source (`wxt build -b chrome|edge`).
 - The manifest grants HTTP(S) page access for annotation on arbitrary reading
   sites; the per-site off list must remain immediate and reversible.
-- No hosted backend and no telemetry; only user-configured WebDAV sync and the
-  GitHub release-metadata check may use the network.
+- No hosted backend or telemetry. Network access is limited to user-configured
+  WebDAV sync, the optional GitHub release check and explicitly requested AI
+  generation to the configured endpoint. API keys never enter library exports.
 - Highlight rendering causes no visible layout shift on fixture pages.
 - Reload restores every valid annotation; un-anchorable annotations surface
   as detached in the side panel and are never silently deleted.

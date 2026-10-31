@@ -1,12 +1,12 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
 import { HighlightRenderer } from '@/content/highlights';
 import { LocusUI } from '@/content/ui';
+import { FloatingObstacles } from '@/content/obstacles';
 import { captureAnchor } from '@/domain/anchor/capture';
 import { captureImageAnchor, resolveImageAnchor } from '@/domain/anchor/image';
 import { resolveAnchor } from '@/domain/anchor/resolve';
-import { buildTextIndex, LOCUS_HOST_ID, type TextIndex } from '@/domain/anchor/textIndex';
+import { buildTextIndex, type TextIndex } from '@/domain/anchor/textIndex';
 import { extractDoi } from '@/domain/doi';
-import type { Box } from '@/domain/placement';
 import {
   buildPalette,
   buildPaletteForKeys,
@@ -26,8 +26,8 @@ import { requestBg, type AnchorStateReply, type TabMessage } from '@/messaging/p
 
 /** How long after load we keep retrying detached anchors on DOM mutations. */
 const MUTATION_WATCH_MS = 15_000;
-/** Delay before re-checking placement, to catch rivals that render late. */
-const PLACEMENT_RECHECK_MS = 350;
+/** Follow late or animated rivals while the selection toolbar is visible. */
+const PLACEMENT_RECHECK_MS = 200;
 const MUTATION_DEBOUNCE_MS = 300;
 /** Separates an intentional image-selection drag from ordinary click jitter. */
 const IMAGE_DRAG_THRESHOLD_PX = 8;
@@ -63,6 +63,7 @@ function isEditableKeyEvent(event: KeyboardEvent): boolean {
 class LocusContent {
   private readonly doc = document;
   private readonly renderer = new HighlightRenderer(document);
+  private readonly obstacles = new FloatingObstacles(document);
   private readonly ui: LocusUI;
   private entries = new Map<string, Entry>();
   private index: TextIndex = buildTextIndex(document.body);
@@ -105,6 +106,7 @@ class LocusContent {
     const renderPalette = buildPaletteForKeys(renderKeys, this.prefs.customColors);
     this.renderer.setPalette(renderPalette);
     this.ui.setPalette(this.palette, renderPalette);
+    this.refreshToolbar();
   }
 
   private applyPrefs(prefs: Prefs): void {
@@ -121,7 +123,7 @@ class LocusContent {
     this.imageDrag = null;
     this.clearSuppressedImageClick();
     this.renderer.clearAll();
-    this.ui.hideToolbar();
+    this.hideToolbar();
     this.ui.closeNoteEditor();
     this.ui.hideVersionToast();
     const html = this.doc.documentElement;
@@ -191,9 +193,11 @@ class LocusContent {
     this.watchMutations();
     let resizeTimer: ReturnType<typeof setTimeout> | undefined;
     window.addEventListener('resize', () => {
+      this.refreshToolbar();
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => this.renderer.repositionRings(), 150);
     });
+    this.doc.addEventListener('scroll', () => this.refreshToolbar(), true);
   }
 
   private setItems(items: AnnotationWithAnchor[]): void {
@@ -283,7 +287,7 @@ class LocusContent {
 
   private async createFromPending(color: ColorKey): Promise<void> {
     const anchor = this.captureFromPending();
-    this.ui.hideToolbar();
+    this.hideToolbar();
     this.doc.getSelection()?.removeAllRanges();
     this.pending = null;
     if (!anchor) return;
@@ -332,7 +336,7 @@ class LocusContent {
   private openNoteFor(id: string, at: DOMRect): void {
     const entry = this.entries.get(id);
     if (!entry) return;
-    this.ui.hideToolbar();
+    this.hideToolbar();
     this.ui.openNoteEditor({
       rect: at,
       color: entry.item.annotation.color,
@@ -442,7 +446,7 @@ class LocusContent {
     );
     this.doc.addEventListener('mousedown', (event) => {
       if (this.active && !this.ui.containsEvent(event)) {
-        this.ui.hideToolbar();
+        this.hideToolbar();
         this.ui.closeNoteEditor();
       }
     });
@@ -495,71 +499,55 @@ class LocusContent {
     }
   }
 
-  /**
-   * Boxes of other in-page floating UI (typically another extension's
-   * selection toolbar), so 'auto' placement can avoid overlapping them.
-   *
-   * Measured with getBoundingClientRect rather than probed with
-   * elementsFromPoint: rival toolbars are commonly wrapped in a
-   * `pointer-events: none` layer, which hit-testing skips entirely, and they
-   * are as often `position: absolute` as fixed.
-   */
-  private collectObstacles(): Box[] {
-    const view = this.doc.defaultView;
-    if (!view) return [];
-    const viewportArea = view.innerWidth * view.innerHeight;
-    const skipTags = new Set(['SCRIPT', 'STYLE', 'LINK', 'META', 'NOSCRIPT', 'TEMPLATE', 'HEAD']);
-    const boxes: Box[] = [];
-
-    const consider = (el: Element, depth: number): void => {
-      if (el.id === LOCUS_HOST_ID || el.id === 'locus-ring-host') return;
-      if (skipTags.has(el.tagName)) return;
-      const style = view.getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return;
-      const positioned =
-        style.position === 'fixed' || style.position === 'sticky' || style.position === 'absolute';
-      const z = Number.parseInt(style.zIndex, 10);
-      if (positioned && ((Number.isFinite(z) && z >= 1000) || el.shadowRoot)) {
-        const rect = el.getBoundingClientRect();
-        const area = rect.width * rect.height;
-        // Ignore full-page scrims and layout wrappers; they are not toolbars
-        // and would make every side look occupied.
-        if (rect.width > 0 && rect.height > 0 && area < viewportArea * 0.6) {
-          boxes.push(rect);
-          return;
-        }
-      }
-      // Overlay roots are nearly always shallow; two levels covers hosts that
-      // sit inside a positioning wrapper.
-      if (depth < 2) {
-        for (const child of el.children) consider(child, depth + 1);
-      }
-    };
-
-    for (const root of [...this.doc.body.children, ...this.doc.documentElement.children]) {
-      consider(root, 0);
-    }
-    return boxes;
+  private stopPlacementTracking(): void {
+    clearTimeout(this.placementRecheck);
+    this.placementRecheck = undefined;
+    this.obstacles.stop();
   }
 
-  /** Show the toolbar, then re-check shortly after in case a rival renders late. */
+  private hideToolbar(): void {
+    this.stopPlacementTracking();
+    this.ui.hideToolbar();
+  }
+
+  /** Re-measure the target because scrolling and page layout can move it. */
+  private refreshToolbar(): void {
+    if (!this.active || !this.ui.isToolbarVisible() || !this.pending) {
+      this.stopPlacementTracking();
+      return;
+    }
+    const target = this.pending.type === 'text' ? this.pending.range : this.pending.image;
+    const connected = target instanceof Range
+      ? target.commonAncestorContainer.isConnected && !target.collapsed
+      : target.isConnected;
+    if (!connected) {
+      this.hideToolbar();
+      return;
+    }
+    const rect = target.getBoundingClientRect();
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight ||
+      rect.right <= 0 || rect.left >= window.innerWidth) {
+      this.hideToolbar();
+      return;
+    }
+    this.presentToolbar(rect);
+  }
+
+  /** Keep checking cached floating elements until the toolbar is dismissed. */
   private presentToolbar(rect: DOMRect): void {
-    this.ui.showToolbar(rect, this.effectiveLastColor(), this.prefs.placement, this.collectObstacles());
+    if (this.prefs.placement === 'auto') this.obstacles.start();
+    else this.obstacles.stop();
+    this.ui.showToolbar(rect, this.effectiveLastColor(), this.prefs.placement, this.obstacles.collect());
     clearTimeout(this.placementRecheck);
     if (this.prefs.placement !== 'auto') return;
-    // Rival toolbars react to the same mouseup we do and often appear a beat
-    // later; a single measurement at mouseup time would miss them.
-    this.placementRecheck = setTimeout(() => {
-      if (!this.ui.isToolbarVisible()) return;
-      this.ui.showToolbar(rect, this.effectiveLastColor(), 'auto', this.collectObstacles());
-    }, PLACEMENT_RECHECK_MS);
+    this.placementRecheck = setTimeout(() => this.refreshToolbar(), PLACEMENT_RECHECK_MS);
   }
 
   private showToolbarForSelection(): boolean {
     const selection = this.doc.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
       if (this.pending?.type === 'text') {
-        this.ui.hideToolbar();
+        this.hideToolbar();
         this.pending = null;
       }
       return false;
@@ -611,7 +599,7 @@ class LocusContent {
           if (ids.size > 0) {
             event.preventDefault();
             event.stopPropagation();
-            this.ui.hideToolbar();
+            this.hideToolbar();
             this.pending = null;
             selection?.removeAllRanges();
             void this.deleteAnnotations([...ids]);

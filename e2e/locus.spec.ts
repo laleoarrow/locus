@@ -35,6 +35,40 @@ async function openPanelFor(page: Page, worker: Worker, extensionId: string, url
   return panel;
 }
 
+async function toolbarGeometry(page: Page) {
+  return page.evaluate(() => {
+    const toolbar = document.getElementById('locus-host')?.shadowRoot
+      ?.querySelector<HTMLElement>('[data-locus-toolbar]');
+    const rect = toolbar?.getBoundingClientRect();
+    const selection = getSelection();
+    const selected = selection?.rangeCount ? selection.getRangeAt(0).getBoundingClientRect() : null;
+    const fixture = window as unknown as { rivalBoxes: () => DOMRect[] };
+    const rivals = [
+      ...fixture.rivalBoxes(),
+      ...Array.from(document.querySelectorAll('[data-placement-obstacle]'), (el) => el.getBoundingClientRect()),
+    ];
+    const overlaps = (other: DOMRect) => Boolean(rect &&
+      Math.min(rect.right, other.right) - Math.max(rect.left, other.left) > 0.5 &&
+      Math.min(rect.bottom, other.bottom) - Math.max(rect.top, other.top) > 0.5);
+    return {
+      visible: Boolean(rect?.width && !toolbar?.classList.contains('hidden')),
+      insideViewport: Boolean(rect && rect.left >= 7.5 && rect.top >= 7.5 &&
+        rect.right <= innerWidth - 7.5 && rect.bottom <= innerHeight - 7.5),
+      overlapsRival: rivals.some(overlaps),
+      overlapsSelection: Boolean(selected && overlaps(selected)),
+    };
+  });
+}
+
+async function expectClearToolbar(page: Page): Promise<void> {
+  await expect.poll(() => toolbarGeometry(page)).toEqual({
+    visible: true,
+    insideViewport: true,
+    overlapsRival: false,
+    overlapsSelection: false,
+  });
+}
+
 test('E1: content script auto-injects on a granted origin', async ({ context, serviceWorker }) => {
   const page = await context.newPage();
   await page.goto(NESTED);
@@ -669,16 +703,128 @@ test('E26: auto placement dodges realistically-built rival toolbars', async ({
   await page.waitForTimeout(300);
 
   // Each mode is a shape real selection toolbars actually take.
-  for (const mode of ['pointer-events', 'absolute', 'nested', 'late'] as const) {
+  for (const mode of [
+    'pointer-events', 'absolute', 'nested', 'late', 'slow', 'deep',
+    'shadow-open', 'shadow-closed', 'moving',
+  ] as const) {
     await page.goto(`${BASE_URL}/fixtures/competitor.html?mode=${mode}`);
     await page.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
     await selectText(page, '#probe-2', 'a rival toolbar appear');
     await expect(page.locator('html')).toHaveAttribute('data-rival-shown', '1');
+    if (mode === 'moving') {
+      await expect(page.locator('html')).toHaveAttribute('data-rival-settled', '1');
+    }
     await expect(
       page.locator('[data-locus-toolbar]'),
       `mode=${mode}: the rival sits below the selection, so Locus must go above`,
     ).toHaveAttribute('data-placement', 'above', { timeout: 3000 });
+    await expectClearToolbar(page);
   }
+});
+
+test('E50: auto applies to the open toolbar and survives preference and palette updates', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const url = `${BASE_URL}/fixtures/competitor.html`;
+  const page = await context.newPage();
+  await page.goto(url);
+  const panel = await openPanelFor(page, serviceWorker, extensionId, url);
+  await selectText(page, '#probe-2', 'a rival toolbar appear');
+  await expect(page.locator('html')).toHaveAttribute('data-rival-shown', '1');
+  await expect.poll(async () => (await toolbarGeometry(page)).overlapsRival).toBe(true);
+
+  // Keep the same native selection: changing the setting must take effect now.
+  await panel.locator('.segmented button[data-placement="auto"]').click();
+  await expectClearToolbar(page);
+  await panel.locator('label.switch').filter({ has: panel.locator('input[data-pref="detect-doi"]') }).click();
+  await expect(panel.locator('input[data-pref="detect-doi"]')).not.toBeChecked();
+  await expectClearToolbar(page);
+
+  await page.evaluate(() => {
+    const input = document.getElementById('locus-host')?.shadowRoot
+      ?.querySelector<HTMLInputElement>('input[type="color"]');
+    if (!input) throw new Error('missing color picker');
+    input.value = '#123456';
+    input.dispatchEvent(new Event('change'));
+  });
+  await expect(page.locator('[data-locus-toolbar] .swatch[data-color="c123456"]')).toBeVisible();
+  await expectClearToolbar(page);
+});
+
+test('E51: the visible auto toolbar follows scrolling and stays inside a resized viewport', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const url = `${BASE_URL}/fixtures/competitor.html?mode=absolute`;
+  const page = await context.newPage();
+  await page.goto(url);
+  const panel = await openPanelFor(page, serviceWorker, extensionId, url);
+  await panel.locator('.segmented button[data-placement="auto"]').click();
+  await expect(panel.locator('.segmented button[data-placement="auto"]')).toHaveClass('on');
+  await page.evaluate(() => {
+    document.body.style.marginTop = '280px';
+    document.body.style.minHeight = '1800px';
+  });
+  await selectText(page, '#probe-2', 'a rival toolbar appear');
+  await expect(page.locator('html')).toHaveAttribute('data-rival-shown', '1');
+  await expectClearToolbar(page);
+  const toolbar = page.locator('[data-locus-toolbar]');
+  const before = await toolbar.boundingBox();
+  expect(before).not.toBeNull();
+  await page.evaluate(() => window.scrollBy(0, 80));
+  await expect.poll(async () => Math.abs((await toolbar.boundingBox())!.y - (before!.y - 80))).toBeLessThan(1);
+  await expectClearToolbar(page);
+
+  await page.setViewportSize({ width: 420, height: 650 });
+  await expectClearToolbar(page);
+  // Clear rivals so this also pins the actual selection geometry after reflow.
+  await page.evaluate(() => document.getElementById('rival-wrapper')?.remove());
+  await expect.poll(async () => page.evaluate(() => {
+    const selection = getSelection()!.getRangeAt(0).getBoundingClientRect();
+    const toolbar = document.getElementById('locus-host')!.shadowRoot!
+      .querySelector('[data-locus-toolbar]')!.getBoundingClientRect();
+    return Math.abs(toolbar.top - selection.bottom - 10);
+  })).toBeLessThan(1);
+  for (const hex of ['#123456', '#234567', '#345678']) {
+    await page.evaluate((color) => {
+      const input = document.getElementById('locus-host')!.shadowRoot!
+        .querySelector<HTMLInputElement>('input[type="color"]')!;
+      input.value = color;
+      input.dispatchEvent(new Event('change'));
+    }, hex);
+    await expect(toolbar.locator(`.swatch[data-color="c${hex.slice(1)}"]`)).toBeVisible();
+  }
+  await page.setViewportSize({ width: 180, height: 650 });
+  await page.locator('#probe-2').scrollIntoViewIfNeeded();
+  await expectClearToolbar(page);
+  await expect(toolbar.locator('.swatch')).toHaveCount(6);
+});
+
+test('E52: auto finds clear nearby space when rival bars occupy both vertical positions', async ({
+  context,
+  serviceWorker,
+  extensionId,
+}) => {
+  const url = `${BASE_URL}/fixtures/competitor.html`;
+  const page = await context.newPage();
+  await page.goto(url);
+  const panel = await openPanelFor(page, serviceWorker, extensionId, url);
+  await panel.locator('.segmented button[data-placement="auto"]').click();
+  await expect(panel.locator('.segmented button[data-placement="auto"]')).toHaveClass('on');
+  await selectText(page, '#probe-2', 'a rival toolbar appear');
+  await expect(page.locator('html')).toHaveAttribute('data-rival-shown', '1');
+  await page.evaluate(() => {
+    const rect = getSelection()!.getRangeAt(0).getBoundingClientRect();
+    const above = document.createElement('div');
+    above.setAttribute('data-placement-obstacle', '');
+    above.style.cssText = `position:fixed;top:${rect.top - 66}px;left:${rect.left}px;` +
+      'width:240px;height:60px;background:#333;z-index:2147483000;';
+    document.body.appendChild(above);
+  });
+  await expectClearToolbar(page);
 });
 
 test('E19: ⌘-hover reveals the site-off switch; ✕ disables Locus on this site', async ({

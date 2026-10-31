@@ -2,6 +2,7 @@ import type {
   AnchorRecord,
   AnnotationRecord,
   DocumentRecord,
+  PageSummaryRecord,
   SettingRecord,
   SourceRecord,
 } from './types';
@@ -15,13 +16,12 @@ import type {
  * file's shape, so an old file stays readable after DB migrations.
  */
 export const BACKUP_FORMAT = 'locus-backup';
-// v2 adds the independent annotation colour clock. v0.7 still reads v1, but
-// older clients must reject v2 rather than overwrite it with whole-row colour
-// conflict semantics they do not understand.
-export const BACKUP_FORMAT_VERSION = 2;
+// v2 added the independent colour clock; v3 adds independently merged page
+// summaries. Older clients must reject v3 rather than silently strip them.
+export const BACKUP_FORMAT_VERSION = 3;
 
 /** Volatile settings that must never travel between machines. */
-export const UNPORTABLE_SETTING_KEYS = new Set(['updateInfo']);
+export const UNPORTABLE_SETTING_KEYS = new Set(['updateInfo', 'locus.llm.config']);
 
 export interface BackupFile {
   format: typeof BACKUP_FORMAT;
@@ -32,6 +32,8 @@ export interface BackupFile {
   sources: SourceRecord[];
   annotations: AnnotationRecord[];
   anchors: AnchorRecord[];
+  /** Absent in v1/v2; current exports always include this array. */
+  pageSummaries?: PageSummaryRecord[];
   settings: SettingRecord[];
 }
 
@@ -45,6 +47,8 @@ export interface ImportSummary {
   sourcesAdded: number;
   /** Portable settings inserted or extended by the incoming backup. */
   settingsUpdated: number;
+  /** Page summaries inserted or replaced by a newer incoming revision. */
+  summariesUpdated: number;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -68,7 +72,7 @@ export function parseBackup(raw: unknown): { file: BackupFile } | { error: strin
   if (!isObject(raw)) return { error: 'Not a Locus backup file.' };
   if (raw['format'] !== BACKUP_FORMAT) return { error: 'Not a Locus backup file.' };
   const formatVersion = raw['formatVersion'];
-  if (typeof formatVersion !== 'number' || !Number.isFinite(formatVersion)) {
+  if (typeof formatVersion !== 'number' || !Number.isInteger(formatVersion) || formatVersion < 1) {
     return { error: 'Backup file has no version.' };
   }
   if (formatVersion > BACKUP_FORMAT_VERSION) {
@@ -99,6 +103,14 @@ export function parseBackup(raw: unknown): { file: BackupFile } | { error: strin
   const anchors = rows('anchors').filter(
     (a) => isStringField(a, 'id') && isStringField(a, 'annotationId'),
   ) as unknown as AnchorRecord[];
+  const pageSummaries = rows('pageSummaries').filter(
+    (s) => isStringField(s, 'sourceId') && Boolean(s['sourceId']) &&
+      isStringField(s, 'content') && isNumberField(s, 'updatedAt') && (s['updatedAt'] as number) > 0,
+  ).map((s): PageSummaryRecord => ({
+    sourceId: s['sourceId'] as string,
+    content: s['content'] as string,
+    updatedAt: s['updatedAt'] as number,
+  }));
   const settings = rows('settings').filter(
     (s) => isStringField(s, 'key') && !UNPORTABLE_SETTING_KEYS.has(s['key'] as string),
   ) as unknown as SettingRecord[];
@@ -113,6 +125,7 @@ export function parseBackup(raw: unknown): { file: BackupFile } | { error: strin
       sources,
       annotations,
       anchors,
+      pageSummaries,
       settings,
     },
   };

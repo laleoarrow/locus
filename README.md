@@ -88,22 +88,36 @@ bring them back reliably — even when the page shifts under you.
   shortcut digits; manage them under *Colors on this page* in the side panel).
   Other pages stay compact, and removing a choice never recolors annotations
   already made with it. The toolbar shows below the selection by default, or
-  set it to *above* / *auto* — auto dodges other extensions' floating toolbars.
+  set it to *above* / *auto*. Auto follows in-page floating toolbars as they
+  appear or move, including deeply nested and shadow-root controls, and finds
+  nearby space when both sides are occupied. It also follows scrolling and
+  resizing; long palettes stay within the window.
 - **One library for everything.** A full page listing every annotation across
   every site — grouped by page, by site, or as a timeline; searchable over
   quotes, notes and titles; filterable by colour, site, date, detached or
   deleted. Replace one annotation colour across the whole live library from a
   compact batch menu. Deleted annotations land in a bin you can restore from,
   and any result is one click from the passage it came from.
+- **Edit a selection together.** Select annotation rows to change their colour,
+  append or replace notes, delete, or restore them as one batch. A stale
+  selection is rejected before any row changes. Existing whole-library colour
+  replacement remains available separately.
+- **Keep each page's main content.** Save an editable “主要内容” summary separately
+  from individual annotation notes. Write it yourself, or enable optional AI
+  organisation with your own API address, model and API key. Generation uses
+  the chosen page's saved excerpts and notes, returns a draft, and saves only
+  when you choose to save. The prompt is editable and can be reset.
 - **Sync through storage you own.** Point Locus at a WebDAV folder (坚果云 /
   Nutstore, Nextcloud, anything WebDAV) once, and every device keeps itself
   merged — no account, no server of ours. Or just use **Export / Import** for a
   plain JSON backup you can carry around.
-- **Local only.** Everything lives in IndexedDB. No accounts, no telemetry,
-  nothing about your pages leaves the machine. Only two features touch the
-  network, both switchable off: the WebDAV sync you configure, and an update
-  check that reads GitHub release metadata (no data about you is sent). Sync
-  credentials are stored locally and never included in an exported backup.
+- **Local first.** Annotations and saved page summaries live in IndexedDB;
+  Locus has no account system, hosted backend or telemetry. Three optional
+  features use the network: WebDAV sync to your chosen storage, GitHub release
+  checks, and AI generation to your configured API. AI is off by default and
+  sends the chosen page's title, URL, saved excerpts and notes only when you
+  request generation. API keys and sync credentials stay in local extension
+  storage and are excluded from backups and WebDAV sync.
 - **Resilient anchors.** Each annotation stores the exact text, surrounding
   context, character positions, and DOM paths; recovery tries them in order.
   An annotation that can't be re-anchored shows as *detached* in the side

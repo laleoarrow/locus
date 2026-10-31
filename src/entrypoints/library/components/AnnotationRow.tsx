@@ -4,6 +4,7 @@ import { highlightParts, type LibraryAnnotation, type LibraryPage } from '@/doma
 import type { CustomColor } from '@/domain/types';
 import { markdownToHtml } from '@/lib/markdown';
 import { requestBg } from '@/messaging/protocol';
+import { useSelection } from './SelectionContext';
 
 /** Text with the current search term marked. */
 export function Marked({ text, query }: { text: string; query: string }) {
@@ -34,6 +35,7 @@ export function AnnotationRow({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(annotation.note);
   const [status, setStatus] = useState('');
+  const selection = useSelection();
   const swatch = specFor(annotation.color, customColors).swatch;
   const needle = query.trim().toLowerCase();
   const noteMatches = needle !== '' && annotation.note.toLowerCase().includes(needle);
@@ -62,7 +64,18 @@ export function AnnotationRow({
       className={`annotation${annotation.detached ? ' detached' : ''}`}
       data-annotation-id={annotation.id}
       data-color={annotation.color}
+      data-selected={selection.enabled && selection.selectedIds.has(annotation.id) || undefined}
     >
+      {selection.enabled && (
+        <input
+          className="annotation-select"
+          type="checkbox"
+          aria-label={`Select annotation: ${annotation.quote || (annotation.isImage ? 'Figure' : 'Note')}`}
+          checked={selection.selectedIds.has(annotation.id)}
+          disabled={selection.busy}
+          onChange={() => selection.toggle(annotation.id)}
+        />
+      )}
       <span className="dot" style={{ background: swatch }} aria-hidden="true" />
       <div className="body">
         <button className="quote" onClick={() => void open()} title="Open this page and scroll to it">
@@ -99,11 +112,12 @@ export function AnnotationRow({
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               placeholder="Markdown supported"
+              disabled={selection.busy}
               autoFocus
             />
             <div className="row">
-              <button onClick={() => { setDraft(annotation.note); setEditing(false); }}>Cancel</button>
-              <button className="primary" onClick={() => void saveNote()}>Save</button>
+              <button disabled={selection.busy} onClick={() => { setDraft(annotation.note); setEditing(false); }}>Cancel</button>
+              <button className="primary" disabled={selection.busy} onClick={() => void saveNote()}>Save</button>
             </div>
           </div>
         ) : (
@@ -111,18 +125,20 @@ export function AnnotationRow({
             {annotation.deleted ? (
               <button
                 data-action="restore"
+                disabled={selection.busy}
                 onClick={() => void requestBg({ type: 'annotation:undelete', id: annotation.id })}
               >
                 Restore
               </button>
             ) : (
               <>
-                <button data-action="edit" onClick={() => setEditing(true)}>
+                <button data-action="edit" disabled={selection.busy} onClick={() => setEditing(true)}>
                   {annotation.note ? 'Edit note' : 'Add note'}
                 </button>
                 <button
                   className="danger"
                   data-action="delete"
+                  disabled={selection.busy}
                   onClick={() => void requestBg({ type: 'annotation:delete', id: annotation.id })}
                 >
                   Delete

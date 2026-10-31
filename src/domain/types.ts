@@ -67,6 +67,14 @@ export interface SourceRecord {
   lastSeenAt: number;
 }
 
+/** Page-level main content, separate from annotation notes and source metadata. */
+export interface PageSummaryRecord {
+  sourceId: string;
+  content: string;
+  /** Empty content is retained with its clock so clearing syncs across devices. */
+  updatedAt: number;
+}
+
 export type AnnotationKind = 'text' | 'image';
 
 /** One highlight (text run or image ring) with an optional Markdown note. */

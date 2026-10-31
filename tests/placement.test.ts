@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { choosePlacement, resolvePlacement, toolbarBox, type PlacementInput } from '@/domain/placement';
+import { choosePlacement, resolvePlacement, resolveToolbarPosition, toolbarBox, type Box, type PlacementInput } from '@/domain/placement';
 
 const base: PlacementInput = {
   selection: { top: 300, left: 200, right: 400, bottom: 320 },
@@ -83,5 +83,64 @@ describe('resolvePlacement (U26)', () => {
     expect(resolvePlacement('below', blocked)).toBe('below');
     expect(resolvePlacement('above', blocked)).toBe('above');
     expect(resolvePlacement('auto', blocked)).toBe('above');
+  });
+});
+
+function overlaps(a: Box, b: Box): boolean {
+  return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+}
+
+describe('resolveToolbarPosition', () => {
+  it('moves sideways when rivals occupy both centred positions', () => {
+    const input = { ...base, obstacles: [rivalBelow, rivalAbove] };
+    const { box } = resolveToolbarPosition('auto', input);
+    expect(overlaps(box, input.selection)).toBe(false);
+    for (const obstacle of input.obstacles) expect(overlaps(box, obstacle)).toBe(false);
+    expect(box.left).toBeGreaterThanOrEqual(input.margin);
+    expect(box.right).toBeLessThanOrEqual(input.viewportWidth - input.margin);
+  });
+
+  it('moves beyond full-width rival bars when there is no horizontal escape', () => {
+    const obstacles = [
+      { top: 326, left: 0, right: 1000, bottom: 390 },
+      { top: 230, left: 0, right: 1000, bottom: 294 },
+    ];
+    const { box } = resolveToolbarPosition('auto', { ...base, obstacles });
+    for (const obstacle of [...obstacles, base.selection]) expect(overlaps(box, obstacle)).toBe(false);
+    expect(box.bottom <= 230 - base.gap || box.top >= 390 + base.gap).toBe(true);
+  });
+
+  it('keeps a gap even when a rival only nearly touches the toolbar', () => {
+    const obstacle = { top: 373, bottom: 413, left: 200, right: 440 };
+    const { box } = resolveToolbarPosition('auto', { ...base, obstacles: [obstacle] });
+    expect(box.bottom).toBeLessThanOrEqual(obstacle.top - base.gap);
+  });
+
+  it('avoids the selected text when both vertical positions are clamped onto it', () => {
+    const input = {
+      ...base,
+      viewportHeight: 100,
+      selection: { top: 20, left: 200, right: 400, bottom: 80 },
+    };
+    const { box } = resolveToolbarPosition('auto', input);
+    expect(overlaps(box, input.selection)).toBe(false);
+    expect(box.top).toBeGreaterThanOrEqual(8);
+    expect(box.bottom).toBeLessThanOrEqual(92);
+  });
+
+  it('keeps an explicit side even when a rival occupies it', () => {
+    const input = { ...base, obstacles: [rivalBelow, rivalAbove] };
+    expect(resolveToolbarPosition('below', input)).toEqual({ placement: 'below', box: toolbarBox(input, 'below') });
+    expect(resolveToolbarPosition('above', input)).toEqual({ placement: 'above', box: toolbarBox(input, 'above') });
+  });
+
+  it('stays inside the viewport when every candidate is obstructed', () => {
+    const input = { ...base, obstacles: [{ top: 0, left: 0, right: 1000, bottom: 800 }] };
+    const { box } = resolveToolbarPosition('auto', input);
+    expect(overlaps(box, input.selection)).toBe(false);
+    expect(box.left).toBeGreaterThanOrEqual(8);
+    expect(box.top).toBeGreaterThanOrEqual(8);
+    expect(box.right).toBeLessThanOrEqual(992);
+    expect(box.bottom).toBeLessThanOrEqual(792);
   });
 });

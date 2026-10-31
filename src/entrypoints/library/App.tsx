@@ -1,5 +1,7 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { AnnotationEditAction } from '@/domain/editing';
+import type { LLMConfigView } from '@/domain/llm';
 import { loadLibrary } from '@/db/library';
 import { getLibraryMode, getPrefs } from '@/db/repo';
 import { buildPaletteForKeys, specFor } from '@/domain/colors';
@@ -18,6 +20,11 @@ import {
 import { effectiveColorUpdatedAt, type ColorKey } from '@/domain/types';
 import { requestBg } from '@/messaging/protocol';
 import { BulkColorActions } from './components/BulkColorActions';
+import { BulkEditActions } from './components/BulkEditActions';
+import { SelectionProvider } from './components/SelectionContext';
+import { LLMSettings } from './components/LLMSettings';
+import { SummaryActions } from './components/PageSummary';
+import { SummaryReview, type SummaryReviewEntry } from './components/SummaryReview';
 import { PageCard } from './components/PageCard';
 import { SiteGroup } from './components/SiteGroup';
 import { Timeline } from './components/Timeline';
@@ -49,6 +56,23 @@ export function App() {
   const [filters, setFilters] = useState<LibraryFilters>(EMPTY_FILTERS);
   const [fromText, setFromText] = useState('');
   const [toText, setToText] = useState('');
+  const [selecting, setSelecting] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [llmConfig, setLlmConfig] = useState<LLMConfigView | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [review, setReview] = useState<SummaryReviewEntry[] | null>(null);
+  const [generating, setGenerating] = useState(false);
+  const [summarySaving, setSummarySaving] = useState(false);
+  const [summaryError, setSummaryError] = useState('');
+  const generationRun = useRef(0);
+  const busy = bulkBusy || generating || summarySaving;
+  useEffect(() => {
+    void requestBg({ type: 'llm:status' }).then((result) => {
+      if (result) setLlmConfig(result.config);
+    });
+    return () => { generationRun.current++; };
+  }, []);
 
   const customColors = prefs?.customColors ?? [];
   const allPages = useMemo(() => (input ? buildLibrary(input) : []), [input]);
@@ -87,6 +111,68 @@ export function App() {
   );
   const origins = useMemo(() => availableOrigins(collectionPages), [collectionPages]);
   const pages = useMemo(() => filterLibrary(allPages, filters), [allPages, filters]);
+  const visibleIds = useMemo(() => new Set(pages.flatMap((page) => page.annotations.map((entry) => entry.id))), [pages]);
+  useEffect(() => {
+    setSelectedIds((current) => {
+      const remaining = new Set([...current].filter((id) => visibleIds.has(id)));
+      return remaining.size === current.size ? current : remaining;
+    });
+  }, [visibleIds]);
+  const selectedPageIds = pages.filter((page) => page.annotations.some((entry) => selectedIds.has(entry.id))).map((page) => page.sourceId);
+  const toggleMany = (ids: string[]) => {
+    if (busy) return;
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      const remove = ids.every((id) => current.has(id));
+      for (const id of ids) if (visibleIds.has(id)) { if (remove) next.delete(id); else next.add(id); }
+      return next;
+    });
+  };
+  const applySelected = async (action: AnnotationEditAction): Promise<number> => {
+    const expected = (input?.annotations ?? []).filter((row) => selectedIds.has(row.id) && visibleIds.has(row.id))
+      .map((row) => ({ id: row.id, updatedAt: row.updatedAt, deletedAt: row.deletedAt, colorUpdatedAt: effectiveColorUpdatedAt(row) }));
+    setBulkBusy(true);
+    try {
+      const result = await requestBg({ type: 'annotations:edit', expected, action });
+      if (!result || result.error) throw new Error(result?.error ?? 'Could not edit selected annotations.');
+      setSelectedIds(new Set());
+      return result.updated;
+    } finally { setBulkBusy(false); }
+  };
+  const generate = async (sourceIds: string[]) => {
+    if (!llmConfig?.enabled) { setSettingsOpen(true); return; }
+    const targets = [...new Set(sourceIds)].map((sourceId) => ({
+      sourceId, title: allPages.find((page) => page.sourceId === sourceId)?.title ?? 'Page', pending: true,
+    }));
+    if (targets.length === 0) return;
+    const run = ++generationRun.current;
+    setReview(targets); setGenerating(true); setSummaryError('');
+    for (const target of targets) {
+      if (generationRun.current !== run) return;
+      try {
+        const result = await requestBg({ type: 'llm:generate', sourceId: target.sourceId });
+        if (generationRun.current !== run) return;
+        setReview((current) => current?.map((entry) => entry.sourceId === target.sourceId
+          ? { ...entry, pending: false, draft: result?.draft, error: result?.error ?? (!result?.draft ? 'Generation failed.' : undefined) } : entry) ?? null);
+      } catch {
+        if (generationRun.current !== run) return;
+        setReview((current) => current?.map((entry) => entry.sourceId === target.sourceId
+          ? { ...entry, pending: false, error: 'The request was interrupted. Try again.' } : entry) ?? null);
+      }
+    }
+    if (generationRun.current === run) setGenerating(false);
+  };
+  const closeReview = () => { generationRun.current++; setGenerating(false); setReview(null); };
+  const saveSummaries = async () => {
+    const changes = (review ?? []).flatMap((entry) => entry.draft ? [entry.draft] : []);
+    setSummarySaving(true); setSummaryError('');
+    try {
+      const result = await requestBg({ type: 'summary:save', changes });
+      if (!result || result.error) throw new Error(result?.error ?? 'Could not save main content.');
+      closeReview();
+    } catch (reason) { setSummaryError(reason instanceof Error ? reason.message : 'Could not save main content.'); }
+    finally { setSummarySaving(false); }
+  };
   const availableColorKeys = useMemo(() => new Set(usedColors), [usedColors]);
   const availableOriginKeys = useMemo(
     () => new Set(origins.map((origin) => origin.origin)),
@@ -175,6 +261,8 @@ export function App() {
   const yesterday = dayKey(now - 86_400_000);
 
   return (
+    <SelectionProvider value={{ selectedIds, enabled: selecting, busy, toggle: (id) => toggleMany([id]), toggleMany }}>
+    <SummaryActions.Provider value={{ enabled: llmConfig?.enabled ?? false, busy, generate: (ids) => void generate(ids), configure: () => setSettingsOpen(true) }}>
     <div className="library">
       <header className="library-header">
         <div className="title-row">
@@ -184,9 +272,11 @@ export function App() {
               ? 'Loading…'
               : `${shown} of ${total} annotation${total === 1 ? '' : 's'}`}
           </span>
+          <button className="chip llm-settings-trigger" type="button" data-llm="settings" disabled={!llmConfig || busy}
+            onClick={() => setSettingsOpen(true)}>LLM · {llmConfig?.enabled ? 'On' : 'Off'}</button>
         </div>
 
-        <div className="controls">
+        <div className="controls" inert={bulkBusy}>
           <input
             className="search"
             type="search"
@@ -209,7 +299,7 @@ export function App() {
           </div>
         </div>
 
-        <div className="filters">
+        <div className="filters" inert={bulkBusy}>
           <div className="chips" role="group" aria-label="Colours">
             {palette.map((entry) => (
               <button
@@ -287,15 +377,21 @@ export function App() {
             </button>
           )}
           <BulkColorActions
+            onSelect={() => setSelecting(true)}
             palette={bulkPalette}
             counts={liveColorCounts}
             preferredSource={filters.colors.length === 1 ? filters.colors[0] : undefined}
             onReplace={replaceColors}
           />
         </div>
+        {selecting && <BulkEditActions count={selectedIds.size} pageCount={selectedPageIds.length}
+          palette={bulkPalette} deletedOnly={filters.deletedOnly} busy={busy}
+          onSelectAll={() => setSelectedIds(new Set(visibleIds))} onClear={() => setSelectedIds(new Set())}
+          onExit={() => { setSelecting(false); setSelectedIds(new Set()); }}
+          onApply={applySelected} onSummarize={() => void generate(selectedPageIds)} />}
       </header>
 
-      <main className="library-body" data-layout={mode}>
+      <main className="library-body" data-layout={mode} inert={bulkBusy}>
         {input === undefined ? null : libraryTotal === 0 ? (
           <div className="empty">
             <h2>No annotations yet</h2>
@@ -338,6 +434,13 @@ export function App() {
           ))
         )}
       </main>
+      {settingsOpen && llmConfig && <LLMSettings config={llmConfig} onSaved={setLlmConfig} onClose={() => setSettingsOpen(false)} />}
+      {review && <SummaryReview entries={review} generating={generating} saving={summarySaving} error={summaryError}
+        onClose={closeReview} onSave={() => void saveSummaries()}
+        onChange={(sourceId, content) => setReview((current) => current?.map((entry) => entry.sourceId === sourceId && entry.draft
+          ? { ...entry, draft: { ...entry.draft, content } } : entry) ?? null)} />}
     </div>
+    </SummaryActions.Provider>
+    </SelectionProvider>
   );
 }

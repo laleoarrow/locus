@@ -77,6 +77,13 @@ WHAT IT DOES
 • Open the Library to search every annotation across sites, travel through a
   day-by-day timeline, edit notes, restore deleted items, or replace one
   annotation colour across the whole live library.
+• Select annotation rows to change colour, append or replace notes, delete or
+  restore them together. Only the reviewed selection changes.
+• Keep editable main content for each page, separate from annotation notes.
+  Write it manually or request an AI draft using your own API address, model
+  and key. Review and save the draft when ready; the prompt is editable.
+• Auto toolbar placement follows late or moving in-page floating controls and
+  looks for nearby free space when both above and below are occupied.
 • Cmd/Ctrl+Z undoes your last highlight. Deletes are undoable, never silent.
 • Highlights come back after reload, and keep working when the page changes:
   each one records its text, surrounding context, character offsets and DOM
@@ -88,22 +95,28 @@ WHAT IT DOES
   the right edge of the toolbar and click ✕ — or use the popup switch.
 
 YOUR DATA STAYS YOURS
-Annotations live in your browser's local database. There is no Locus server and
-no account. Nothing about the pages you read is sent anywhere.
+Annotations and saved page summaries live in your browser's local database.
+There is no Locus server, account system or telemetry. The optional features
+below transmit only the data required for the action you enable or request.
 
-Two optional features reach the network, both switchable off:
+Three optional, user-controlled features reach the network:
 • Sync — you supply a WebDAV folder (Nutstore/坚果云, Nextcloud, any WebDAV
-  host). Your annotations sync through storage you own. Credentials are stored
-  locally and are never included in exported backup files.
+  host). Your annotations and saved page summaries sync through storage you
+  control. Credentials stay local and are excluded from backups.
 • Update check — fetches release information from GitHub to tell you when a new
-  version exists. No information about you is sent.
+  version exists. No annotation content is included.
+• AI organisation — off by default. After you configure an API, an explicit
+  generation request sends the chosen page's title, URL, saved live excerpts
+  and notes to that endpoint. No full article is fetched for this request.
+  Results are editable drafts until saved. API keys/configuration stay local
+  and are excluded from backups and WebDAV sync; provider terms apply.
 
 You can also export your whole library to a JSON file at any time, and import it
 back on another machine.
 
 WHAT IT IS NOT
-Not a reference manager: no bibliography, no citation formatting, no AI, no
-tags, no collaboration. Just highlights and notes that stay where you put them.
+Not a reference manager: no bibliography or citation formatting. Locus helps
+you keep and organise highlights, notes and page content while reading.
 
 Open source: https://github.com/laleoarrow/locus
 ```
@@ -122,6 +135,10 @@ Locus / 文迹 是一个安静的网页阅读标注层。选中文字、选颜�
 • 侧边栏列出本页所有标注，点击即滚动定位并闪烁提示。
 • 打开资料库可跨网站搜索全部标注，沿逐日时间线回顾阅读历程，编辑笔记、恢复已删除项目，
   或在整个未删除资料库中批量替换一种标注颜色。
+• 勾选标注后，可统一改色、追加或替换笔记、删除或恢复；操作只影响确认的选中项目。
+• 为每个页面保存独立于批注的“主要内容”。可手动编辑，也可配置自己的 API 地址、模型、
+  API key 和提示词，请求生成可编辑草稿，检查后再保存。
+• 自动位置会跟随延迟出现或移动的网页内浮动工具栏，上下都被占用时寻找附近空位。
 • Cmd/Ctrl+Z 撤销上一次高亮；删除可撤销，不会静默丢失。
 • 刷新后标注自动恢复，页面结构改变也能重新定位：每条标注同时记录原文、上下文、
   字符位置与 DOM 路径，按可用的线索依次恢复。若原文确实已不存在，标注会显示为
@@ -132,19 +149,23 @@ Locus / 文迹 是一个安静的网页阅读标注层。选中文字、选颜�
   或用弹窗中的开关。
 
 数据归你所有
-标注保存在浏览器本地数据库中。没有 Locus 服务器，也没有账号系统。你读了什么页面，
-不会被发送到任何地方。
+标注和已保存的页面主要内容保存在浏览器本地数据库中。没有 Locus 服务器、账号系统或
+遥测。以下可选功能仅发送你启用或主动请求的操作所需的数据。
 
-只有两项可选功能会联网，且都可关闭：
-• 同步——由你提供 WebDAV 目录（坚果云、Nextcloud 等任意 WebDAV 服务），标注通过
-  你自己的存储空间同步。凭据仅保存在本地，且永不写入导出的备份文件。
-• 更新检查——从 GitHub 获取版本信息以提示有新版本，不发送任何你的信息。
+三项可选功能会联网，均由你控制：
+• 同步——由你提供 WebDAV 目录（坚果云、Nextcloud 等任意 WebDAV 服务），标注和已保存
+  的页面主要内容通过你自己的存储空间同步。凭据仅保存在本地，不写入备份。
+• 更新检查——从 GitHub 获取版本信息以提示有新版本，不发送批注内容。
+• AI 整理——默认关闭。配置 API 后，仅在你主动请求生成时，将所选页面的标题、网址、
+  已保存且未删除的摘录和笔记发送到指定 API；不会为此抓取全文。结果先作为草稿展示，
+  保存后才写入页面主要内容。API key 和配置仅存本地，不进入备份或 WebDAV 同步；
+  服务商的数据处理和计费规则适用。
 
 你也可以随时把整个标注库导出为 JSON 文件，并在另一台设备上导入。
 
 它不是什么
-不是文献管理器：没有参考文献、没有引文格式、没有 AI、没有标签、没有协作。
-只有留在原处的高亮和笔记。
+不是文献管理器，不提供参考文献和引文格式功能。Locus 帮助你在阅读时保存和整理
+高亮、笔记与页面主要内容。
 
 开源地址：https://github.com/laleoarrow/locus
 ```
@@ -165,19 +186,23 @@ Both stores require a reason for every permission. Copy these verbatim.
 | `scripting` | Registers the content script that renders highlights on pages the user has enabled. |
 | `tabs` | Reads the active tab's URL so the side panel can show that page's annotations, and messages the tab to scroll to a highlight. |
 | `alarms` | Schedules the periodic WebDAV sync and the optional update check. |
-| `host_permissions` (`http://*/*`, `https://*/*`) | Annotation must work on any article the user chooses to read; the user can disable any site individually. Page content is only read to locate highlights and is never transmitted. |
+| `host_permissions` (`http://*/*`, `https://*/*`) | Annotation works on arbitrary reading pages, with per-site disable controls. Optional sync and explicitly requested AI generation connect to user-configured HTTP(S) endpoints; AI receives the chosen page's title, URL and saved excerpts/notes only for that request. |
 
 **Remote code:** No. All code is bundled in the package; nothing is fetched and
 executed at runtime.
 
-**Data collection disclosures** — declare *none* for every category. Supporting
-statement:
+**Data handling disclosures** — describe the user-controlled transfers below
+accurately in each store's current questionnaire. Do not use a blanket claim
+that no page data ever leaves the device. Supporting statement:
 
-> Locus has no backend and no account system. Annotations are stored in the
-> browser's local IndexedDB. Page content never leaves the device. WebDAV sync
-> is off until the user configures a server and enables it. Update checking is
-> enabled by default and requests only public release metadata from the GitHub
-> API; it sends no user data and can be switched off at any time.
+> Locus has no hosted backend, account system or telemetry. Annotations and
+> saved page summaries are stored in local IndexedDB. Optional WebDAV sync
+> transfers the library to the user's configured server. AI is off by default;
+> only an explicit generation request sends the chosen page's title, URL, saved
+> live excerpts and notes to the configured API. Generated text is a draft until
+> saved. API keys and sync credentials stay in local extension storage and are
+> excluded from backups/sync. The optional update check fetches public GitHub
+> release metadata without annotation content.
 
 **Privacy policy URL:** `https://github.com/laleoarrow/locus/blob/main/docs/PRIVACY.md`
 

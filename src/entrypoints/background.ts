@@ -1,10 +1,13 @@
 import { defineBackground } from 'wxt/utils/define-background';
 import { recordAnchorStates } from '@/db/library';
+import { editAnnotations, getPageSummary, savePageSummaries } from '@/db/editing';
 import * as repo from '@/db/repo';
 import { db } from '@/db/schema';
 import { toUrlKey } from '@/domain/url';
 import { isConfigComplete, type SyncState } from '@/domain/sync';
 import { isNewerVersion } from '@/domain/version';
+import { generateSummary } from '@/llm/client';
+import { getLLMConfig, getLLMConfigView, saveLLMConfig } from '@/llm/store';
 import type { BgRequest, BgResponseFor, ChangeBroadcast, TabMessage } from '@/messaging/protocol';
 import { runSync, testConnection, type SyncResult } from '@/sync/engine';
 import {
@@ -310,6 +313,66 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
       await bestEffortBroadcastForAnnotations(message.ids);
       return { ok: true };
     }
+    case 'annotations:edit': {
+      try {
+        const result = await editAnnotations(message.expected, message.action);
+        if (result.updated > 0) {
+          scheduleSync();
+          await bestEffortBroadcastForAnnotations(result.annotationIds, message.action.type === 'color');
+        }
+        return { updated: result.updated };
+      } catch (error) {
+        return { updated: 0, error: error instanceof Error ? error.message : 'Could not edit annotations.' };
+      }
+    }
+    case 'summary:save': {
+      try {
+        const result = await savePageSummaries(message.changes);
+        if (result.updated > 0) scheduleSync();
+        return result;
+      } catch (error) {
+        return { updated: 0, error: error instanceof Error ? error.message : 'Could not save main content.' };
+      }
+    }
+    case 'llm:status':
+      return { config: await getLLMConfigView() };
+    case 'llm:save': {
+      try {
+        return { config: await saveLLMConfig(message.patch) };
+      } catch (error) {
+        return {
+          config: await getLLMConfigView(),
+          error: error instanceof Error ? error.message : 'Could not save LLM settings.',
+        };
+      }
+    }
+    case 'llm:generate': {
+      try {
+        const config = await getLLMConfig();
+        const source = await db.sources.get(message.sourceId);
+        if (!source) throw new Error('This page no longer exists.');
+        const readNotes = async () => (await db.annotations.where('sourceId').equals(source.id).toArray())
+          .filter((row) => row.deletedAt === 0).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id))
+          .map((row) => ({ id: row.id, quote: row.exact, note: row.comment }));
+        const notes = await readNotes();
+        if (notes.length === 0) throw new Error('This page has no live annotations to organise.');
+        const summary = await getPageSummary(source.id);
+        const content = await generateSummary(config, {
+          title: source.title,
+          url: source.url,
+          annotations: notes.map(({ quote, note }) => ({ quote, note })),
+        });
+        if ((await getLLMConfig()).revision !== config.revision) {
+          throw new Error('LLM settings changed during generation. Generate again with the current settings.');
+        }
+        if (JSON.stringify(await readNotes()) !== JSON.stringify(notes)) {
+          throw new Error('The page notes changed during generation. Generate again from the updated notes.');
+        }
+        return { draft: { sourceId: source.id, content, expectedUpdatedAt: summary?.updatedAt ?? 0 } };
+      } catch (error) {
+        return { error: error instanceof Error ? error.message : 'Could not generate main content.' };
+      }
+    }
     case 'annotations:replace-color': {
       try {
         const result = await repo.replaceAnnotationColor(
@@ -517,8 +580,13 @@ export default defineBackground(() => {
   chrome.permissions.onAdded.addListener(() => void syncRegistration());
   chrome.permissions.onRemoved.addListener(() => void syncRegistration());
 
-  chrome.runtime.onMessage.addListener((message: BgRequest, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((message: BgRequest, sender, sendResponse) => {
     if (!message || typeof message.type !== 'string') return false;
+    if ((message.type.startsWith('llm:') || message.type === 'summary:save' || message.type === 'annotations:edit') &&
+      !sender.url?.startsWith(chrome.runtime.getURL(''))) {
+      sendResponse({ error: 'Open the Locus library to use this action.' });
+      return false;
+    }
     handleRequest(message).then(sendResponse, (error: unknown) => {
       console.error('[locus] background request failed', message.type, error);
       sendResponse(undefined);
