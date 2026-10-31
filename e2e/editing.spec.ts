@@ -31,6 +31,38 @@ async function enterSelection(library: Page): Promise<void> {
   await expect(library.locator('.bulk-edit-panel')).toBeVisible();
 }
 
+async function expectPageSelectionGutter(library: Page): Promise<void> {
+  for (const card of await library.locator('.page-card').all()) {
+    await card.locator('[data-page-select]').evaluate((element) => element.scrollIntoView({ block: 'center' }));
+    const layout = await card.evaluate((element) => {
+      const checkbox = element.querySelector<HTMLInputElement>('[data-page-select]')!;
+      const label = checkbox.closest<HTMLElement>('.page-select')!;
+      const title = element.querySelector('h2')!;
+      const box = checkbox.getBoundingClientRect();
+      const original = title.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      // Hiding the out-of-flow control must not give the title more room.
+      const previous = label.style.display;
+      label.style.display = 'none';
+      const withoutControl = title.getBoundingClientRect();
+      label.style.display = previous;
+      return {
+        checkboxLeft: box.left, checkboxRight: box.right, titleLeft: original.left, titleRight: original.right,
+        titleShift: Math.abs(original.left - withoutControl.left),
+        titleWidthChange: Math.abs(original.width - withoutControl.width),
+        hitControl: hit !== null && label.contains(hit), viewportWidth: innerWidth,
+      };
+    });
+    expect(layout.checkboxLeft).toBeGreaterThanOrEqual(0);
+    expect(layout.checkboxRight).toBeLessThanOrEqual(layout.titleLeft);
+    expect(layout.titleRight).toBeLessThanOrEqual(layout.viewportWidth);
+    expect(layout.titleShift).toBeLessThan(1);
+    expect(layout.titleWidthChange).toBeLessThan(1);
+    expect(layout.hitControl).toBe(true);
+  }
+  expect(await library.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+}
+
 test('E53: selected colour, note, delete and restore actions preserve unselected annotations', async ({
   context, serviceWorker, extensionId,
 }) => {
@@ -211,6 +243,7 @@ test('E77: visible page checkboxes select collapsed annotations and support part
   await expect(library.locator('[data-page-select]')).toHaveCount(2);
   await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
   await expect(nested.locator('.annotation')).toHaveCount(5);
+  await expectPageSelectionGutter(library);
   const styleBefore = await nested.evaluate((element) => {
     const style = getComputedStyle(element);
     return [style.backgroundColor, style.borderColor, style.boxShadow].join('|');
@@ -270,6 +303,7 @@ test('E78: the selection entry respects filters and keeps batch controls usable 
   await library.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await expect(library.locator('[data-selection="color"]')).toBeInViewport();
   await library.setViewportSize({ width: 390, height: 650 });
+  await expectPageSelectionGutter(library);
   await library.locator('[data-selection="comment"]').click();
   await library.locator('[data-selection="note-text"]').fill('Only the filtered page receives this note.');
   const apply = library.locator('[data-selection="apply"]');

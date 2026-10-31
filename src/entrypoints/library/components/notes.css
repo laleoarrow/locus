@@ -34,7 +34,7 @@
 .summary-content a { color: var(--locus-accent); }
 .summary-drafts section + section { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--locus-border); }
 .summary-drafts h3 { font-size: 14px; overflow-wrap: anywhere; }
-.page-select { display: flex; flex: 0 0 24px; align-items: center; justify-content: center; width: 24px; height: 24px; margin-top: -2px; cursor: pointer; }
+.page-select { position: absolute; left: -12px; top: 12px; display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; background: var(--locus-bg); cursor: pointer; }
 .page-select input { width: 16px; height: 16px; margin: 0; accent-color: var(--locus-accent); cursor: pointer; }
 .page-select input:focus-visible { outline: 2px solid var(--locus-accent); outline-offset: 3px; }
 .page-select input:disabled { cursor: default; }

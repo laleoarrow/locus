@@ -322,6 +322,7 @@ body {
 .empty p { margin: 0; font-size: 13px; }
 
 .page-card {
+  position: relative;
   border: 0.5px solid var(--locus-border);
   border-radius: 14px;
   background: var(--locus-card);
