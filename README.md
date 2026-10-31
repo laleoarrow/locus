@@ -115,7 +115,9 @@ bring them back reliably — even when the page shifts under you.
 - **Sync through storage you own.** Point Locus at a WebDAV folder (坚果云 /
   Nutstore, Nextcloud, anything WebDAV) once, and every device keeps itself
   merged — no account, no server of ours. Or just use **Export / Import** for a
-  plain JSON backup you can carry around.
+  plain JSON backup you can carry around. Sync uploads only changed annotated
+  pages and a small index; unchanged checks upload nothing. Unannotated browsing
+  history is excluded, and quota errors pause automatic upload retries.
 - **Local first.** Annotations and saved page summaries live in IndexedDB;
   Locus has no account system, hosted backend or telemetry. Three optional
   features use the network: WebDAV sync to your chosen storage, GitHub release
@@ -230,12 +232,14 @@ Side panel → **Sync (WebDAV)** → *Setup*:
 
 Hit *Test*, flip the switch on, and Locus keeps that folder and this browser
 merged — pushing a few seconds after you annotate and pulling on a timer. Point
-a second device at the same folder and both converge. Any WebDAV host works
-(Nextcloud, ownCloud, a self-hosted server); use an **app password**, not your
+a second device running **0.9.0 or later** at the same folder and both converge.
+Upgrade every syncing device before using the new page-based protocol: older
+clients stop with an unsupported-format message instead of overwriting it. Use a WebDAV host with reliable ETags and conditional writes
+(for example compatible Nextcloud, ownCloud or self-hosted installations); use an **app password**, not your
 account password.
 
 Prefer files? **Backup → Export** writes the whole library to JSON, and
-**Import** merges one back in — the same merge as sync, so it is safe to import
+**Import** merges one back in — shared non-destructive merge rules make it safe to import
 the same file twice.
 
 ## Publishing to the stores

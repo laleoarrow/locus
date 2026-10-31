@@ -1,3 +1,6 @@
+import 'fake-indexeddb/auto';
+import { webcrypto } from 'node:crypto';
+import { syncCache } from '@/db/syncCache';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as repo from '@/db/repo';
 import { type BackupFile } from '@/domain/backup';
@@ -16,7 +19,9 @@ const backup: BackupFile = {
   documents: [], sources: [], annotations: [], anchors: [], settings: [], pageSummaries: [],
 };
 
-beforeEach(() => {
+beforeEach(async () => {
+  vi.stubGlobal('crypto', webcrypto);
+  await syncCache.entries.clear();
   vi.mocked(repo.exportBackup).mockResolvedValue(backup);
   vi.mocked(repo.importBackup).mockResolvedValue({
     annotationsAdded: 1, annotationsUpdated: 0, annotationsSkipped: 0,
@@ -41,7 +46,7 @@ describe('sync configuration changes during a request', () => {
     });
     vi.stubGlobal('fetch', fetcher);
     const pending = runSync(config, EMPTY_SYNC_STATE, '0.8.1', async () => current);
-    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
     current = false;
     release(new Response(JSON.stringify(backup), { headers: { etag: 'remote-etag' } }));
     const outcome = await pending;
@@ -49,7 +54,7 @@ describe('sync configuration changes during a request', () => {
     expect(outcome.result.error).toContain('settings changed');
     expect(repo.importBackup).not.toHaveBeenCalled();
     expect(repo.exportBackup).not.toHaveBeenCalled();
-    expect(fetcher.mock.calls.map(([, options]) => options.method)).toEqual(['MKCOL', 'GET']);
+    expect(fetcher.mock.calls.map(([, options]) => options.method)).toEqual(['GET']);
   });
 
   it('does not PUT when configuration changes while preparing the local export', async () => {
@@ -61,7 +66,7 @@ describe('sync configuration changes during a request', () => {
     vi.stubGlobal('fetch', fetcher);
     const outcome = await runSync(config, EMPTY_SYNC_STATE, '0.8.1', async () => current);
     expect(outcome.result.ok).toBe(false);
-    expect(fetcher.mock.calls.map(([, options]) => options.method)).toEqual(['MKCOL', 'GET']);
+    expect(fetcher.mock.calls.map(([, options]) => options.method)).toEqual(['GET']);
   });
 
   it('never makes a request when its configuration was already superseded', async () => {

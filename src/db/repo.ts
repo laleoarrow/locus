@@ -13,6 +13,7 @@ import {
 } from '@/domain/colors';
 import type { GroupMode } from '@/domain/library';
 import { effectiveColorUpdatedAt } from '@/domain/types';
+import { annotationBaseWins, stableJSON } from '@/domain/syncFormat';
 import type {
   AnchorPayload,
   AnchorRecord,
@@ -373,14 +374,11 @@ export async function setUpdateInfo(info: UpdateInfo): Promise<void> {
 
 /** Snapshot the whole library into the portable backup format. */
 export async function exportBackup(appVersion: string): Promise<BackupFile> {
-  const [documents, sources, annotations, anchors, pageSummaries, settings] = await Promise.all([
-    db.documents.toArray(),
-    db.sources.toArray(),
-    db.annotations.toArray(),
-    db.anchors.toArray(),
-    db.pageSummaries.toArray(),
-    db.settings.toArray(),
-  ]);
+  const [documents, sources, annotations, anchors, pageSummaries, settings] = await db.transaction('r',
+    [db.documents, db.sources, db.annotations, db.anchors, db.pageSummaries, db.settings], () => Promise.all([
+      db.documents.toArray(), db.sources.toArray(), db.annotations.toArray(),
+      db.anchors.toArray(), db.pageSummaries.toArray(), db.settings.toArray(),
+    ]));
   return {
     format: BACKUP_FORMAT,
     formatVersion: BACKUP_FORMAT_VERSION,
@@ -424,7 +422,7 @@ function isSameAnnotation(
  * - An incoming annotation identical to a local one in every meaningful field
  *   is treated as already present rather than duplicated on the page.
  */
-export async function importBackup(file: BackupFile): Promise<ImportSummary> {
+export async function importBackup(file: BackupFile, options: { preserveAnnotationIds?: boolean } = {}): Promise<ImportSummary> {
   const summary: ImportSummary = {
     annotationsAdded: 0,
     annotationsUpdated: 0,
@@ -488,7 +486,8 @@ export async function importBackup(file: BackupFile): Promise<ImportSummary> {
 
         const local = await db.annotations.get(annotation.id);
         if (local) {
-          const incomingBaseWins = annotation.updatedAt > local.updatedAt;
+          const incomingBaseWins = options.preserveAnnotationIds
+            ? annotationBaseWins(annotation, local) : annotation.updatedAt > local.updatedAt;
           const localColorAt = effectiveColorUpdatedAt(local);
           const incomingColorAt = effectiveColorUpdatedAt(annotation);
           const incomingColorWins =
@@ -498,7 +497,12 @@ export async function importBackup(file: BackupFile): Promise<ImportSummary> {
           const mergedColorAt = Math.max(localColorAt, incomingColorAt);
           const colorChanged =
             mergedColor !== local.color || mergedColorAt !== effectiveColorUpdatedAt(local);
-          if (!incomingBaseWins && !colorChanged) {
+          const localAnchor = options.preserveAnnotationIds
+            ? await db.anchors.where('annotationId').equals(annotation.id).first() : undefined;
+          const anchorChanged = Boolean(options.preserveAnnotationIds && anchor &&
+            (incomingBaseWins || (!annotationBaseWins(local, annotation) &&
+              (!localAnchor || stableJSON({ ...anchor, id: '' }) > stableJSON({ ...localAnchor, id: '' })))));
+          if (!incomingBaseWins && !colorChanged && !anchorChanged) {
             summary.annotationsSkipped++;
             continue;
           }
@@ -507,7 +511,7 @@ export async function importBackup(file: BackupFile): Promise<ImportSummary> {
             color: mergedColor,
             colorUpdatedAt: mergedColorAt,
           });
-          if (incomingBaseWins && anchor) {
+          if ((incomingBaseWins || anchorChanged) && anchor) {
             await db.anchors.where('annotationId').equals(annotation.id).delete();
             await db.anchors.put({ ...anchor, annotationId: annotation.id });
           }
@@ -519,7 +523,7 @@ export async function importBackup(file: BackupFile): Promise<ImportSummary> {
         // independently on the other machine before adding a duplicate.
         const siblings = await db.annotations.where('sourceId').equals(sourceId).toArray();
         let duplicate = false;
-        for (const sibling of siblings) {
+        for (const sibling of options.preserveAnnotationIds ? [] : siblings) {
           const siblingAnchor = await db.anchors.where('annotationId').equals(sibling.id).first();
           if (isSameAnnotation(sibling, annotation, siblingAnchor, anchor)) {
             duplicate = true;

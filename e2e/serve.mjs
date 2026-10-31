@@ -19,14 +19,17 @@ const MIME = {
 
 // --- WebDAV mock -----------------------------------------------------------
 // Supports exactly what the sync engine uses: Basic auth, MKCOL, GET, PUT,
-// HEAD, ETags and If-Match / If-None-Match preconditions.
+// HEAD, directories, conditional GETs and atomic ETag preconditions.
 const DAV_USER = 'tester';
 const DAV_PASS = 'app-password';
 const davFiles = new Map(); // path -> { body, etag }
 const davCollections = new Set(['/dav/']);
+const davRequests = [];
 let etagCounter = 0;
 let nextPutDelayMs = 0;
+let nextPutDelayPath = '';
 let delayedPutActive = false;
+let davFault = null;
 
 function davAuthorized(req) {
   const header = req.headers.authorization ?? '';
@@ -45,9 +48,29 @@ function readBody(req) {
 }
 
 async function handleDav(req, res, pathname) {
+  const body = req.method === 'PUT' ? await readBody(req) : '';
+  const record = {
+    method: req.method, path: pathname, status: 0,
+    requestBytes: Buffer.byteLength(body), responseBytes: 0,
+    ifMatch: req.headers['if-match'] ?? '', ifNoneMatch: req.headers['if-none-match'] ?? '',
+  };
+  davRequests.push(record);
+  const reply = (status, value = '', headers = {}) => {
+    record.status = status;
+    const payload = req.method === 'HEAD' || status === 304 ? '' : value;
+    record.responseBytes = Buffer.byteLength(payload);
+    res.writeHead(status, headers);
+    res.end(payload);
+  };
   if (!davAuthorized(req)) {
-    res.writeHead(401, { 'www-authenticate': 'Basic realm="dav"' });
-    res.end('unauthorized');
+    reply(401, 'unauthorized', { 'www-authenticate': 'Basic realm="dav"' });
+    return;
+  }
+  if (davFault && pathname.startsWith(davFault.prefix) &&
+    (!davFault.method || req.method === davFault.method)) {
+    const fault = davFault;
+    if (fault.remaining > 0 && --fault.remaining === 0) davFault = null;
+    reply(fault.status, fault.body, { 'content-type': 'application/json' });
     return;
   }
 
@@ -57,60 +80,42 @@ async function handleDav(req, res, pathname) {
   switch (req.method) {
     case 'MKCOL': {
       if (davCollections.has(pathname)) {
-        res.writeHead(405);
-        res.end('exists');
+        reply(405, 'exists');
         return;
       }
+      const parent = pathname.replace(/[^/]+\/$/, '');
+      if (!davCollections.has(parent)) { reply(409, 'parent missing'); return; }
       davCollections.add(pathname);
-      res.writeHead(201);
-      res.end();
+      reply(201);
       return;
     }
     case 'HEAD':
     case 'GET': {
       if (isCollection) {
         if (!davCollections.has(pathname)) {
-          res.writeHead(404);
-          res.end();
+          reply(404);
           return;
         }
-        res.writeHead(200, { 'content-type': 'text/plain' });
-        res.end(req.method === 'HEAD' ? undefined : 'collection');
+        reply(200, 'collection', { 'content-type': 'text/plain' });
         return;
       }
       if (!existing) {
-        res.writeHead(404);
-        res.end();
+        reply(404);
         return;
       }
-      res.writeHead(200, { 'content-type': 'application/json', etag: existing.etag });
-      res.end(req.method === 'HEAD' ? undefined : existing.body);
+      if (req.headers['if-none-match'] === '*' || req.headers['if-none-match'] === existing.etag) {
+        reply(304, '', { etag: existing.etag });
+        return;
+      }
+      reply(200, existing.body, { 'content-type': 'application/json', etag: existing.etag });
       return;
     }
     case 'PUT': {
-      const ifMatch = req.headers['if-match'];
-      const ifNoneMatch = req.headers['if-none-match'];
-      if (ifNoneMatch === '*' && existing) {
-        res.writeHead(412);
-        res.end('exists');
-        return;
-      }
-      if (ifMatch && ifMatch !== '*' && existing && ifMatch !== existing.etag) {
-        res.writeHead(412);
-        res.end('etag mismatch');
-        return;
-      }
-      if (ifMatch && !existing) {
-        res.writeHead(412);
-        res.end('missing');
-        return;
-      }
       // Read the complete request before exposing the delay as active. Tests
       // can then mutate IndexedDB while this PUT is stalled and know that its
       // payload is an immutable snapshot of the state from before the edit.
-      const body = await readBody(req);
-      const delayMs = nextPutDelayMs;
-      nextPutDelayMs = 0;
+      const delayMs = !nextPutDelayPath || nextPutDelayPath === pathname ? nextPutDelayMs : 0;
+      if (delayMs) { nextPutDelayMs = 0; nextPutDelayPath = ''; }
       if (delayMs > 0) {
         delayedPutActive = true;
         try {
@@ -119,15 +124,26 @@ async function handleDav(req, res, pathname) {
           delayedPutActive = false;
         }
       }
+      // Evaluate against the value at commit time. A second client may have
+      // committed while this PUT was held; the stale writer must receive 412.
+      const current = davFiles.get(pathname);
+      const ifMatch = req.headers['if-match'];
+      const ifNoneMatch = req.headers['if-none-match'];
+      if (current && (ifNoneMatch === '*' || ifNoneMatch === current.etag)) {
+        reply(412, 'exists'); return;
+      }
+      if (ifMatch && (!current || (ifMatch !== '*' && ifMatch !== current.etag))) {
+        reply(412, 'etag mismatch'); return;
+      }
+      const parent = pathname.slice(0, pathname.lastIndexOf('/') + 1);
+      if (!davCollections.has(parent)) { reply(409, 'parent missing'); return; }
       const etag = `"v${++etagCounter}"`;
       davFiles.set(pathname, { body, etag });
-      res.writeHead(existing ? 204 : 201, { etag });
-      res.end();
+      reply(current ? 204 : 201, '', { etag });
       return;
     }
     default: {
-      res.writeHead(405);
-      res.end();
+      reply(405);
     }
   }
 }
@@ -213,10 +229,46 @@ createServer(async (req, res) => {
   // Test hook: wipe the mock server between e2e cases.
   if (pathname === '/__dav-reset') {
     davFiles.clear();
+    davCollections.clear();
+    davCollections.add('/dav/');
+    davRequests.length = 0;
+    davFault = null;
+    etagCounter = 0;
     nextPutDelayMs = 0;
+    nextPutDelayPath = '';
     delayedPutActive = false;
     res.writeHead(200);
     res.end('reset');
+    return;
+  }
+
+  if (pathname === '/__dav-stats-reset') {
+    davRequests.length = 0;
+    res.writeHead(200); res.end('reset'); return;
+  }
+  if (pathname === '/__dav-state') {
+    const prefix = url.searchParams.get('prefix') ?? '/dav/';
+    const requests = davRequests.filter((entry) => entry.path.startsWith(prefix));
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({
+      requests,
+      uploadBytes: requests.reduce((sum, entry) => sum + entry.requestBytes, 0),
+      downloadBytes: requests.reduce((sum, entry) => sum + entry.responseBytes, 0),
+      files: [...davFiles].filter(([path]) => path.startsWith(prefix))
+        .map(([path, file]) => ({ path, etag: file.etag, bytes: Buffer.byteLength(file.body) })),
+      collections: [...davCollections].filter((path) => path.startsWith(prefix)),
+    }));
+    return;
+  }
+  if (pathname === '/__dav-fault' && req.method === 'POST') {
+    const value = JSON.parse(await readBody(req));
+    davFault = value ? {
+      prefix: value.prefix ?? '/dav/', method: value.method ?? '',
+      status: value.status ?? 503, body: value.body ?? 'fixture failure',
+      remaining: value.count ?? 1,
+    } : null;
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ armed: davFault !== null }));
     return;
   }
 
@@ -231,6 +283,7 @@ createServer(async (req, res) => {
       return;
     }
     nextPutDelayMs = delayMs;
+    nextPutDelayPath = url.searchParams.get('path') ?? '';
     res.writeHead(200, { 'content-type': 'application/json' });
     res.end(JSON.stringify({ armed: true, delayMs }));
     return;

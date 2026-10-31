@@ -14,6 +14,7 @@ This file is the coordination board for concurrent work in this repository.
 
 | Task | Owner | Status | Claimed files | Notes |
 | --- | --- | --- | --- | --- |
+| Make WebDAV sync upload only changed annotated pages (0.9.0) | Codex `/root` + subagents | done | inspect_collision: sync format/engine/domain types, DB snapshot/cache/import support, unit tests; root: lib/webdav.ts, background scheduling/quota, status UI, docs/version; placement_e2e: e2e server/specs; review_placement: read-only review | User requested minimal granular upload after provider quota exhausted. Existing remote ~1.59 MB largely unannotated browsing metadata. Pause live auto-sync; all tests mocked. New immutable per-page blobs + CAS v4 manifest, meaningful-data-only projection, unchanged zero PUT, quota-specific errors and no automatic retries. |
 | Add verified LLM and WebDAV connection status (0.8.1) | Codex `/root` + subagents | done | Root: library App/status UI/styles, version/docs; inspect_collision: domain status, llm/sync stores/clients/engine, background/protocol, unit tests; placement_e2e: e2e/status.spec.ts and mock server | User requested Wattson-style status area. Distinguish configured from verified; test explicitly; timestamp results and invalidate when settings change. Corrected the existing installation credential paste and verified actual-page generation. Final gates: typecheck, 226 unit, 59 browser tests, production packages; production LLM/WebDAV checks both succeeded with saved local configuration in an isolated profile. 0.8.1 files are installed in place; live Edge Reload remains pending because macOS locked. |
 | Correct date-sensitive timeline E44 expectation | Codex `/root/review_placement` | done | `e2e/timeline.spec.ts` | Production Timeline unchanged; E44 expects a calendar date once the previous month is at least one week ago. All five timeline E2E cases pass (E44/E45/E46/E48/E49); files released. |
 | Add selected bulk editing and opt-in LLM page summaries | Codex `/root` + subagents | done | `src/domain/editing.ts` (new), `src/domain/llm.ts` (new), `src/domain/types.ts`, `src/domain/backup.ts`, `src/db/schema.ts`, `src/db/repo.ts`, `src/db/editing.ts` (new), `src/llm/**` (new), `src/messaging/protocol.ts`, `src/entrypoints/background.ts`, `src/entrypoints/library/App.tsx`, `src/entrypoints/library/components/AnnotationRow.tsx`, `src/entrypoints/library/components/PageCard.tsx`, new library editing/summary/settings components and styles, related tests/docs | User approved selected colour changes, append/replace notes, delete/restore, and batch page summaries. API starts off; explicit generate/preview/save; configurable endpoint/model/key/default prompt, based on JingWei report conventions. Validated with typecheck, 203 unit tests and all 55 browser cases; local compatible API also returned a draft through the production extension. Installed Edge retains all 34 live annotations. |
@@ -46,8 +47,8 @@ server, which the Playwright config starts on port 8137.
 
 ```bash
 pnpm typecheck                          # TS strict
-pnpm test                               # Vitest, currently 226
-pnpm build:e2e && npx playwright test   # Playwright, currently 59
+pnpm test                               # Vitest, currently 257
+pnpm build:e2e && npx playwright test   # Playwright, currently 64
 pnpm build && pnpm build:edge           # Chrome + Edge from one source
 ```
 
@@ -65,9 +66,11 @@ pnpm build && pnpm build:edge           # Chrome + Edge from one source
   real downloaded file).
 - Chrome and Edge build from the same source; manifests differ only in version.
 
-**Versioning:** `v0.8.1` is the latest published release and `package.json` matches it. New files are installed in the existing Edge directory; the live browser Reload is pending macOS unlock.
+**Versioning:** `package.json` and the live fixed-ID Edge installation are `0.9.0`. Validation and actual migration are complete; GitHub publication of 0.9.0 is in progress (previous release: 0.8.1).
 
 ## Messages
+
+- 2026-11-01 — **Codex `/root` completed 0.9.0 validation and live migration.** Typecheck, 257 unit tests and all 64 browser cases pass. The existing Edge installation was reloaded in place to 0.9.0 and retained all 30 current live annotations. After local byte budgeting and mock-only regression tests, one actual migration completed: 125,835 request-body bytes, 23 page files, and a 3,405-byte v4 root independently verified with a read-only request. Automatic sync is enabled; unchanged passes make no PUT requests and quota failures pause retries. LLM remains verified. GitHub publication and a release follow-up email are next.
 
 - 2026-11-01 — **Codex `/root` published v0.8.1 and sent the requested announcement.** GitHub Latest is <https://github.com/laleoarrow/locus/releases/tag/v0.8.1>, tagged at `137b8fb`. Typecheck, 226 unit and all 59 browser cases pass. Independent downloads match verified local Chrome SHA-256 `6e029630dfca09e13afc76d837cd579074d6fa9f22e279d349692d5feee726bd` and Edge `df998d8f91c8bbb9139f2c1f9f3ca5fb16685d2e0a91018e1d94d07aeac1e35b`; keyless Edge store ZIP is `ddb0b0226064bd8f83eb078b38962fc9df0fe8ae71790752d890c1205111b04b`. The prior 0.8.0 files are retained under the local pre-0.8.1 backup, and the new build is installed at the same fixed-ID Edge path. The Mac locked before the final live Reload; do not mark that step complete until it is observed. Production connection tests using existing configuration in an isolated profile both passed (LLM synthetic text; WebDAV check without sync). The earlier pasted-key error was corrected and real-page generation succeeded in live Edge before locking. The requested release email was sent and confirmed in Sent. No marketplace submission was performed.
 

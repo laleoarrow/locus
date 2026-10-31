@@ -34,7 +34,7 @@ let syncing = false;
 /** A local mutation that still needs a pass after the active one finishes. */
 let syncQueued = false;
 
-async function syncNow(): Promise<{ result: SyncResult; state: SyncState; connection: ConnectionState }> {
+async function syncNow(manual = false): Promise<{ result: SyncResult; state: SyncState; connection: ConnectionState }> {
   const config = await getSyncConfig();
   const state = await getSyncState();
   if (!config.enabled || !isConfigComplete(config)) {
@@ -51,6 +51,16 @@ async function syncNow(): Promise<{ result: SyncResult; state: SyncState; connec
       },
       state,
       connection: await getSyncConnection(),
+    };
+  }
+  if (!manual && state.autoPaused === 'quota') {
+    clearTimeout(syncTimer);
+    syncTimer = undefined;
+    syncQueued = false;
+    return {
+      result: { ok: false, pulled: 0, settingsPulled: 0, pushed: false,
+        error: '网盘上传流量不足，自动上传已暂停。额度恢复后可手动重试。' },
+      state, connection: await getSyncConnection(),
     };
   }
   if (syncing) {
@@ -499,7 +509,7 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
       };
     }
     case 'sync:now':
-      return syncNow();
+      return syncNow(true);
     case 'anchor-state:report': {
       await recordAnchorStates(message.states);
       return { ok: true };

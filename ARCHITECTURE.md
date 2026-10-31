@@ -297,8 +297,9 @@ than trusting them. `updateInfo` and `locus.llm.config` are excluded. Current
 exports use format v3 while importing v1/v2 remains supported. Older clients
 reject v3, preventing them from silently stripping page summaries from sync.
 
-**Merge** (`repo.importBackup`) is the one algorithm both backup-import and sync
-rely on, so it must be convergent and non-destructive:
+**Merge** uses shared non-destructive record rules. Manual backup imports use
+`repo.importBackup`; sync first performs a deterministic wire merge, then
+imports while preserving annotation IDs:
 
 - Pages are matched by `urlKey`, and incoming `documentId`/`sourceId` are
   remapped to the local ones. Two machines that annotated the same URL keep one
@@ -307,9 +308,9 @@ rely on, so it must be convergent and non-destructive:
   uses its independent `colorUpdatedAt` clock. Tombstones travel, so a colour
   edit cannot resurrect a deletion or overwrite a newer note on another
   device.
-- An incoming annotation identical to a local one in every meaningful field
-  (source, colour, comment, kind, anchor position) counts as already present, so
-  syncing does not accumulate duplicate highlights.
+- Manual imports deduplicate independently recorded identical highlights.
+  Incremental sync preserves annotation UUIDs so later edits and tombstones
+  keep targeting the same entity across devices.
 - Page summaries remap `sourceId` to the matched local page and merge using
   their own `updatedAt`, independently of source metadata. Clearing wins an
   exact timestamp tie; other ties use content codepoint order for convergence.
@@ -317,13 +318,27 @@ rely on, so it must be convergent and non-destructive:
 
 These properties make it idempotent: syncing twice equals syncing once.
 
-**Sync** (`src/sync/`, driven from the background): pull the remote file, merge,
-push the result back with `If-Match` on the ETag; a 412 means another device
-pushed first, so the pass restarts from the pull (up to 3 attempts). Pushes are
-debounced ~4 s after local edits; a mutation arriving during an active pass
-queues one follow-up pass instead of being discarded. Pulls run on a
-configurable alarm. A remote file that fails validation is reported, never
-overwritten.
+**Sync** (`src/sync/`, driven from the background) uses a version-4 manifest at
+`locus-library.json` and immutable content-hashed page/settings files under
+`locus-v4/`. The wire projection includes only pages needed by annotations
+(including tombstones) or page summaries. Local visit-only sources, export
+clock changes and local graph UUIDs do not cause uploads. A consistent database
+snapshot is projected, merged, and split into pages; only changed blobs and the
+small manifest are written. An unchanged pass makes no PUT requests.
+
+A persistent cache supports conditional manifest reads and reuse of unchanged
+page blobs. Incoming references are restricted to the fixed directory and hash
+format, and content/schema validation precedes import. Blob writes precede the
+manifest's `If-Match` commit; a 412 triggers a fresh merge, retaining changes
+from other devices. A legacy v1–v3 snapshot is retained locally during migration;
+its remote root is replaced only after the new blobs are ready. Older clients
+reject the v4 root, preventing full-snapshot writes over the new protocol.
+Manual backup files remain v3.
+
+Pushes are debounced after edits; edits arriving while a pass is active queue a
+follow-up. A quota rejection pauses automatic uploads until an explicit retry
+succeeds. Payload-byte accounting includes attempted writes, including failures,
+and does not claim to measure the provider's billing.
 
 Credentials live in `chrome.storage.local`, not the Dexie settings table — that
 keeps them structurally out of export files (asserted by E23). The UI is only

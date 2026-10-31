@@ -20,6 +20,10 @@ export interface SyncState {
   lastError: string;
   /** ETag of the remote file as of the last successful push. */
   etag: string;
+  lastUploadBytes?: number;
+  lastUploadAt?: number;
+  lastChangedPages?: number;
+  autoPaused?: 'quota' | '';
 }
 
 export const LIBRARY_FILE = 'locus-library.json';

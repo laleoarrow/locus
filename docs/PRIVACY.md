@@ -1,6 +1,6 @@
 # Privacy Policy — Locus / 文迹
 
-_Last updated: 2026-10-31_
+_Last updated: 2026-11-01_
 
 ## Short version
 
@@ -26,12 +26,16 @@ receive the requests you enable, under the terms of the provider you choose.
 
 ## Three optional, user-controlled network features
 
-**WebDAV sync.** If you enter WebDAV credentials, Locus uploads and downloads a
-single JSON file containing your annotations and saved page summaries, to and
+**WebDAV sync.** Sync includes pages with annotations (including deletion
+records) or saved page summaries, their anchors and portable preferences. It
+does not upload visit-only page records. Changed pages are stored as separate
+files with a small index; unchanged checks do not upload the library. Previous
+remote snapshots may remain in your provider’s version history. If you enter
+WebDAV credentials, Locus transfers these page files and their index to and
 from the server *you* specify (for example Nutstore/坚果云 or your own Nextcloud).
 Locus is only the
 client: the operator of that server is you or your chosen provider, and their
-privacy terms apply to the stored file. Your credentials are kept in the
+privacy terms apply to the stored files. Your credentials are kept in the
 browser's local extension storage, are sent only to the server you configured,
 and are deliberately excluded from exported backup files. Sync stops entirely
 when you turn it off.
@@ -80,8 +84,10 @@ disabled sites are left completely untouched.
 Deleting annotations keeps local tombstones so the deletion can sync and be
 undone. Clearing a page summary retains an empty record with its update time so
 an older backup cannot restore its old text. Removing the extension deletes its
-local database and settings. Deleting the library file from your WebDAV folder
-removes the synced copy. Exported backup files are yours to delete.
+local databases, transfer cache and settings. Removing the synced copy requires
+removing both `locus-library.json` and the `locus-v4/` folder, including older
+page files. Your provider may retain deleted files or previous versions under
+its own retention rules. Exported backup files are yours to delete.
 
 ## Contact
 

@@ -23,7 +23,7 @@ WHAT IT DOES
 • Highlights come back after reload, and keep working when the page changes: each one records its text, surrounding context, character offsets and DOM path, and is re-located by whichever still matches. If a passage is genuinely gone, the annotation is shown as "detached" rather than quietly discarded.
 • Same paper on a different site? Locus reads the page's DOI and offers to jump to the version you already annotated — publisher page, PMC mirror, preprint.
 • Works on every page by default. Don't want it somewhere? Hold Cmd/Ctrl, hover the right edge of the toolbar and click the ✕ — or use the popup switch.
-• Sync annotations and saved page content between devices through a WebDAV folder you own (Nutstore, Nextcloud, any WebDAV host), or export and import a plain JSON backup.
+• Sync annotations and saved page content between devices through a WebDAV folder you own (Nutstore, Nextcloud, a WebDAV host supporting reliable ETags and conditional writes), or export and import a plain JSON backup.
 
 YOUR DATA STAYS YOURS
 Annotations and saved page content live in your browser's local database. There is no Locus server, account system or telemetry. Network transfers are limited to the optional features below.
@@ -31,7 +31,7 @@ Annotations and saved page content live in your browser's local database. There 
 Three optional features reach the network, each switchable off:
 • Sync — you supply the WebDAV folder, so your annotations, notes, page URLs and saved main content travel through storage you choose. Credentials are stored locally and are excluded from backups and sync.
 • Update check — fetches public release information from GitHub to tell you when a new version exists. It sends no annotations or page content.
-• AI organisation — only when you explicitly click Generate, the chosen page's title, URL and all its live saved quotes and notes are sent to your configured API, together with your prompt and model choice. Locus does not additionally fetch or scrape the full page. The API key is used to authenticate with that provider. AI settings and the API key are saved only in local extension storage and are excluded from backups and WebDAV sync. The returned text remains a draft until you choose Save. The Library status panel offers a separate connection test using synthetic sample text only, plus the last verification and actual sync times.
+• AI organisation — only when you explicitly click Generate, the chosen page's title, URL and all its live saved quotes and notes are sent to your configured API, together with your prompt and model choice. Locus does not additionally fetch or scrape the full page. The API key is used to authenticate with that provider. AI settings and the API key are saved only in local extension storage and are excluded from backups and WebDAV sync. The returned text remains a draft until you choose Save. The Library status panel offers a separate AI connection test using synthetic sample text only, plus verification times and sync payload bytes. WebDAV uses changed page files and a small index; unchanged checks make no upload requests, and connection tests are read-only.
 
 WHAT IT IS NOT
 Not a reference manager: no bibliography, citation formatting, tags or collaboration.
@@ -89,7 +89,7 @@ ABOUT THE BROAD HOST PERMISSION
 Annotation has to work on whatever the user chooses to read, so the extension requests http://*/* and https://*/*. These permissions also allow requests to a user-configured WebDAV host or OpenAI-compatible API endpoint. Page text is read to capture and restore selected highlights. Saved quotes, notes and page metadata are transmitted only through the user-controlled optional features below. Any site can be disabled individually to stop annotation rendering and selection handling there.
 
 NETWORK ACCESS (three optional features, all user-controlled)
-- WebDAV sync: off until configured and enabled; uploads/downloads one JSON file containing the user's annotations, notes, page URLs and saved main content to the user's chosen server. No default server exists. Sync credentials are excluded from the file.
+- WebDAV sync: off until configured and enabled; transfers changed page/settings JSON files and a small index containing the user's annotations, notes, page URLs and saved main content to the user's chosen server. No default server exists. Sync credentials are excluded from those files.
 - Update check: enabled by default so sideloaded users can learn about new versions; requests public release metadata from api.github.com. Sends no annotations or page content and can be switched off at any time.
 - AI organisation: off by default and requested only by explicit Generate actions. Sends the chosen page's title, URL and all its live saved quotes and notes, with the configured model and prompt, to the user's configured API. The API key authenticates this request. Locus does not additionally fetch or scrape the full page. AI configuration and API key are stored in chrome.storage.local and excluded from backups and WebDAV sync. Generated content stays a draft until the user saves it.
 

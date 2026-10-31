@@ -9,13 +9,15 @@
 把浏览器扩展 **Locus / 文迹** 提交到 **Microsoft Edge Add-ons** 和 **Chrome Web Store**。
 上架的唯一目的是让用户获得**自动更新**——sideload（开发人员模式加载）的扩展浏览器永远不会自动更新，上架后才会。
 
-仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（当前源码版本 v0.8.1；发布、安装和上传包状态须在继续前核对，不能沿用下方 v0.7.2 的历史记录）
+仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（当前源码版本 v0.9.0；发布、安装和上传包状态须在继续前核对，不能沿用下方 v0.7.2 的历史记录）
 
 ## 项目背景（够用即止）
 
 Locus 是一个 Manifest V3 扩展（WXT + TypeScript + React + Dexie），提供网页高亮、Markdown 笔记、图片高亮环、侧边栏和资料库。用户可以勾选标注后批量改色、追加或替换笔记、删除、恢复；每个页面另有可编辑的「主要内容」，与标注笔记分开保存。工具条的 Auto 位置会跟踪和避让网页内延迟出现、嵌套或 Shadow DOM 中的浮层，不检测浏览器原生或桌面浮层。
 
 核心卖点是 **local-first**：无需 Locus 账号、无 Locus 后端、无遥测。三项可选联网功能均可关闭：用户配置的 WebDAV 同步、GitHub 版本检查，以及默认关闭的 AI 整理。用户需自行填写兼容 OpenAI 的 API 地址、模型和 API key；提示词可编辑或恢复默认。只有明确点击 Generate，才向所配置服务发送所选页面的标题、网址及该页全部未删除的已保存摘录和笔记，连同提示词、模型选择；API key 用于向该服务认证。不另行抓取页面全文，返回结果只作为可编辑草稿，点击 Save 后才保存。
+
+WebDAV 同步采用 v4 小索引与按页面保存的文件，只发送有标注、删除记录或主要内容的页面；未修改时无上传请求。共享同一网盘目录的设备须全部升级到 0.9.0。
 
 资料库顶部的状态区区分「已配置」与「已验证」，可查看最近检查与实际同步时间。单独的 LLM 连接测试只发送固定示例文字，不发送已保存笔记或用户提示词。
 
@@ -25,7 +27,7 @@ AI 设置和 API key 仅保存在本机的 `chrome.storage.local` 中，不进�
 
 ## 当前进度（从这里继续）
 
-v0.8.0 已发布；v0.8.1 已通过 typecheck、226 项单元测试和全部 59 项浏览器测试，Chrome/Edge 生产安装包与 Edge keyless 商店包已验证。v0.8.1 文件已放入原安装目录，macOS 锁屏导致当前 Edge 的最后一步 Reload 尚未执行；不要卸载扩展或清空数据。正式构建已在隔离浏览器中使用现有配置验证 LLM 和 WebDAV，均成功，连接测试未触发同步。当前商店包为 `.output/locus-0.8.1-edge-store.zip`；桌面旧上传目录已不存在。GitHub v0.8.1 已发布为 Latest：<https://github.com/laleoarrow/locus/releases/tag/v0.8.1>，Chrome 与 Edge 下载包已独立下载并核对通过。推广邮件已发出。
+v0.9.0 已通过 typecheck、257 项单元测试和全部 64 项浏览器测试，Chrome/Edge 安装包与 Edge keyless 商店包已验证。现有 Edge 固定 ID 安装已原位 Reload 到 0.9.0，全部 30 条当前有效标注保留。省流迁移实际发送 125,835 字节，网盘现有 23 个页面文件和 3,405 字节的 v4 索引，已独立只读核对。LLM 与网盘均已验证，自动同步已恢复；无变化零上传、流量不足自动暂停。GitHub 0.9.0 发布正在进行。商店包为 `.output/locus-0.9.0-edge-store.zip`；不要使用下方历史旧包。
 
 ### 历史记录：2026-08-01，v0.7.2
 
@@ -81,7 +83,7 @@ node scripts/store-copy.mjs next            # 复制下一项
 
 | 文件 | 用途 |
 |---|---|
-| `1-PACKAGE-edge-上传这个.zip` | 当前版本 Edge 扩展包（keyless，商店上传专用）；本次目标 v0.8.0，上传前必须核验并替换历史包 |
+| `1-PACKAGE-edge-上传这个.zip` | 当前版本 Edge 扩展包（keyless，商店上传专用）；本次目标 v0.9.0，上传前必须核验并替换历史包 |
 | `2-LOGO-300x300.png` | Edge 商店 logo |
 | `4-截图1~5-*.png` | 5 张 1280×800 Edge 截图；历史素材来自 v0.7.2，本次提交前须复核并与最终版本保持一致 |
 

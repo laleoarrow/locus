@@ -1,5 +1,6 @@
 import type { Page } from '@playwright/test';
 import { BASE_URL, clickText, expect, highlight, selectText, test } from './extension';
+import { readRemoteLibrary } from './sync-remote';
 
 const NESTED = `${BASE_URL}/fixtures/nested.html`;
 const DEMO = `${BASE_URL}/fixtures/demo.html`;
@@ -573,7 +574,7 @@ test('E43: a sync failure never leaves a partial local color replacement', async
   );
   expect(colors).toEqual(['teal', 'teal']);
 
-  // Fixing the connection retries the complete local batch. The remote file
+  // Fixing the connection retries the complete local batch. The remote snapshot
   // receives both rows together, never a half-recolored intermediate state.
   await library.evaluate(() =>
     chrome.runtime.sendMessage({
@@ -586,21 +587,20 @@ test('E43: a sync failure never leaves a partial local color replacement', async
   );
   expect(retried.result.ok).toBe(true);
   expect(retried.result.pushed).toBe(true);
-  const authorization = `Basic ${Buffer.from('tester:app-password').toString('base64')}`;
-  const remote = await request.get(
-    `${BASE_URL}/dav/bulk-failure/locus-library.json`,
-    { headers: { authorization } },
-  );
-  expect(remote.ok()).toBe(true);
-  const backup = (await remote.json()) as {
-    annotations: { color: string; deletedAt: number }[];
-  };
+  const backup = await readRemoteLibrary(request, `${BASE_URL}/dav/bulk-failure/`);
   expect(
     backup.annotations
       .filter((row) => row.deletedAt === 0)
       .map((row) => row.color)
       .sort(),
   ).toEqual(['teal', 'teal']);
+
+  // An unchanged library now issues no PUT. Change a note while keeping both
+  // rows teal so the next pass has a real page snapshot to upload.
+  const annotationId = await library.locator('.annotation').first().getAttribute('data-annotation-id');
+  await library.evaluate((id) => chrome.runtime.sendMessage({
+    type: 'annotation:set-comment', id, comment: 'Trigger the first sharded upload.',
+  }), annotationId);
 
   // Stall exactly one valid PUT for longer than the four-second sync debounce.
   // Its body is captured by the mock before `active` becomes true, so this
@@ -635,14 +635,7 @@ test('E43: a sync failure never leaves a partial local color replacement', async
   await expect
     .poll(
       async () => {
-        const response = await request.get(
-          `${BASE_URL}/dav/bulk-failure/locus-library.json`,
-          { headers: { authorization } },
-        );
-        if (!response.ok()) return [];
-        const current = (await response.json()) as {
-          annotations: { color: string; deletedAt: number }[];
-        };
+        const current = await readRemoteLibrary(request, `${BASE_URL}/dav/bulk-failure/`);
         return current.annotations
           .filter((row) => row.deletedAt === 0)
           .map((row) => row.color)

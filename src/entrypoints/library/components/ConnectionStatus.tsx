@@ -9,15 +9,22 @@ import './connection-status.css';
 type Service = 'llm' | 'sync';
 const labels = { untested: '待验证', testing: '检查中', success: '已验证', error: '连接失败' };
 
-function displayState(configured: boolean, enabled: boolean, connection: ConnectionState) {
+function displayState(configured: boolean, enabled: boolean, connection: ConnectionState, quotaPaused = false) {
   if (!configured) return { label: '未配置', tone: 'muted' };
   if (connection.status === 'testing') return { label: labels.testing, tone: 'testing' };
   if (!enabled) return { label: '已关闭', tone: 'muted' };
+  if (quotaPaused) return { label: '上传已暂停', tone: 'error' };
   return { label: labels[connection.status], tone: connection.status };
 }
 
 function when(timestamp: number) {
   return new Date(timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function bytes(value: number) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 export function ConnectionStatus({ disabled, onLLMConfig, onLLMSettings }: {
@@ -76,7 +83,7 @@ export function ConnectionStatus({ disabled, onLLMConfig, onLLMSettings }: {
   return <>
     <div className="connection-chips" role="group" aria-label="连接状态">
       {entries.map(({ service, name, data, configured }) => {
-        const state = data ? displayState(configured, data.config.enabled, data.connection) : { label: loadError ? '状态不可用' : '读取中', tone: 'muted' };
+        const state = data ? displayState(configured, data.config.enabled, data.connection, service === 'sync' && sync?.state.autoPaused === 'quota') : { label: loadError ? '状态不可用' : '读取中', tone: 'muted' };
         return <button key={service} type="button" className="chip connection-chip" data-status={service}
           data-tone={state.tone} disabled={disabled} onClick={() => { setOpen(true); setSyncSettings(false); }}
           title={data?.connection.checkedAt ? `最近检查：${when(data.connection.checkedAt)}。点击查看详情。` : '点击查看配置、测试连接与同步状态'}>
@@ -89,7 +96,7 @@ export function ConnectionStatus({ disabled, onLLMConfig, onLLMSettings }: {
       <div className="connection-cards">
         {entries.map(({ service, name, data, configured }) => {
           if (!data) return null;
-          const state = displayState(configured, data.config.enabled, data.connection);
+          const state = displayState(configured, data.config.enabled, data.connection, service === 'sync' && sync?.state.autoPaused === 'quota');
           return <section key={service} data-status-section={service} className="connection-card">
             <div className="connection-card-heading"><h3>{name}</h3><span data-tone={state.tone} className="connection-badge"><span className="connection-light" aria-hidden="true" />{state.label}</span></div>
             {service === 'llm' ? <p className="connection-detail">{llm?.config.model || '尚未选择模型'}{llm?.config.baseUrl ? ` · ${llm.config.baseUrl}` : ''}</p>
@@ -97,6 +104,11 @@ export function ConnectionStatus({ disabled, onLLMConfig, onLLMSettings }: {
             <p className="connection-check" aria-live="polite">最近检查：{data.connection.status === 'untested' ? '尚未验证' : `${labels[data.connection.status]}${data.connection.checkedAt ? ` · ${when(data.connection.checkedAt)}` : ''}`}</p>
             {data.connection.error && <p className="dialog-error" role="alert">{data.connection.error}</p>}
             {service === 'sync' && <p className="connection-check" data-status-sync="last-sync">最近同步：{sync?.state.lastSyncAt ? when(sync.state.lastSyncAt) : '尚未同步'}{sync?.state.lastError ? ' · 最近同步失败' : ''}</p>}
+            {service === 'sync' && sync?.state.lastUploadBytes !== undefined && <p className="connection-check" data-status-sync="upload-bytes">
+              上次同步发送：{bytes(sync.state.lastUploadBytes)}{sync.state.lastUploadBytes === 0 ? ' · 无需上传' : ` · ${sync.state.lastChangedPages ?? 0} 个页面有变化`}
+            </p>}
+            {service === 'sync' && sync?.state.lastUploadBytes !== undefined && <p className="dialog-help">发送量统计请求正文，包含失败尝试；网盘实际扣除的额度以账户页为准。</p>}
+            {service === 'sync' && sync?.state.autoPaused === 'quota' && <p className="dialog-error">上传额度不足，已停止自动重试。额度恢复后可点击“立即同步”。</p>}
             <div className="dialog-actions connection-actions">
               <button type="button" data-status-action={`${service}-settings`} data-llm={service === 'llm' ? 'settings' : undefined}
                 disabled={!!working} onClick={() => { if (service === 'llm') { setOpen(false); onLLMSettings(); } else setSyncSettings(!syncSettings); }}>设置</button>
