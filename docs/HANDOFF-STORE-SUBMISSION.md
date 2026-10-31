@@ -25,7 +25,7 @@ AI 设置和 API key 仅保存在本机的 `chrome.storage.local` 中，不进�
 
 ## 当前进度（从这里继续）
 
-v0.8.0 已发布；v0.8.1 已通过 typecheck、226 项单元测试和全部 59 项浏览器测试，Chrome/Edge 生产安装包与 Edge keyless 商店包已验证。v0.8.1 文件已放入原安装目录，macOS 锁屏导致当前 Edge 的最后一步 Reload 尚未执行；不要卸载扩展或清空数据。正式构建已在隔离浏览器中使用现有配置验证 LLM 和 WebDAV，均成功，连接测试未触发同步。当前商店包为 `.output/locus-0.8.1-edge-store.zip`；桌面旧上传目录已不存在。GitHub v0.8.1 发布正在进行。
+v0.8.0 已发布；v0.8.1 已通过 typecheck、226 项单元测试和全部 59 项浏览器测试，Chrome/Edge 生产安装包与 Edge keyless 商店包已验证。v0.8.1 文件已放入原安装目录，macOS 锁屏导致当前 Edge 的最后一步 Reload 尚未执行；不要卸载扩展或清空数据。正式构建已在隔离浏览器中使用现有配置验证 LLM 和 WebDAV，均成功，连接测试未触发同步。当前商店包为 `.output/locus-0.8.1-edge-store.zip`；桌面旧上传目录已不存在。GitHub v0.8.1 已发布为 Latest：<https://github.com/laleoarrow/locus/releases/tag/v0.8.1>，Chrome 与 Edge 下载包已独立下载并核对通过。推广邮件已发出。
 
 ### 历史记录：2026-08-01，v0.7.2
 

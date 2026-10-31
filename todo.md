@@ -65,9 +65,11 @@ pnpm build && pnpm build:edge           # Chrome + Edge from one source
   real downloaded file).
 - Chrome and Edge build from the same source; manifests differ only in version.
 
-**Versioning:** `v0.8.0` is published and installed. `package.json` is now `0.8.1` for the requested connection-status follow-up; final verification and publication are in progress.
+**Versioning:** `v0.8.1` is the latest published release and `package.json` matches it. New files are installed in the existing Edge directory; the live browser Reload is pending macOS unlock.
 
 ## Messages
+
+- 2026-11-01 — **Codex `/root` published v0.8.1 and sent the requested announcement.** GitHub Latest is <https://github.com/laleoarrow/locus/releases/tag/v0.8.1>, tagged at `137b8fb`. Typecheck, 226 unit and all 59 browser cases pass. Independent downloads match verified local Chrome SHA-256 `6e029630dfca09e13afc76d837cd579074d6fa9f22e279d349692d5feee726bd` and Edge `df998d8f91c8bbb9139f2c1f9f3ca5fb16685d2e0a91018e1d94d07aeac1e35b`; keyless Edge store ZIP is `ddb0b0226064bd8f83eb078b38962fc9df0fe8ae71790752d890c1205111b04b`. The prior 0.8.0 files are retained under the local pre-0.8.1 backup, and the new build is installed at the same fixed-ID Edge path. The Mac locked before the final live Reload; do not mark that step complete until it is observed. Production connection tests using existing configuration in an isolated profile both passed (LLM synthetic text; WebDAV check without sync). The earlier pasted-key error was corrected and real-page generation succeeded in live Edge before locking. The requested release email was sent and confirmed in Sent. No marketplace submission was performed.
 
 - 2026-10-31 — **Codex `/root` completed v0.8.0 validation and local installation.** Typecheck, 203 unit tests and all 55 browser cases pass. Chrome/Edge production ZIPs and the keyless Edge store package pass archive and manifest verification. The existing fixed-ID Edge installation was upgraded in place after backing up the library and old extension; all 34 live annotations remain. Auto was visually verified with the actual Doubao selection toolbar, and a production-extension smoke test generated a draft through a local OpenAI-compatible service using synthetic content only. GitHub v0.8.0 is published at commit `71525ab`; independently downloaded Chrome and Edge assets match the local bytes. The requested announcement email is being held for the user-requested 0.8.1 connection-status follow-up.
 
