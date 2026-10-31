@@ -355,8 +355,13 @@ OpenAI-compatible chat-completion request only for explicit generation, with
 bounded input/response sizes, cancellation and a timeout. Redirects and browser
 cookies are excluded. Provider errors are replaced with application-authored
 messages. The default prompt treats saved material as evidence rather than
-instructions and requests traceable excerpts, but generated content remains an
-editable draft for the user to review.
+instructions and compresses it without repeated quotations or missing-material
+filler. Each request targets roughly half the quote/note character count (up to
+200 characters); a response longer than the source material is rejected without
+retrying or truncation. Counts use non-whitespace Unicode code points, excluding
+the title and URL from the budget. The exact previous default migrates to the
+new prompt on read; customized prompts and saved summaries are preserved.
+Generated content remains an editable draft for the user to review.
 
 ## 6c. Annotation library
 

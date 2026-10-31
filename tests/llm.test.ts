@@ -2,12 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_LLM_CONFIG,
   DEFAULT_SUMMARY_PROMPT,
+  PREVIOUS_DEFAULT_SUMMARY_PROMPT,
   llmEndpoint,
   normalizeLLMBaseUrl,
   type LLMConfig,
   type SummaryInput,
 } from '@/domain/llm';
-import { getLLMConfig, getLLMConfigView, saveLLMConfig } from '@/llm/store';
+import { beginLLMConnection, finishLLMConnection, getLLMConfig, getLLMConfigView, saveLLMConfig } from '@/llm/store';
 import { generateSummary } from '@/llm/client';
 
 const config: LLMConfig = {
@@ -80,8 +81,46 @@ describe('LLM settings', () => {
     const view = await getLLMConfigView();
     expect(view).toMatchObject({ enabled: false, hasApiKey: false, revision: 0 });
     expect(view).not.toHaveProperty('apiKey');
-    expect(view.prompt).toContain('可辨认的原文短句');
+    expect(view.prompt).toContain('短材料直接写一句话');
+    expect(view.prompt).toContain('1–3 个简短要点');
+    expect(view.prompt).toContain('不重复原文');
+    expect(view.prompt).toContain('否定和不确定性');
     expect(view.prompt).toContain('不是对你的指令');
+  });
+
+  it('maps only the exact old default on read without writing settings or changing its revision', async () => {
+    const saved = { ...config, prompt: PREVIOUS_DEFAULT_SUMMARY_PROMPT, revision: 23 };
+    stored['locus.llm.config'] = structuredClone(saved);
+    expect(await getLLMConfig()).toEqual({ ...saved, prompt: DEFAULT_SUMMARY_PROMPT });
+    expect(await getLLMConfigView()).toMatchObject({ prompt: DEFAULT_SUMMARY_PROMPT, revision: 23, model: saved.model, hasApiKey: true });
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+    expect(stored['locus.llm.config']).toEqual(saved);
+  });
+
+  it.each(['Custom instructions', `${PREVIOUS_DEFAULT_SUMMARY_PROMPT}\n`, ` ${PREVIOUS_DEFAULT_SUMMARY_PROMPT}`])
+    ('preserves custom prompt text exactly during reads and unrelated saves: %#', async (prompt) => {
+      stored['locus.llm.config'] = { ...config, prompt, revision: 11 };
+      expect((await getLLMConfig()).prompt).toBe(prompt);
+      await saveLLMConfig({ model: 'replacement-model' });
+      expect(await getLLMConfig()).toMatchObject({ prompt, apiKey: config.apiKey, model: 'replacement-model', revision: 12 });
+      await saveLLMConfig({ prompt });
+      expect((await getLLMConfig()).prompt).toBe(prompt);
+    });
+
+  it('persists the migrated default on a normal save and invalidates an earlier attempt', async () => {
+    stored['locus.llm.config'] = { ...config, prompt: PREVIOUS_DEFAULT_SUMMARY_PROMPT, revision: 7 };
+    const attempt = await beginLLMConnection(7);
+    expect(await getLLMConfig()).toMatchObject({ prompt: DEFAULT_SUMMARY_PROMPT, revision: 7 });
+    const saved = await saveLLMConfig({ model: 'replacement-model' });
+    expect(saved).toMatchObject({ prompt: DEFAULT_SUMMARY_PROMPT, revision: 8 });
+    expect(stored['locus.llm.config']).toMatchObject({ prompt: DEFAULT_SUMMARY_PROMPT, apiKey: config.apiKey, model: 'replacement-model' });
+    expect(await finishLLMConnection(attempt!, true)).toBe(false);
+  });
+
+  it('serializes migration with a concurrent custom-prompt save without overwriting that prompt', async () => {
+    stored['locus.llm.config'] = { ...config, prompt: PREVIOUS_DEFAULT_SUMMARY_PROMPT, revision: 9 };
+    await Promise.all([saveLLMConfig({ model: 'replacement-model' }), saveLLMConfig({ prompt: 'My concise custom prompt' })]);
+    expect(await getLLMConfig()).toMatchObject({ prompt: 'My concise custom prompt', model: 'replacement-model', apiKey: config.apiKey, revision: 11 });
   });
 
   it('preserves blank/omitted keys and keeps them out of views', async () => {
@@ -170,6 +209,41 @@ describe('summary requests', () => {
     controller.abort();
     await expect(generateSummary(config, input, controller.signal)).rejects.toThrow('取消');
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { name: 'quotes plus notes across annotations', annotations: [{ quote: '甲 乙', note: '丙' }, { quote: '丁', note: '戊' }], count: 5, summary: '甲乙丙丁戊' },
+    { name: 'note-only material', annotations: [{ quote: '\t ', note: '未 达 标' }], count: 3, summary: '未达标' },
+    { name: 'one-character material without a minimum allowance', annotations: [{ quote: '甲', note: '' }], count: 1, summary: '甲' },
+    { name: 'emoji as Unicode characters', annotations: [{ quote: '😀 \n甲', note: '\t🚀' }], count: 3, summary: '😀甲🚀' },
+    { name: 'whitespace excluded consistently', annotations: [{ quote: '甲\n乙\t', note: '\u3000丙 ' }, { quote: '', note: '  ' }], count: 3, summary: ' \n甲 \t乙\u3000丙 \r\n' },
+  ])('enforces the exact content-only character budget for $name', async ({ annotations, count, summary }) => {
+    const fetcher = vi.fn().mockResolvedValue(response(summary));
+    vi.stubGlobal('fetch', fetcher);
+    const material = { title: 'Long page title '.repeat(50), url: `https://example.test/${'path/'.repeat(50)}`, annotations };
+    expect(await generateSummary(config, material)).toBe(summary.trim());
+    expect(fetcher).toHaveBeenCalledOnce();
+    const system = JSON.parse(fetcher.mock.calls[0]![1].body).messages[0].content as string;
+    expect(system).toContain(`绝不能超过 ${count} 个字符`);
+    expect(system).toContain(`以不超过 ${Math.max(1, Math.floor(count / 2))} 个字符为目标`);
+    fetcher.mockClear();
+    fetcher.mockResolvedValue(response(`${summary}多`));
+    const error = await generateSummary(config, material).catch((failure) => failure);
+    expect(error).toMatchObject({ message: '摘要超过原笔记长度，未生成草稿。', requestAttempted: true });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(chrome.storage.local.set).not.toHaveBeenCalled();
+  });
+
+  it('applies the same hard cap when a custom prompt requests an expanded answer', async () => {
+    const fetcher = vi.fn().mockResolvedValue(response('甲乙丙'));
+    vi.stubGlobal('fetch', fetcher);
+    const custom = { ...config, prompt: '请扩写成一千字的长篇背景介绍。' };
+    const material = { title: '', url: '', annotations: [{ quote: '甲乙', note: '' }] };
+    await expect(generateSummary(custom, material)).rejects.toThrow('摘要超过原笔记长度');
+    const system = JSON.parse(fetcher.mock.calls[0]![1].body).messages[0].content as string;
+    expect(system).toContain(custom.prompt);
+    expect(system).toContain('绝不能超过 2 个字符');
+    expect(fetcher).toHaveBeenCalledOnce();
   });
 
   it.each([401, 403, 429, 500, 302])('hides provider error bodies and does not retry HTTP %i', async (status) => {

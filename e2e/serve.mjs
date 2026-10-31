@@ -155,7 +155,7 @@ const llmRequests = new Map();
 const llmHeld = new Map();
 
 async function handleLlm(req, res, pathname) {
-  const match = /^\/__llm\/([\w-]+)\/(requests|release|(?:success|error|unauthorized|hold)\/chat\/completions)$/.exec(pathname);
+  const match = /^\/__llm\/([\w-]+)\/(requests|release|(?:success|error|unauthorized|hold|verbose)\/chat\/completions)$/.exec(pathname);
   if (!match) { res.writeHead(404); res.end(); return; }
   const [, token, action] = match;
   const json = (status, value) => {
@@ -188,10 +188,8 @@ async function handleLlm(req, res, pathname) {
     json(500, { error: 'PRIVATE_PROVIDER_DETAIL' });
     return;
   }
-  let title = 'Fixture page';
-  try { title = JSON.parse(body.messages[1].content).title; } catch { /* Test malformed payloads remain inspectable. */ }
   const reply = () => json(200, {
-    choices: [{ message: { content: `主要内容：${title} [1]\n\n- 已根据本页笔记整理。 [1]` }, finish_reason: 'stop' }],
+    choices: [{ message: { content: action.startsWith('verbose/') ? '这是冗长的模拟回复。'.repeat(100) : '主要内容' }, finish_reason: 'stop' }],
   });
   if (!action.startsWith('hold/')) { reply(); return; }
   const held = llmHeld.get(token) ?? new Set();

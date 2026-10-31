@@ -1,5 +1,7 @@
 import {
   DEFAULT_LLM_CONFIG,
+  DEFAULT_SUMMARY_PROMPT,
+  PREVIOUS_DEFAULT_SUMMARY_PROMPT,
   LLMError,
   normalizeLLMBaseUrl,
   validateLLMConfig,
@@ -21,6 +23,11 @@ function serial<T>(operation: () => Promise<T>): Promise<T> {
   return pending;
 }
 
+/** Read-time migration has no writes or revision changes; custom text is exact. */
+function currentPrompt(prompt: string): string {
+  return prompt === PREVIOUS_DEFAULT_SUMMARY_PROMPT ? DEFAULT_SUMMARY_PROMPT : prompt;
+}
+
 export async function getLLMConfig(): Promise<LLMConfig> {
   const stored = await chrome.storage.local.get(CONFIG_KEY);
   const value = stored[CONFIG_KEY] as Partial<LLMConfig> | undefined;
@@ -28,7 +35,7 @@ export async function getLLMConfig(): Promise<LLMConfig> {
     enabled: value?.enabled === true,
     baseUrl: typeof value?.baseUrl === 'string' ? value.baseUrl : '',
     model: typeof value?.model === 'string' ? value.model : '',
-    prompt: typeof value?.prompt === 'string' ? value.prompt : DEFAULT_LLM_CONFIG.prompt,
+    prompt: typeof value?.prompt === 'string' ? currentPrompt(value.prompt) : DEFAULT_LLM_CONFIG.prompt,
     apiKey: typeof value?.apiKey === 'string' ? value.apiKey : '',
     revision: typeof value?.revision === 'number' && Number.isSafeInteger(value.revision) && value.revision >= 0
       ? value.revision : 0,
@@ -96,7 +103,7 @@ async function save(patch: LLMConfigPatch): Promise<LLMConfigView> {
     enabled: patch.enabled ?? (patch.clearApiKey ? false : current.enabled),
     baseUrl,
     model: (patch.model ?? current.model).trim(),
-    prompt: (patch.prompt ?? current.prompt).trim(),
+    prompt: currentPrompt(patch.prompt ?? current.prompt),
     apiKey: patch.clearApiKey ? '' : typedKey || (originChanged ? '' : current.apiKey),
     revision: current.revision + 1,
   };

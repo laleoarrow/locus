@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { APIRequestContext, BrowserContext, Locator, Page } from '@playwright/test';
+import { DEFAULT_SUMMARY_PROMPT, PREVIOUS_DEFAULT_SUMMARY_PROMPT } from '../src/domain/llm';
 import { BASE_URL, expect, highlight, test } from './extension';
 
 const NESTED = `${BASE_URL}/fixtures/nested.html`;
@@ -90,7 +91,7 @@ test('E56: manual main content persists while AI is off and setup sends nothing'
   await card.locator('[data-summary="generate"]').click();
   await expect(library.getByRole('dialog', { name: 'LLM settings' })).toBeVisible();
   await expect(library.locator('[data-llm="enabled"]')).not.toBeChecked();
-  await expect(library.locator('[data-llm="prompt"]')).toHaveValue(/可辨认的原文短句/);
+  await expect(library.locator('[data-llm="prompt"]')).toHaveValue(DEFAULT_SUMMARY_PROMPT);
   const config = await library.evaluate(() => chrome.runtime.sendMessage({ type: 'llm:status' }));
   expect(config.config).toMatchObject({ enabled: false, hasApiKey: false });
   expect(config.config).not.toHaveProperty('apiKey');
@@ -258,4 +259,76 @@ test('E61: a draft cannot overwrite main content saved in another library tab', 
   await expect(review.getByRole('alert')).toContainText('page content changed');
   await review.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(card.locator('.summary-content')).toHaveText('Newer manual content from another tab.');
+});
+
+test('E75: the exact previous default prompt migrates in settings while custom prompts remain intact', async ({
+  context, serviceWorker, extensionId, request,
+}) => {
+  const token = randomUUID();
+  const { library } = await seed(context, extensionId);
+  await library.evaluate((config) => chrome.storage.local.set({ 'locus.llm.config': config }), {
+    enabled: true, baseUrl: `${BASE_URL}/__llm/${token}/success`, model: 'fixture-model',
+    apiKey: TEST_KEY, prompt: PREVIOUS_DEFAULT_SUMMARY_PROMPT, revision: 17,
+  });
+  await library.reload();
+  await openLLMSettings(library);
+  await expect(library.locator('[data-llm="prompt"]')).toHaveValue(DEFAULT_SUMMARY_PROMPT);
+  await expect(library.locator('[data-llm="model"]')).toHaveValue('fixture-model');
+  await expect(library.locator('[data-llm="key"]')).toHaveValue('');
+  const migrated = await library.evaluate(() => chrome.runtime.sendMessage({ type: 'llm:status' }));
+  expect(migrated.config).toMatchObject({ revision: 17, hasApiKey: true, prompt: DEFAULT_SUMMARY_PROMPT });
+  const storedBeforeSave = await library.evaluate(async () => {
+    const saved = await chrome.storage.local.get('locus.llm.config');
+    const config = saved['locus.llm.config'] as { prompt: string; revision: number };
+    return { prompt: config.prompt, revision: config.revision };
+  });
+  expect(storedBeforeSave).toEqual({ prompt: PREVIOUS_DEFAULT_SUMMARY_PROMPT, revision: 17 });
+  await library.locator('[data-llm="save"]').click();
+  await expect(library.getByRole('dialog', { name: 'LLM settings' })).not.toBeVisible();
+  const savedPrompt = await library.evaluate(async () => {
+    const saved = await chrome.storage.local.get('locus.llm.config');
+    return (saved['locus.llm.config'] as { prompt: string }).prompt;
+  });
+  expect(savedPrompt).toBe(DEFAULT_SUMMARY_PROMPT);
+
+  for (const custom of [`${PREVIOUS_DEFAULT_SUMMARY_PROMPT} `, CUSTOM_PROMPT]) {
+    await library.evaluate(async (prompt) => {
+      const stored = await chrome.storage.local.get('locus.llm.config');
+      await chrome.storage.local.set({ 'locus.llm.config': { ...(stored['locus.llm.config'] as object), prompt } });
+    }, custom);
+    await library.reload();
+    await openLLMSettings(library);
+    await expect(library.locator('[data-llm="prompt"]')).toHaveValue(custom);
+    await library.locator('[data-llm="save"]').click();
+    await expect(library.getByRole('dialog', { name: 'LLM settings' })).not.toBeVisible();
+    const saved = await library.evaluate(() => chrome.runtime.sendMessage({ type: 'llm:status' }));
+    expect(saved.config.prompt).toBe(custom);
+  }
+  expect((await serverState(request, token)).requests).toHaveLength(0);
+});
+
+test('E76: overlong provider output cannot become a draft or overwrite reviewed content', async ({
+  context, serviceWorker, extensionId, request,
+}) => {
+  const token = randomUUID();
+  const { library, card } = await seed(context, extensionId);
+  const original = 'This manually reviewed content is allowed to be longer than the selected quotation.';
+  await saveManual(card, original);
+  await configure(library, token, 'verbose');
+  const sourceId = (await card.getAttribute('data-source-id'))!;
+  await card.locator('[data-summary="generate"]').click();
+  const review = library.getByRole('dialog', { name: REVIEW });
+  await expect(review.getByRole('alert')).toContainText('摘要超过原笔记长度，未生成草稿。');
+  await expect(review.locator('textarea')).toHaveCount(0);
+  await expect(review.locator('[data-summary-review="save"]')).toBeDisabled();
+  await expect(review).not.toContainText('这是冗长的模拟回复');
+  expect((await storedSummary(library, sourceId))?.content).toBe(original);
+  const calls = (await serverState(request, token)).requests;
+  expect(calls).toHaveLength(1);
+  expect(calls[0]?.body.messages[0]?.content).toContain(CUSTOM_PROMPT);
+  await review.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(card.locator('.summary-content')).toHaveText(original);
+  await library.reload();
+  await expect(card.locator('.summary-content')).toHaveText(original);
+  expect((await serverState(request, token)).requests).toHaveLength(1);
 });

@@ -119,6 +119,7 @@ for observability without page-world coupling.
 | E66–E70 | efficient sync | prune visit-only pages during migration, zero-PUT unchanged/visit passes, one-page writes, concurrent manifest conflicts, quota pause/manual retry and failed migration preserving the old root |
 | E71–E72 | status hints | concise default view, structured hover/focus hints, Escape dismissal without closing the dialog, pointer access, narrow viewport containment and visible actionable errors |
 | E73–E74 | scheduled / manual sync | hourly/daily/weekly/manual settings, persistent next due time, no immediate upload after edits or saves, due alarms, complete manual remote scan with unchanged zero uploads |
+| E75–E76 | concise summaries | exact old-default migration, custom prompt preservation, no expanded draft returned, one API request and preserved manually saved main content |
 
 ## Manual checklist (pre-release)
 
