@@ -15,6 +15,7 @@
 .connection-actions { justify-content: flex-start; flex-wrap: wrap; }
 .connection-footer { margin: 18px 0 0; font-size: 11px; text-align: center; color: var(--locus-fg-muted); }
 .connection-sync-form { border-top: 1px solid var(--locus-border); padding-top: 16px; margin-top: 16px; }
+.connection-sync-form select { width: 100%; min-width: 0; border: 1px solid var(--locus-border); border-radius: 8px; padding: 9px 11px; background: var(--locus-card); color: inherit; font: inherit; }
 .llm-fields .connection-sync-toggle { display: flex; align-items: center; gap: 8px; }
 .connection-help-trigger { text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 4px; cursor: help; }
 .connection-help-trigger:focus-visible { outline: 2px solid var(--locus-accent); outline-offset: 4px; border-radius: 3px; }

@@ -88,7 +88,7 @@ for observability without page-world coupling.
 | E23 | sync | two independent installs (separate profiles) converge in both directions through a mock WebDAV server; a deletion on one propagates and repeated syncs never resurrect it; a real export contains neither the sync username nor password |
 | E24 | sync/errors | a wrong app password surfaces an actionable message instead of failing silently |
 | E42 | library/bulk colour | whole-library replacement changes filtered and hidden live rows to an existing palette colour, includes detached rows, excludes deleted rows, refreshes an open page, migrates only the active source-colour filter, refreshes statistics and persists after reload; same/empty choices remain disabled and the pending dialog blocks card actions |
-| E43 | sync/bulk colour | a failed WebDAV push leaves one complete local colour transaction rather than a partial update; after credentials are fixed, retry uploads the complete batch together, and a recolour made during an active slow push is queued and reaches the remote file in a follow-up pass |
+| E43 | sync/bulk colour | a failed WebDAV push leaves one complete local colour transaction rather than a partial update; after credentials are fixed, retry uploads the complete batch together; edits during a slow push stay local until the next explicit or scheduled pass |
 | E44 | timeline | days group into eras with one rail tick each; backdating a history splits it into two eras and four days, and relative labels read Today / 2 days ago |
 | E45 | timeline | clicking a rail tick travels to that day, marks it current and clears the previous one |
 | E46 | timeline | depth rises monotonically from nearest to oldest layer, while quote text stays fully opaque — receding must never mean harder to read |
@@ -118,6 +118,7 @@ for observability without page-world coupling.
 | E62–E65 | service status | configured vs verified, synthetic-only LLM tests, cross-window status and failure recovery, WebDAV check vs actual sync, stale test responses and stale settings-form rejection |
 | E66–E70 | efficient sync | prune visit-only pages during migration, zero-PUT unchanged/visit passes, one-page writes, concurrent manifest conflicts, quota pause/manual retry and failed migration preserving the old root |
 | E71–E72 | status hints | concise default view, structured hover/focus hints, Escape dismissal without closing the dialog, pointer access, narrow viewport containment and visible actionable errors |
+| E73–E74 | scheduled / manual sync | hourly/daily/weekly/manual settings, persistent next due time, no immediate upload after edits or saves, due alarms, complete manual remote scan with unchanged zero uploads |
 
 ## Manual checklist (pre-release)
 

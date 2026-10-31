@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { APIRequestContext, BrowserContext, Page } from '@playwright/test';
 import { BASE_URL, expect, highlight, test } from './extension';
+import { davState, readRemoteLibrary } from './sync-remote';
 
 const STATUS_DIALOG = 'Connection status · 连接状态';
 const TEST_KEY = 'status-fixture-key-never-display';
@@ -335,4 +336,75 @@ test('E72: status tooltips fit a narrow viewport while errors remain visible and
   expect((await llmRequests(request, token)).requests).toHaveLength(1);
   const dav = await (await request.get(`${BASE_URL}/__dav-state?prefix=${encodeURIComponent(`/dav/${token}/`)}`)).json();
   expect(dav.requests).toHaveLength(0);
+});
+
+test('E73: sync frequencies persist, show their next due time and wait for the schedule after edits', async ({
+  context, serviceWorker, extensionId, request,
+}) => {
+  await request.get(`${BASE_URL}/__dav-reset`);
+  const url = `${BASE_URL}/dav/${randomUUID()}/`;
+  const article = await context.newPage();
+  await article.goto(`${BASE_URL}/fixtures/nested.html`);
+  await highlight(article, '#probe-2', 'footnote marker');
+  const library = await openLibrary(context, extensionId);
+  const annotationId = await library.locator('.annotation').getAttribute('data-annotation-id');
+  const dialog = await openStatus(library, 'sync');
+  await dialog.locator('[data-status-action="sync-settings"]').click();
+  const form = dialog.locator('.connection-sync-form');
+  await expect(form.locator('[data-status-sync="schedule"]')).toHaveValue('daily');
+  await form.locator('[data-status-sync="enabled"]').check();
+  await form.locator('[data-status-sync="url"]').fill(url);
+  await form.locator('[data-status-sync="username"]').fill('tester');
+  await form.locator('[data-status-sync="password"]').fill(DAV_PASSWORD);
+  await form.locator('[data-status-sync="save"]').click();
+  await expect(form).toHaveCount(0);
+  await expect(dialog.locator('[data-status-sync="schedule-status"]')).toContainText('每天');
+  const daily = await library.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:status' }));
+  expect(daily.config).toMatchObject({ schedule: 'daily', intervalMinutes: 1440 });
+  expect(Math.abs(daily.state.nextSyncAt - (Date.now() + 1440 * 60_000))).toBeLessThan(5000);
+
+  await library.evaluate(({ id, comment }) => chrome.runtime.sendMessage({ type: 'annotation:set-comment', id, comment }), {
+    id: annotationId, comment: 'Saved locally until the next scheduled sync.',
+  });
+  // Cover the former edit debounce, not an hours-long scheduled wait.
+  await library.waitForTimeout(4600);
+  expect((await davState(request, url)).requests).toHaveLength(0);
+  await library.evaluate(async () => {
+    const status = await chrome.runtime.sendMessage({ type: 'sync:status' });
+    await chrome.storage.local.set({ 'sync.schedule': { revision: status.config.revision, nextSyncAt: Date.now() - 1000 } });
+    await chrome.alarms.create('locus-sync', { when: Date.now() + 100 });
+  });
+  await expect.poll(() => library.evaluate(async () => (await chrome.runtime.sendMessage({ type: 'sync:status' })).state.lastSyncAt)).toBeGreaterThan(0);
+  expect((await readRemoteLibrary(request, url)).annotations.find((row) => row.id === annotationId)?.comment)
+    .toBe('Saved locally until the next scheduled sync.');
+
+  for (const [schedule, minutes, label] of [
+    ['hourly', 60, '每小时'], ['weekly', 10080, '每周'], ['manual', 0, '仅手动'],
+  ] as const) {
+    await dialog.locator('[data-status-action="sync-settings"]').click();
+    await form.locator('[data-status-sync="schedule"]').selectOption(schedule);
+    await form.locator('[data-status-sync="save"]').click();
+    await expect(form).toHaveCount(0);
+    await expect(dialog.locator('[data-status-sync="schedule-status"]')).toContainText(label);
+    const status = await library.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:status' }));
+    expect(status.config).toMatchObject({ schedule, intervalMinutes: minutes });
+    const alarm = await library.evaluate(() => chrome.alarms.get('locus-sync'));
+    if (minutes) {
+      expect(Math.abs(status.state.nextSyncAt - (Date.now() + minutes * 60_000))).toBeLessThan(5000);
+      expect(alarm?.scheduledTime).toBe(status.state.nextSyncAt);
+      const displayed = await library.evaluate((time) => new Date(time).toLocaleString(undefined, {
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      }), status.state.nextSyncAt);
+      await expect(dialog.locator('[data-status-sync="next-sync"]')).toContainText(displayed);
+    } else {
+      expect(status.state.nextSyncAt).toBe(0);
+      expect(alarm).toBeUndefined();
+      await expect(dialog.locator('[data-status-sync="next-sync"]')).toContainText('按需同步');
+    }
+  }
+  await library.reload();
+  const reopened = await openStatus(library, 'sync');
+  await expect(reopened.locator('[data-status-sync="schedule-status"]')).toContainText('仅手动');
+  await reopened.locator('[data-status-action="sync-settings"]').click();
+  await expect(reopened.locator('[data-status-sync="schedule"]')).toHaveValue('manual');
 });

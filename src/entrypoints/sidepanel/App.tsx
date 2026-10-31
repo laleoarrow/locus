@@ -10,7 +10,7 @@ import {
 import { backupFileName, parseBackup, type BackupFile } from '@/domain/backup';
 import { buildPaletteForKeys, specFor } from '@/domain/colors';
 import { parsePageNoteZip, type PageNoteImportStats } from '@/domain/pagenote';
-import type { SyncConfig, SyncState } from '@/domain/sync';
+import type { SyncConfig, SyncSchedule, SyncState } from '@/domain/sync';
 import type { SyncConfigView } from '@/sync/store';
 import type {
   AnchorState,
@@ -603,6 +603,16 @@ function SyncRow() {
       </div>
       {open && (
         <div className="sync-form">
+          <label className="sync-frequency">同步频率
+            <select data-sync="schedule" value={config.schedule} disabled={busy}
+              title="按所选间隔同步；编辑笔记不会立即上传。"
+              onChange={(event) => void save({ schedule: event.target.value as SyncSchedule })}>
+              <option value="hourly">每小时</option>
+              <option value="daily">每天</option>
+              <option value="weekly">每周</option>
+              <option value="manual">仅手动</option>
+            </select>
+          </label>
           <input
             type="url"
             data-sync="url"
@@ -631,8 +641,9 @@ function SyncRow() {
             <button data-action="sync-test" disabled={busy} onClick={() => void test()}>
               Test
             </button>
-            <button data-action="sync-now" disabled={busy} onClick={() => void syncNow()}>
-              Sync now
+            <button data-action="sync-now" disabled={busy || !config.enabled} onClick={() => void syncNow()}
+              title="核对全部笔记与网盘；仅上传差异，相同内容不重复上传。">
+              全量同步
             </button>
           </div>
           <p className="sync-hint">

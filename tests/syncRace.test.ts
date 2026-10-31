@@ -12,7 +12,7 @@ vi.mock('@/db/repo', () => ({ importBackup: vi.fn(), exportBackup: vi.fn() }));
 
 const config: SyncConfig = {
   enabled: true, url: 'https://dav.example/folder/', username: 'fixture-user',
-  password: 'fixture-password', intervalMinutes: 5,
+  password: 'fixture-password', schedule: 'daily', intervalMinutes: 1440,
 };
 const backup: BackupFile = {
   format: 'locus-backup', formatVersion: 3, exportedAt: 1, appVersion: '0.8.1',

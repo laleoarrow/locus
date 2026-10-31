@@ -602,14 +602,11 @@ test('E43: a sync failure never leaves a partial local color replacement', async
     type: 'annotation:set-comment', id, comment: 'Trigger the first sharded upload.',
   }), annotationId);
 
-  // Stall exactly one valid PUT for longer than the four-second sync debounce.
-  // Its body is captured by the mock before `active` becomes true, so this
-  // first pass is guaranteed to contain the old teal rows.
+  // Stall one manual PUT after its body is captured, so this first pass is
+  // guaranteed to contain the old teal rows.
   const armed = await request.get(`${BASE_URL}/__dav-delay-next-put?ms=6500`);
   expect(armed.ok()).toBe(true);
-  await library.evaluate(() => {
-    void chrome.runtime.sendMessage({ type: 'sync:now' });
-  });
+  const firstPass = library.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:now' }));
   await expect
     .poll(async () => {
       const status = await request.get(`${BASE_URL}/__dav-delay-status`);
@@ -617,9 +614,8 @@ test('E43: a sync failure never leaves a partial local color replacement', async
     })
     .toMatchObject({ armed: false, active: true });
 
-  // Recolour while the PUT is still active. The debounced sync request fires
-  // before the stalled pass finishes and must queue one follow-up pass rather
-  // than returning "Already syncing" and losing the remote update.
+  // Recolour while the manual PUT is still active. The edit stays local until
+  // the next requested sync; it must not queue an automatic follow-up upload.
   await library.locator('[data-bulk-action="menu"]').click();
   await library.locator('[data-bulk-action="replace-color"]').click();
   await library.locator('[data-bulk-color="source"]').selectOption('teal');
@@ -630,8 +626,19 @@ test('E43: a sync failure never leaves a partial local color replacement', async
   await library.locator('[data-bulk-color="confirm"]').click();
   await expect(library.locator('.annotation[data-color="pink"]')).toHaveCount(2);
 
-  // The first delayed PUT can only write teal. Seeing pink remotely therefore
-  // proves the queued follow-up completed with the entire recoloured batch.
+  expect((await firstPass).result.ok).toBe(true);
+  // Observe beyond the former four-second edit debounce to catch an unwanted
+  // follow-up after the first manual pass has completed.
+  await library.waitForTimeout(4500);
+  const afterFirstPass = await readRemoteLibrary(request, `${BASE_URL}/dav/bulk-failure/`);
+  expect(afterFirstPass.annotations
+    .filter((row) => row.deletedAt === 0)
+    .map((row) => row.color)
+    .sort()).toEqual(['teal', 'teal']);
+
+  // A second explicit sync uploads the entire recoloured batch.
+  const secondPass = await library.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:now' }));
+  expect(secondPass.result.ok).toBe(true);
   await expect
     .poll(
       async () => {

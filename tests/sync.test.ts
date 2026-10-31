@@ -12,7 +12,7 @@ const base: SyncConfig = {
   url: 'https://dav.jianguoyun.com/dav/locus',
   username: 'reader@example.com',
   password: 'app-password',
-  intervalMinutes: 5,
+  schedule: 'daily', intervalMinutes: 1440,
 };
 
 describe('normalizeCollectionUrl (U23)', () => {

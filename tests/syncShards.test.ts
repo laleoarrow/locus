@@ -9,7 +9,7 @@ import { blobPath, contentHash, parseManifest, projectBackup, stableJSON, type S
 import { EMPTY_SYNC_STATE, type SyncConfig } from '@/domain/sync';
 import { runSync } from '@/sync/engine';
 
-const config: SyncConfig = { enabled: true, url: 'https://dav.test/folder/', username: 'test', password: 'test', intervalMinutes: 5 };
+const config: SyncConfig = { enabled: true, url: 'https://dav.test/folder/', username: 'test', password: 'test', schedule: 'daily', intervalMinutes: 1440 };
 const root = 'locus-library.json';
 class Dav {
   files = new Map<string, { body: string; etag: string }>();
@@ -138,6 +138,24 @@ describe('page-sharded WebDAV sync', () => {
     expect(dav.puts()[0]!.name).toMatch(/^locus-v4\/page-/);
     expect(dav.puts()[1]!.name).toBe(root);
     expect((await remoteNotes()).find((row) => row.id === a.id)!.comment).toBe('changed note');
+  });
+
+  it('manually verifies every remote page and settings file despite a warm cache without re-uploading them', async () => {
+    await addPage('https://example.test/a'); await addPage('https://example.test/b');
+    const first = await runSync(config, EMPTY_SYNC_STATE, '0.9.2'); dav.calls = [];
+    const full = await runSync(config, first.state, '0.9.2', undefined, { fullScan: true });
+    expect(full.result).toMatchObject({ ok: true, pushed: false, uploadedBytes: 0 });
+    expect(dav.calls).toHaveLength(4);
+    expect(dav.calls.every((call) => call.method === 'GET' && !call.headers['If-None-Match'])).toBe(true);
+  });
+
+  it('a manual full scan detects a missing remote shard even when a valid local cache exists', async () => {
+    await addPage('https://example.test/a'); const first = await runSync(config, EMPTY_SYNC_STATE, '0.9.2');
+    const manifest = parseManifest(dav.files.get(root)!.body);
+    dav.files.delete(blobPath('page', Object.values(manifest.pages)[0]!)); dav.calls = [];
+    const full = await runSync(config, first.state, '0.9.2', undefined, { fullScan: true });
+    expect(full.result.ok).toBe(false); expect(full.result.error).toContain('missing');
+    expect(dav.puts()).toHaveLength(0);
   });
 
   it('downloads a new device snapshot once and does not republish it', async () => {

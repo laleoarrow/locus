@@ -335,10 +335,15 @@ its remote root is replaced only after the new blobs are ready. Older clients
 reject the v4 root, preventing full-snapshot writes over the new protocol.
 Manual backup files remain v3.
 
-Pushes are debounced after edits; edits arriving while a pass is active queue a
-follow-up. A quota rejection pauses automatic uploads until an explicit retry
-succeeds. Payload-byte accounting includes attempted writes, including failures,
-and does not claim to measure the provider's billing.
+Sync runs hourly, daily (the default), weekly or only on explicit request.
+Edits, configuration saves and worker restarts do not add an unscheduled pass.
+A persisted due time drives a one-shot alarm and survives worker restarts; an
+overdue pass runs when the browser resumes. Edits arriving during a pass remain
+local until the next scheduled or manual pass. Manual full sync bypasses the
+remote page cache for complete validation but still writes only changed hashes.
+A quota rejection pauses automatic uploads until an explicit retry succeeds.
+Payload-byte accounting includes attempted writes, including failures, and does
+not claim to measure the provider's billing.
 
 Credentials live in `chrome.storage.local`, not the Dexie settings table — that
 keeps them structurally out of export files (asserted by E23). The UI is only

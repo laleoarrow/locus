@@ -5,6 +5,16 @@
  * settings table, so they can never be swept into a backup export file.
  */
 
+export type SyncSchedule = 'hourly' | 'daily' | 'weekly' | 'manual';
+
+export function syncIntervalMinutes(schedule: SyncSchedule): number {
+  return { hourly: 60, daily: 1440, weekly: 10080, manual: 0 }[schedule];
+}
+
+export function normalizeSyncSchedule(value: unknown): SyncSchedule {
+  return value === 'hourly' || value === 'weekly' || value === 'manual' ? value : 'daily';
+}
+
 export interface SyncConfig {
   enabled: boolean;
   /** Collection URL, e.g. https://dav.jianguoyun.com/dav/locus/ */
@@ -12,6 +22,8 @@ export interface SyncConfig {
   username: string;
   /** WebDAV app password. Providers like Jianguoyun require one. */
   password: string;
+  schedule: SyncSchedule;
+  /** Compatibility field derived from schedule; never accepts arbitrary intervals. */
   intervalMinutes: number;
 }
 
@@ -24,20 +36,23 @@ export interface SyncState {
   lastUploadAt?: number;
   lastChangedPages?: number;
   autoPaused?: 'quota' | '';
+  /** Persisted schedule projection; zero means no automatic run is scheduled. */
+  nextSyncAt?: number;
 }
 
 export const LIBRARY_FILE = 'locus-library.json';
-export const DEFAULT_SYNC_INTERVAL_MINUTES = 5;
+export const DEFAULT_SYNC_INTERVAL_MINUTES = 1440;
 
 export const EMPTY_SYNC_CONFIG: SyncConfig = {
   enabled: false,
   url: '',
   username: '',
   password: '',
+  schedule: 'daily',
   intervalMinutes: DEFAULT_SYNC_INTERVAL_MINUTES,
 };
 
-export const EMPTY_SYNC_STATE: SyncState = { lastSyncAt: 0, lastError: '', etag: '' };
+export const EMPTY_SYNC_STATE: SyncState = { lastSyncAt: 0, lastError: '', etag: '', nextSyncAt: 0 };
 
 /**
  * Normalize a user-typed collection URL: trims, adds the trailing slash WebDAV

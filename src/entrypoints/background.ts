@@ -12,10 +12,12 @@ import { generateSummary, testLLMConnection, validateSummaryRequest } from '@/ll
 import { beginLLMConnection, finishLLMConnection, getLLMConfig, getLLMConfigView, getLLMConnection, saveLLMConfig } from '@/llm/store';
 import type { BgRequest, BgResponseFor, ChangeBroadcast, TabMessage } from '@/messaging/protocol';
 import { runSync, testConnection, type SyncResult } from '@/sync/engine';
+import { rescheduleSyncAlarm, SYNC_ALARM } from '@/sync/schedule';
 import {
   getSyncConfig,
   getSyncConnection,
   getSyncState,
+  claimScheduledSync,
   beginSyncConnection,
   finishSyncConnection,
   setSyncConfig,
@@ -24,23 +26,13 @@ import {
 
 const RELEASES_API = 'https://api.github.com/repos/laleoarrow/locus/releases/latest';
 const UPDATE_ALARM = 'locus-update-check';
-const SYNC_ALARM = 'locus-sync';
-/** Coalesce bursts of edits into one push. */
-const SYNC_DEBOUNCE_MS = 4000;
-
-let syncTimer: ReturnType<typeof setTimeout> | undefined;
-/** Guard so an alarm and a debounced push cannot interleave two passes. */
+/** A manual request and a scheduled alarm cannot interleave two passes. */
 let syncing = false;
-/** A local mutation that still needs a pass after the active one finishes. */
-let syncQueued = false;
 
-async function syncNow(manual = false): Promise<{ result: SyncResult; state: SyncState; connection: ConnectionState }> {
+async function syncNow(manual = false, scheduledRevision?: number): Promise<{ result: SyncResult; state: SyncState; connection: ConnectionState }> {
   const config = await getSyncConfig();
   const state = await getSyncState();
   if (!config.enabled || !isConfigComplete(config)) {
-    clearTimeout(syncTimer);
-    syncTimer = undefined;
-    syncQueued = false;
     return {
       result: {
         ok: false,
@@ -53,10 +45,11 @@ async function syncNow(manual = false): Promise<{ result: SyncResult; state: Syn
       connection: await getSyncConnection(),
     };
   }
+  if (!manual && scheduledRevision !== config.revision) return {
+    result: { ok: false, pulled: 0, settingsPulled: 0, pushed: false, error: 'Sync schedule changed.' },
+    state, connection: await getSyncConnection(),
+  };
   if (!manual && state.autoPaused === 'quota') {
-    clearTimeout(syncTimer);
-    syncTimer = undefined;
-    syncQueued = false;
     return {
       result: { ok: false, pulled: 0, settingsPulled: 0, pushed: false,
         error: '网盘上传流量不足，自动上传已暂停。额度恢复后可手动重试。' },
@@ -76,11 +69,6 @@ async function syncNow(manual = false): Promise<{ result: SyncResult; state: Syn
       connection: await getSyncConnection(),
     };
   }
-  clearTimeout(syncTimer);
-  syncTimer = undefined;
-  // A manual/alarm pass includes everything queued before it starts. Any
-  // mutation after this point sets the flag again and is pushed afterwards.
-  syncQueued = false;
   syncing = true;
   try {
     const attempt = await beginSyncConnection(config.revision);
@@ -89,7 +77,7 @@ async function syncNow(manual = false): Promise<{ result: SyncResult; state: Syn
       state: await getSyncState(), connection: await getSyncConnection(),
     };
     const outcome = await runSync(config, state, chrome.runtime.getManifest().version,
-      async () => (await getSyncConfig()).revision === config.revision);
+      async () => (await getSyncConfig()).revision === config.revision, { fullScan: manual });
     await finishSyncConnection(attempt, outcome.result.ok, outcome.result.error, outcome.state);
     if (outcome.result.pulled > 0) {
       // Pulled rows change what pages should render: refresh every tab.
@@ -117,32 +105,7 @@ async function syncNow(manual = false): Promise<{ result: SyncResult; state: Syn
     };
   } finally {
     syncing = false;
-    if (syncQueued) armScheduledSync();
-  }
-}
-
-function armScheduledSync(): void {
-  clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => {
-    syncTimer = undefined;
-    void syncNow();
-  }, SYNC_DEBOUNCE_MS);
-}
-
-/** Called after any local mutation; pushes once the edits settle. */
-function scheduleSync(): void {
-  syncQueued = true;
-  armScheduledSync();
-}
-
-async function rescheduleSyncAlarm(): Promise<void> {
-  const config = await getSyncConfig();
-  await chrome.alarms.clear(SYNC_ALARM);
-  if (config.enabled && isConfigComplete(config)) {
-    await chrome.alarms.create(SYNC_ALARM, {
-      periodInMinutes: config.intervalMinutes,
-      delayInMinutes: config.intervalMinutes,
-    });
+    await rescheduleSyncAlarm();
   }
 }
 
@@ -272,10 +235,6 @@ async function broadcastChange(urlKey: string): Promise<void> {
       .filter((tab) => tab.id !== undefined && tab.url && toUrlKey(tab.url) === urlKey)
       .map((tab) => chrome.tabs.sendMessage(tab.id as number, toTab)),
   );
-  // Every local mutation funnels through here, so this is the one place that
-  // needs to nudge sync. (A pull inside syncNow notifies tabs directly instead,
-  // so merging remote rows cannot re-trigger a push.)
-  scheduleSync();
 }
 
 async function handleRequest<T extends BgRequest>(message: T): Promise<BgResponseFor<T>>;
@@ -330,13 +289,11 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
     }
     case 'annotations:delete': {
       await repo.tombstoneMany(message.ids);
-      scheduleSync();
       await bestEffortBroadcastForAnnotations(message.ids);
       return { ok: true };
     }
     case 'annotations:undelete': {
       await repo.undeleteMany(message.ids);
-      scheduleSync();
       await bestEffortBroadcastForAnnotations(message.ids);
       return { ok: true };
     }
@@ -344,7 +301,6 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
       try {
         const result = await editAnnotations(message.expected, message.action);
         if (result.updated > 0) {
-          scheduleSync();
           await bestEffortBroadcastForAnnotations(result.annotationIds, message.action.type === 'color');
         }
         return { updated: result.updated };
@@ -355,7 +311,6 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
     case 'summary:save': {
       try {
         const result = await savePageSummaries(message.changes);
-        if (result.updated > 0) scheduleSync();
         return result;
       } catch (error) {
         return { updated: 0, error: error instanceof Error ? error.message : 'Could not save main content.' };
@@ -438,7 +393,6 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
           message.expectedAnnotations,
         );
         if (result.updated > 0) {
-          scheduleSync();
           await bestEffortBroadcastForAnnotations(result.annotationIds, true);
         }
         return { updated: result.updated };
@@ -457,13 +411,11 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
     case 'page-colors:add': {
       await repo.addPageColor(message.url, message.color);
       const result = await broadcastPageColors(message.url);
-      scheduleSync();
       return result;
     }
     case 'page-colors:remove': {
       await repo.removePageColor(message.url, message.key);
       const result = await broadcastPageColors(message.url);
-      scheduleSync();
       return result;
     }
     case 'prefs:toggle-site': {
@@ -488,7 +440,6 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
       try {
         const config = await setSyncConfig(message.patch, message.expectedRevision);
         await rescheduleSyncAlarm();
-        if (config.enabled && isConfigComplete(config)) scheduleSync();
         return { config: toConfigView(config), state: await getSyncState(), connection: await getSyncConnection() };
       } catch (error) {
         return {
@@ -633,6 +584,8 @@ async function bestEffortBroadcastForAnnotations(
 }
 
 export default defineBackground(() => {
+  // Restore the persisted alarm on worker wake without starting a sync pass.
+  void rescheduleSyncAlarm();
   chrome.runtime.onInstalled.addListener(() => {
     void syncRegistration();
     void chrome.alarms.create(UPDATE_ALARM, { periodInMinutes: 60 * 12, delayInMinutes: 1 });
@@ -643,11 +596,14 @@ export default defineBackground(() => {
     void syncRegistration();
     void checkForUpdates();
     void rescheduleSyncAlarm();
-    void syncNow();
   });
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === UPDATE_ALARM) void checkForUpdates();
-    if (alarm.name === SYNC_ALARM) void syncNow();
+    if (alarm.name === SYNC_ALARM) void (async () => {
+      const revision = await claimScheduledSync();
+      if (revision !== null) await syncNow(false, revision);
+      await rescheduleSyncAlarm();
+    })();
   });
   chrome.permissions.onAdded.addListener(() => void syncRegistration());
   chrome.permissions.onRemoved.addListener(() => void syncRegistration());

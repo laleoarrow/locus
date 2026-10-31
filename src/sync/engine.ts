@@ -41,8 +41,8 @@ async function encode(file: BackupFile, kind: 'page' | 'settings', urlKey?: stri
 }
 
 /** Read all referenced content before importing or publishing any new index. */
-async function readSnapshot(client: WebDavClient, scope: string, ensureCurrent: () => Promise<void>): Promise<RemoteSnapshot> {
-  const cached = await getCachedRoot(scope);
+async function readSnapshot(client: WebDavClient, scope: string, ensureCurrent: () => Promise<void>, fullScan: boolean): Promise<RemoteSnapshot> {
+  const cached = fullScan ? undefined : await getCachedRoot(scope);
   const result = await client.read(LIBRARY_FILE, cached?.etag || undefined);
   await ensureCurrent();
   if (result.kind === 'missing') return {
@@ -63,7 +63,7 @@ async function readSnapshot(client: WebDavClient, scope: string, ensureCurrent: 
   }
   const manifest = parseManifest(body);
   const readBlob = async (kind: 'page' | 'settings', hash: string, urlKey?: string): Promise<BackupFile> => {
-    let blob = await getCachedBlob(hash);
+    let blob = fullScan ? undefined : await getCachedBlob(hash);
     if (blob === undefined) {
       const remote = await client.read(blobPath(kind, hash));
       await ensureCurrent();
@@ -89,6 +89,7 @@ export async function runSync(
   state: SyncState,
   appVersion: string,
   isCurrent: () => Promise<boolean> = async () => true,
+  options: { fullScan?: boolean } = {},
 ): Promise<{ result: SyncResult; state: SyncState }> {
   const base = normalizeCollectionUrl(config.url);
   const failure = (error: string, paused = state.autoPaused ?? '') => ({
@@ -107,7 +108,7 @@ export async function runSync(
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       await ensureCurrent();
-      const remote = await readSnapshot(client, scope, ensureCurrent);
+      const remote = await readSnapshot(client, scope, ensureCurrent, options.fullScan === true);
       await ensureCurrent();
       const local = await projectBackup(await repo.exportBackup(appVersion));
       const merged = mergeProjections(remote.projection, local);

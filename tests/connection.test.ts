@@ -17,7 +17,7 @@ const llm: LLMConfig = {
 };
 const sync = {
   enabled: true, url: 'https://dav.example/folder/', username: 'fixture-user',
-  password: 'PRIVATE_DAV_PASSWORD', intervalMinutes: 5,
+  password: 'PRIVATE_DAV_PASSWORD', schedule: 'daily' as const, intervalMinutes: 1440,
 };
 
 beforeEach(() => {
@@ -168,7 +168,7 @@ describe('WebDAV connection history', () => {
     await setSyncConfig(sync);
     const attempt = await beginSyncConnection((await getSyncConfig()).revision);
     await finishSyncConnection(attempt!, true, '', { lastSyncAt: 123, lastError: '', etag: 'valid-etag' });
-    await setSyncConfig({ intervalMinutes: 15 });
+    await setSyncConfig({ schedule: 'hourly' });
     expect(await getSyncConnection()).toEqual(EMPTY_CONNECTION_STATE);
     expect((await getSyncState()).lastSyncAt).toBe(123);
     expect(await finishSyncConnection(attempt!, false, 'Stale failure')).toBe(false);

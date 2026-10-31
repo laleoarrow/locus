@@ -230,9 +230,12 @@ Side panel → **Sync (WebDAV)** → *Setup*:
 | Account | your account email |
 | App password | 坚果云 → 账户信息 → 安全选项 → 添加应用密码 |
 
-Hit *Test*, flip the switch on, and Locus keeps that folder and this browser
-merged — pushing a few seconds after you annotate and pulling on a timer. Point
-a second device running **0.9.0 or later** at the same folder and both converge.
+Hit *Test*, flip the switch on, and choose hourly, daily, weekly or manual-only
+sync. The default is daily; editing notes does not trigger an immediate upload.
+The Library's connection panel shows the next scheduled time. **全量同步** checks
+the whole library on demand while uploading only changed pages and the small
+index. Point a second device running **0.9.0 or later** at the same folder and
+both converge when they sync.
 Upgrade every syncing device before using the new page-based protocol: older
 clients stop with an unsupported-format message instead of overwriting it. Use a WebDAV host with reliable ETags and conditional writes
 (for example compatible Nextcloud, ownCloud or self-hosted installations); use an **app password**, not your

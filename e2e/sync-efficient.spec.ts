@@ -131,8 +131,16 @@ test('E67: unchanged sync and page revisits upload zero bytes; one note changes 
   const before = await readRemoteManifest(request, url);
 
   await request.get(`${BASE_URL}/__dav-stats-reset`);
-  const unchanged = await sync(page);
-  expect(unchanged.result).toMatchObject({ ok: true, pushed: false });
+  const lastSyncAt = await page.evaluate(async () => {
+    const status = await chrome.runtime.sendMessage({ type: 'sync:status' });
+    await chrome.storage.local.set({ 'sync.schedule': { revision: status.config.revision, nextSyncAt: Date.now() - 1000 } });
+    await chrome.alarms.create('locus-sync', { when: Date.now() + 100 });
+    return status.state.lastSyncAt as number;
+  });
+  await expect.poll(() => page.evaluate(async (previous) => {
+    const status = await chrome.runtime.sendMessage({ type: 'sync:status' });
+    return status.state.lastSyncAt > previous && status.connection.status === 'success';
+  }, lastSyncAt)).toBe(true);
   let traffic = await davState(request, url);
   expect(traffic.requests.filter((entry) => entry.method === 'PUT')).toHaveLength(0);
   expect(traffic.uploadBytes).toBe(0);
@@ -240,8 +248,16 @@ test('E69: traffic quota errors pause automatic uploads until a successful manua
 
   await request.get(`${BASE_URL}/__dav-stats-reset`);
   await comment(page, saved.annotation.id, 'Latest local change remains safe while paused.');
-  // Real edits schedule the ordinary four-second automatic sync debounce.
-  await page.waitForTimeout(4600);
+  // A due alarm must also respect the quota pause, even with unsynced edits.
+  await page.evaluate(async () => {
+    const status = await chrome.runtime.sendMessage({ type: 'sync:status' });
+    await chrome.storage.local.set({ 'sync.schedule': { revision: status.config.revision, nextSyncAt: Date.now() - 1000 } });
+    await chrome.alarms.create('locus-sync', { when: Date.now() + 100 });
+  });
+  await expect.poll(() => page.evaluate(async () => {
+    const stored = await chrome.storage.local.get('sync.schedule');
+    return (stored['sync.schedule'] as { nextSyncAt: number }).nextSyncAt;
+  })).toBe(0);
   expect((await davState(request, url)).requests).toHaveLength(0);
   await request.post(`${BASE_URL}/__dav-fault`, { data: null });
   const recovered = await sync(page);
@@ -270,4 +286,42 @@ test('E70: a failed legacy migration leaves the old root bytes and ETag untouche
   const root = await request.get(`${url}locus-library.json`, { headers: DAV_AUTH });
   expect(await root.text()).toBe(old.body);
   expect(root.headers()['etag']).toBe(old.etag);
+});
+
+test('E74: manual full sync rereads every remote page without rewriting unchanged content', async ({
+  context, serviceWorker, extensionId, request,
+}) => {
+  await request.get(`${BASE_URL}/__dav-reset`);
+  const url = `${BASE_URL}/dav/${randomUUID()}/`;
+  const page = await library(context, extensionId);
+  await note(page, 'full-scan-one');
+  await note(page, 'full-scan-two');
+  await configure(page, url);
+  expect((await sync(page)).result.ok).toBe(true);
+  const manifest = await readRemoteManifest(request, url);
+  const expectedPaths = [
+    `${new URL(url).pathname}locus-library.json`,
+    ...Object.values(manifest.pages).map((hash) => `${new URL(url).pathname}locus-v4/page-${hash}.json`),
+    `${new URL(url).pathname}locus-v4/settings-${manifest.settings}.json`,
+  ];
+
+  await request.get(`${BASE_URL}/__dav-stats-reset`);
+  await page.locator('[data-status="sync"]').click();
+  const dialog = page.getByRole('dialog', { name: 'Connection status · 连接状态' });
+  const fullSync = dialog.locator('[data-status-action="sync-now"]');
+  await expect(fullSync).toHaveText('全量同步');
+  await expect(dialog.locator('[data-status-test="sync"]')).toBeVisible();
+  await fullSync.click();
+  await expect.poll(async () => {
+    const traffic = await davState(request, url);
+    return expectedPaths.every((path) => traffic.requests.some((entry) => entry.method === 'GET' && entry.path === path));
+  }).toBe(true);
+  await expect(fullSync).toBeEnabled();
+  const traffic = await davState(request, url);
+  expect(traffic.requests.filter((entry) => entry.method === 'PUT')).toHaveLength(0);
+  expect(traffic.uploadBytes).toBe(0);
+  await expect(dialog.locator('[data-status-sync="upload-bytes"]')).toContainText('0 B · 无需上传');
+  const status = await page.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:status' }));
+  expect(status.connection.status).toBe('success');
+  expect(status.state.lastError).toBe('');
 });

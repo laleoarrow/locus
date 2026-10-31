@@ -2,13 +2,14 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type 
 import { createPortal } from 'react-dom';
 import type { LLMConfigView } from '@/domain/llm';
 import type { ConnectionState } from '@/domain/status';
-import { normalizeCollectionUrl } from '@/domain/sync';
+import { normalizeCollectionUrl, type SyncSchedule } from '@/domain/sync';
 import { requestBg, type BgResponseMap } from '@/messaging/protocol';
 import { LibraryDialog } from './LibraryDialog';
 import './connection-status.css';
 
 type Service = 'llm' | 'sync';
 const labels = { untested: '待验证', testing: '检查中', success: '已验证', error: '连接失败' };
+const scheduleLabels: Record<SyncSchedule, string> = { hourly: '每小时', daily: '每天', weekly: '每周', manual: '仅手动' };
 
 function displayState(configured: boolean, enabled: boolean, connection: ConnectionState, quotaPaused = false) {
   if (!configured) return { label: '未配置', tone: 'muted' };
@@ -31,7 +32,7 @@ function bytes(value: number) {
 /** A quiet label hint, kept inside the modal and above its scrolling surface. */
 function StatusHelp({ name, title, points, children, className = '', tone, button }: {
   name: string; title: string; points: string[]; children: ReactNode; className?: string; tone?: string;
-  button?: ButtonHTMLAttributes<HTMLButtonElement> & { 'data-status-test'?: Service };
+  button?: ButtonHTMLAttributes<HTMLButtonElement> & { 'data-status-test'?: Service; 'data-status-action'?: string };
 }) {
   const id = useId();
   const anchor = useRef<HTMLElement | null>(null);
@@ -193,11 +194,17 @@ export function ConnectionStatus({ disabled, onLLMConfig, onLLMSettings }: {
             {data.connection.error && <p className="dialog-error" role="alert">{data.connection.error}</p>}
             {service === 'sync' && <p className="connection-check" data-status-sync="last-sync"><StatusHelp name="sync-last-sync" title="最近同步"
               points={['只有完整同步成功才更新时间。', '连接测试不会推进这个时间。']}>最近同步</StatusHelp>：{sync?.state.lastSyncAt ? when(sync.state.lastSyncAt) : '尚未同步'}{sync?.state.lastError ? ' · 最近同步失败' : ''}</p>}
+            {service === 'sync' && sync && <p className="connection-check" data-status-sync="schedule-status">
+              <StatusHelp name="sync-schedule" title="同步计划"
+                points={['按选定的间隔同步，编辑笔记不会立即上传。', '浏览器关闭或休眠时，计划在恢复后执行。', '全量同步可随时手动核对全部笔记，仅上传差异。']}>同步计划</StatusHelp>：{scheduleLabels[sync.config.schedule]}
+              <span data-status-sync="next-sync"> · {!sync.config.enabled ? '未启用' : sync.state.autoPaused === 'quota' ? '已暂停'
+                : sync.config.schedule === 'manual' ? '按需同步' : sync.state.nextSyncAt ? `下次 ${when(sync.state.nextSyncAt)}` : '待安排'}</span>
+            </p>}
             {service === 'sync' && sync?.state.lastUploadBytes !== undefined && <p className="connection-check" data-status-sync="upload-bytes">
               <StatusHelp name="sync-upload" title="上次同步发送"
                 points={['统计请求正文大小，包含失败尝试。', '没有变化时无需上传。', '实际扣除的额度以网盘账户页为准。']}>上次同步发送</StatusHelp>：{bytes(sync.state.lastUploadBytes)}{sync.state.lastUploadBytes === 0 ? ' · 无需上传' : ` · ${sync.state.lastChangedPages ?? 0} 个页面有变化`}
             </p>}
-            {service === 'sync' && sync?.state.autoPaused === 'quota' && <p className="dialog-error">上传额度不足，已停止自动重试。额度恢复后可点击“立即同步”。</p>}
+            {service === 'sync' && sync?.state.autoPaused === 'quota' && <p className="dialog-error">上传额度不足，已停止自动重试。额度恢复后可点击“全量同步”。</p>}
             <div className="dialog-actions connection-actions">
               <button type="button" data-status-action={`${service}-settings`} data-llm={service === 'llm' ? 'settings' : undefined}
                 disabled={!!working} onClick={() => { if (service === 'llm') { setOpen(false); onLLMSettings(); } else setSyncSettings(!syncSettings); }}>设置</button>
@@ -206,8 +213,10 @@ export function ConnectionStatus({ disabled, onLLMConfig, onLLMSettings }: {
                   : ['检查网盘是否可读取，不上传笔记。', '测试成功不等于同步完成；同步时间单独显示。']}
                 button={{ type: 'button', 'data-status-test': service, disabled: !!working || !configured || (service === 'llm' && !llm?.config.enabled),
                   onClick: () => void run(service) }}>{working === service ? '检查中…' : '测试连接'}</StatusHelp>
-              {service === 'sync' && <button type="button" data-status-action="sync-now" disabled={!!working || !configured || !sync?.config.enabled}
-                onClick={() => void run('sync', true)}>立即同步</button>}
+              {service === 'sync' && <StatusHelp name="sync-full" title="全量同步"
+                points={['立即核对本机与网盘的全部笔记。', '仅上传有变化的页面和索引；相同内容不重复上传。']}
+                button={{ type: 'button', 'data-status-action': 'sync-now', disabled: !!working || !configured || !sync?.config.enabled,
+                  onClick: () => void run('sync', true) }}>全量同步</StatusHelp>}
             </div>
             {service === 'sync' && syncSettings && sync && <SyncSettings config={sync.config} onSaved={async () => { setSyncSettings(false); await load(); }} />}
           </section>;
@@ -222,6 +231,7 @@ export function ConnectionStatus({ disabled, onLLMConfig, onLLMSettings }: {
 function SyncSettings({ config, onSaved }: { config: BgResponseMap['sync:status']['config']; onSaved(): Promise<void> }) {
   const [openedRevision] = useState(config.revision);
   const [enabled, setEnabled] = useState(config.enabled);
+  const [schedule, setSchedule] = useState(config.schedule);
   const [url, setUrl] = useState(config.url);
   const [username, setUsername] = useState(config.username);
   const [password, setPassword] = useState('');
@@ -232,7 +242,7 @@ function SyncSettings({ config, onSaved }: { config: BgResponseMap['sync:status'
     setBusy(true); setError('');
     try {
       const result = await requestBg({ type: 'sync:save', expectedRevision: openedRevision,
-        patch: { enabled, url: url.trim(), username: username.trim(), ...(password ? { password } : {}) } });
+        patch: { enabled, schedule, url: url.trim(), username: username.trim(), ...(password ? { password } : {}) } });
       if (!result || result.error) { setError(result?.error || '无法保存网盘配置，请重试。'); return; }
       await onSaved();
     } catch { setError('无法保存网盘配置，请重试。'); }
@@ -241,6 +251,9 @@ function SyncSettings({ config, onSaved }: { config: BgResponseMap['sync:status'
   return <form className="connection-sync-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
     <fieldset className="llm-fields" disabled={busy}>
       <label className="connection-sync-toggle"><input type="checkbox" data-status-sync="enabled" checked={enabled} onChange={(event) => setEnabled(event.target.checked)} />启用网盘同步</label>
+      <label>同步频率<select data-status-sync="schedule" value={schedule} onChange={(event) => setSchedule(event.target.value as SyncSchedule)}>
+        {Object.entries(scheduleLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select></label>
       <label>WebDAV 地址<input type="url" data-status-sync="url" value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://dav.example.com/locus/" /></label>
       <label>账号<input autoComplete="off" data-status-sync="username" value={username} onChange={(event) => setUsername(event.target.value)} /></label>
       <label><StatusHelp name="sync-password" title="应用密码"
