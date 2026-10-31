@@ -43,9 +43,9 @@ test('E53: selected colour, note, delete and restore actions preserve unselected
   await first.locator('textarea').fill('Original note');
   await first.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(first.locator('.note')).toHaveText('Original note');
-  await enterSelection(library);
-  await first.locator('.annotation-select').check();
-  await second.locator('.annotation-select').check();
+  await library.locator('.page-card').filter({ has: first }).locator('[data-page-select]').check();
+  await untouched.locator('.annotation-select').uncheck();
+  await library.locator('.page-card').filter({ has: second }).locator('[data-page-select]').check();
   await expect(library.locator('[data-selection="count"]')).toHaveText('2 selected · 2 pages');
 
   await library.locator('[data-selection="color"]').click();
@@ -192,4 +192,94 @@ test('E55: pending selected edits lock controls and reject a concurrent note cha
   await expect(library.locator('.bulk-edit-panel')).toHaveAttribute('aria-busy', 'false');
   await expect(first.locator('.note')).toHaveText('Changed in another tab');
   await expect(second.locator('.note')).toHaveCount(0);
+});
+
+test('E77: visible page checkboxes select collapsed annotations and support partial keyboard selection', async ({
+  context, serviceWorker, extensionId,
+}) => {
+  await seed(context);
+  const article = await context.newPage();
+  await article.goto(NESTED);
+  for (const [selector, quote] of [
+    ['#probe-2', 'paragraph contains'], ['#probe-2', 'emphasized'],
+    ['#probe-2', 'strongly'], ['#probe-3', 'triple-wrapped'],
+  ]) await highlight(article, selector!, quote!);
+  await article.close();
+  const library = await openLibrary(context, extensionId);
+  const nested = library.locator('.page-card').filter({ has: library.locator(`.page-title[title="${NESTED}"]`) });
+  const demo = library.locator('.page-card').filter({ has: library.locator(`.page-title[title="${DEMO}"]`) });
+  await expect(library.locator('[data-page-select]')).toHaveCount(2);
+  await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
+  await expect(nested.locator('.annotation')).toHaveCount(5);
+  const styleBefore = await nested.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return [style.backgroundColor, style.borderColor, style.boxShadow].join('|');
+  });
+  const pageSelect = nested.locator('[data-page-select]');
+  await expect(pageSelect).toHaveAccessibleName('Select annotations from Fixture: nested text nodes');
+  await pageSelect.check();
+  await expect(library.locator('[data-selection="count"]')).toHaveText('6 selected · 1 page');
+  await expect(nested).toHaveAttribute('data-selected', 'full');
+  expect(await nested.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return [style.backgroundColor, style.borderColor, style.boxShadow].join('|');
+  })).not.toBe(styleBefore);
+  await demo.locator('[data-page-select]').focus();
+  await library.keyboard.press('Space');
+  await expect(library.locator('[data-selection="count"]')).toHaveText('7 selected · 2 pages');
+  await expect(demo).toHaveAttribute('data-selected', 'full');
+  await nested.locator('.annotation-select').first().uncheck();
+  await expect(nested).toHaveAttribute('data-selected', 'partial');
+  await expect(pageSelect).toHaveJSProperty('indeterminate', true);
+  await expect(pageSelect).toHaveAttribute('aria-checked', 'mixed');
+  await pageSelect.focus();
+  await library.keyboard.press('Space');
+  await expect(library.locator('[data-selection="count"]')).toHaveText('7 selected · 2 pages');
+  await expect(pageSelect).toBeChecked();
+  await library.keyboard.press('Space');
+  await expect(library.locator('[data-selection="count"]')).toHaveText('1 selected · 1 page');
+  await expect(pageSelect).not.toBeChecked();
+  await expect(pageSelect).toBeFocused();
+  await expect(demo.locator('[data-page-select]')).toBeChecked();
+});
+
+test('E78: the selection entry respects filters and keeps batch controls usable on small screens', async ({
+  context, serviceWorker, extensionId,
+}) => {
+  await seed(context);
+  const library = await openLibrary(context, extensionId);
+  await library.setViewportSize({ width: 1280, height: 800 });
+  await library.locator('[data-selection="start"]').click();
+  await expect(library.locator('[data-selection="count"]')).toHaveText('0 selected · 0 pages');
+  await library.locator('[data-selection="all"]').click();
+  await expect(library.locator('[data-selection="count"]')).toHaveText('3 selected · 2 pages');
+  const search = library.locator('[data-library="search"]');
+  await search.fill('footnote marker');
+  await expect(library.locator('[data-selection="count"]')).toHaveText('1 selected · 1 page');
+  await search.fill('');
+  await expect(library.locator('[data-selection="count"]')).toHaveText('1 selected · 1 page');
+  await library.locator('[data-selection="clear"]').click();
+  await search.fill('scoping');
+  await library.locator('[data-selection="all"]').click();
+  await expect(library.locator('[data-selection="count"]')).toHaveText('1 selected · 1 page');
+  await search.fill('');
+  await expect(library.locator('.page-card[data-selected="full"]')).toHaveCount(1);
+  await expect(annotation(library, 'scoping').locator('.annotation-select')).toBeChecked();
+  await expect(annotation(library, 'footnote marker').locator('.annotation-select')).not.toBeChecked();
+
+  await library.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(library.locator('[data-selection="color"]')).toBeInViewport();
+  await library.setViewportSize({ width: 390, height: 650 });
+  await library.locator('[data-selection="comment"]').click();
+  await library.locator('[data-selection="note-text"]').fill('Only the filtered page receives this note.');
+  const apply = library.locator('[data-selection="apply"]');
+  await apply.scrollIntoViewIfNeeded();
+  await expect(apply).toBeInViewport();
+  await apply.click();
+  await expect(annotation(library, 'scoping').locator('.note')).toHaveText('Only the filtered page receives this note.');
+  await expect(annotation(library, 'footnote marker').locator('.note')).toHaveCount(0);
+  await expect(annotation(library, 'Deeply nested inline structure').locator('.note')).toHaveCount(0);
+  await library.locator('[data-selection="exit"]').click();
+  await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
+  await expect(library.locator('[data-page-select]')).toHaveCount(2);
 });

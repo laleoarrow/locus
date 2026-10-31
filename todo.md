@@ -14,6 +14,7 @@ This file is the coordination board for concurrent work in this repository.
 
 | Task | Owner | Status | Claimed files | Notes |
 | --- | --- | --- | --- | --- |
+| Make page-card multiselect and batch actions directly visible (0.9.4) | Codex `/root` + subagents | in progress | inspect_collision: Library App, PageCard, BulkEditActions and related selection styles; placement_e2e: editing/LLM E2E; review_placement: read-only review; root: version/docs/build/install/release | Always-visible card checkboxes, direct batch entry, selected/partial states and explicit action buttons. Reuse filtered selection and atomic edits; collapsed matching annotations included. No data model changes. Typecheck, 287 unit and 72 browser cases pass; production ZIPs verified and live Edge reloaded with 30 annotations retained. Release pending. |
 | Compress AI page summaries (0.9.3) | Codex `/root` + subagents | done | inspect_collision: domain/llm.ts, llm/store.ts, tests/llm.test.ts; root: llm/client.ts, version/docs/install/release; placement_e2e: e2e/llm.spec.ts and LLM mock; review_placement: read-only review | Remove expansion-prone prompt structure; exact old-default migration preserves custom prompts. Adaptive target and hard source-length guard, single request, no automatic edits to saved summaries. |
 | Schedule sync hourly/daily/weekly or manually (0.9.2) | Codex `/root` + subagents | done | inspect_collision: sync domain/store/engine/scheduler, background/protocol, related unit tests; root: status and sidepanel UI, version/docs/install/release; placement_e2e: status/sync-efficient E2E; review_placement: read-only review | Default daily, remove edit/save/startup immediate sync, preserve planned due time, explicit full reconciliation uploads only differences. Consolidate compact status UI release with this request. |
 | Compact connection status with structured hover hints (included in 0.9.2) | Codex `/root` + subagents | done | inspect_collision: ConnectionStatus.tsx, connection-status.css and local tooltip; placement_e2e: e2e/status.spec.ts; review_placement: read-only review; root: package/version/release docs/install | Move explanatory paragraphs to label hover/focus hints; retain actionable errors and concise status. Verify hover, keyboard dismissal and narrow-screen placement, install and release. |
@@ -50,8 +51,8 @@ server, which the Playwright config starts on port 8137.
 
 ```bash
 pnpm typecheck                          # TS strict
-pnpm test                               # Vitest, currently 257
-pnpm build:e2e && npx playwright test   # Playwright, currently 64
+pnpm test                               # Vitest, currently 287
+pnpm build:e2e && npx playwright test   # Playwright, currently 72
 pnpm build && pnpm build:edge           # Chrome + Edge from one source
 ```
 
@@ -69,7 +70,7 @@ pnpm build && pnpm build:edge           # Chrome + Edge from one source
   real downloaded file).
 - Chrome and Edge build from the same source; manifests differ only in version.
 
-**Versioning:** `package.json`, the live fixed-ID Edge installation and GitHub Latest are `0.9.3`: <https://github.com/laleoarrow/locus/releases/tag/v0.9.3>. Remote release downloads match the local builds. The 0.9.2 promotion email was already sent and verified.
+**Versioning:** `package.json` and the live fixed-ID Edge installation are `0.9.4`. GitHub publication is pending; Latest remains <https://github.com/laleoarrow/locus/releases/tag/v0.9.3>. The 0.9.2 promotion email was already sent and verified.
 
 ## Messages
 

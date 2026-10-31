@@ -22,6 +22,8 @@ export function PageCard({
   const selection = useSelection();
   const ids = page.annotations.map((annotation) => annotation.id);
   const selectedCount = ids.filter((id) => selection.selectedIds.has(id)).length;
+  const fullySelected = selectedCount > 0 && selectedCount === ids.length;
+  const partiallySelected = selectedCount > 0 && !fullySelected;
   const [expanded, setExpanded] = useState(false);
   const annotationListId = useId();
   const annotationSetKey = useMemo(
@@ -41,29 +43,31 @@ export function PageCard({
     });
 
   return (
-    <article className="page-card" data-source-id={page.sourceId}>
-      <header>
-        {selection.enabled && <label className="page-select">
-          <input type="checkbox" checked={selectedCount === ids.length && ids.length > 0}
-            ref={(input) => { if (input) input.indeterminate = selectedCount > 0 && selectedCount < ids.length; }}
-            disabled={selection.busy} onChange={() => selection.toggleMany(ids)}
-            aria-label={`Select annotations from ${page.title}`} />
-          Select page · {ids.length}
-        </label>}
-        <h2>
-          <button className="page-title" onClick={openPage} title={page.url}>
-            {highlightParts(page.title, query).map((part, index) =>
-              part.hit ? <mark key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>,
-            )}
-          </button>
-        </h2>
-        <p className="page-meta">
-          {showSite && <span className="site">{siteLabel(page.origin)}</span>}
-          <span className="count">
-            {page.annotations.length} annotation{page.annotations.length === 1 ? '' : 's'}
-          </span>
-          {page.doi && <span className="doi">{page.doi}</span>}
-        </p>
+    <article className="page-card" data-source-id={page.sourceId} data-selected={fullySelected ? 'full' : partiallySelected ? 'partial' : undefined}>
+      <header className="page-card-heading">
+        <label className="page-select" title="当前筛选中的标注，含折叠内容">
+          <input type="checkbox" data-page-select={page.sourceId} checked={fullySelected} title="当前筛选中的标注，含折叠内容"
+            ref={(input) => { if (input) input.indeterminate = partiallySelected; }}
+            aria-checked={partiallySelected ? 'mixed' : fullySelected}
+            disabled={selection.busy || ids.length === 0} onChange={() => selection.toggleMany(ids)}
+            aria-label={`Select annotations from ${page.title}`} aria-description="当前筛选中的标注，含折叠内容" />
+        </label>
+        <div className="page-card-title">
+          <h2>
+            <button className="page-title" onClick={openPage} title={page.url}>
+              {highlightParts(page.title, query).map((part, index) =>
+                part.hit ? <mark key={index}>{part.text}</mark> : <span key={index}>{part.text}</span>,
+              )}
+            </button>
+          </h2>
+          <p className="page-meta">
+            {showSite && <span className="site">{siteLabel(page.origin)}</span>}
+            <span className="count">
+              {page.annotations.length} annotation{page.annotations.length === 1 ? '' : 's'}
+            </span>
+            {page.doi && <span className="doi">{page.doi}</span>}
+          </p>
+        </div>
       </header>
       <PageSummary sourceId={page.sourceId} />
       <ul className="annotations" id={annotationListId}>

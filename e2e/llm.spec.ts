@@ -219,11 +219,16 @@ test('E60: selected pages generate separate drafts and save as one reviewed batc
   context, serviceWorker, extensionId, request,
 }) => {
   const token = randomUUID();
-  const { library } = await seed(context, extensionId, true);
+  const { page, library } = await seed(context, extensionId, true);
   await configure(library, token);
-  await library.locator('[data-bulk-action="menu"]').click();
-  await library.locator('[data-bulk-action="select"]').click();
-  await library.locator('[data-selection="all"]').click();
+  const unselectedUrl = `${NESTED}?unselected=summary`;
+  await page.goto(unselectedUrl);
+  await highlight(page, '#probe-2', 'footnote marker');
+  await expect(library.locator('.page-card')).toHaveCount(3);
+  for (const url of [NESTED, DEMO]) {
+    await library.locator('.page-card').filter({ has: library.locator(`.page-title[title="${url}"]`) })
+      .locator('[data-page-select]').check();
+  }
   await expect(library.locator('[data-selection="count"]')).toHaveText('3 selected · 2 pages');
   await library.locator('[data-selection="summarize"]').click();
   const review = library.getByRole('dialog', { name: REVIEW });
@@ -233,6 +238,7 @@ test('E60: selected pages generate separate drafts and save as one reviewed batc
   const calls = (await serverState(request, token)).requests;
   expect(calls).toHaveLength(2);
   const pages = calls.map((call) => JSON.parse(call.body.messages[1]!.content));
+  expect(pages.map((page) => page.url).sort()).toEqual([NESTED, DEMO].sort());
   expect(pages.find((page) => page.url === NESTED).annotations).toHaveLength(2);
   expect(pages.find((page) => page.url === DEMO).annotations).toEqual([{ id: 1, quote: 'scoping', note: '' }]);
   await review.locator('[data-summary-review="save"]').click();

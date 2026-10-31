@@ -116,9 +116,11 @@ export function App() {
       return remaining.size === current.size ? current : remaining;
     });
   }, [visibleIds]);
-  const selectedPageIds = pages.filter((page) => page.annotations.some((entry) => selectedIds.has(entry.id))).map((page) => page.sourceId);
+  const visibleSelectedIds = useMemo(() => new Set([...selectedIds].filter((id) => visibleIds.has(id))), [selectedIds, visibleIds]);
+  const selectedPageIds = pages.filter((page) => page.annotations.some((entry) => visibleSelectedIds.has(entry.id))).map((page) => page.sourceId);
   const toggleMany = (ids: string[]) => {
-    if (busy) return;
+    if (busy || ids.length === 0) return;
+    setSelecting(true);
     setSelectedIds((current) => {
       const next = new Set(current);
       const remove = ids.every((id) => current.has(id));
@@ -259,7 +261,7 @@ export function App() {
   const yesterday = dayKey(now - 86_400_000);
 
   return (
-    <SelectionProvider value={{ selectedIds, enabled: selecting, busy, toggle: (id) => toggleMany([id]), toggleMany }}>
+    <SelectionProvider value={{ selectedIds: visibleSelectedIds, enabled: selecting, busy, toggle: (id) => toggleMany([id]), toggleMany }}>
     <SummaryActions.Provider value={{ enabled: llmConfig?.enabled ?? false, busy, generate: (ids) => void generate(ids), configure: () => setSettingsOpen(true) }}>
     <div className="library">
       <header className="library-header">
@@ -294,6 +296,9 @@ export function App() {
               </button>
             ))}
           </div>
+          <button type="button" className="chip selection-start" data-selection="start"
+            disabled={busy || selecting || shown === 0} aria-controls={selecting ? 'selection-actions' : undefined}
+            onClick={() => setSelecting(true)}>批量选择</button>
         </div>
 
         <div className="filters" inert={bulkBusy}>
@@ -381,7 +386,7 @@ export function App() {
             onReplace={replaceColors}
           />
         </div>
-        {selecting && <BulkEditActions count={selectedIds.size} pageCount={selectedPageIds.length}
+        {selecting && <BulkEditActions count={visibleSelectedIds.size} pageCount={selectedPageIds.length}
           palette={bulkPalette} deletedOnly={filters.deletedOnly} busy={busy}
           onSelectAll={() => setSelectedIds(new Set(visibleIds))} onClear={() => setSelectedIds(new Set())}
           onExit={() => { setSelecting(false); setSelectedIds(new Set()); }}

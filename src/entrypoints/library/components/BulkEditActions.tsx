@@ -78,31 +78,32 @@ export function BulkEditActions({
       : action === 'delete' ? `Delete ${annotations}` : `Restore ${annotations}`;
 
   return (
-    <section className="bulk-edit-panel" aria-label="Selected annotation actions" aria-busy={locked}>
+    <section id="selection-actions" className="bulk-edit-panel" aria-label="Selected annotation actions" aria-busy={locked}>
       <div className="bulk-edit-heading">
-        <strong data-selection="count" aria-live="polite">
+        <strong data-selection="count" aria-live="polite" aria-label={`已选 ${pageCount} 个页面，${count} 条标注`}>
           {count} selected · {pageCount} page{pageCount === 1 ? '' : 's'}
         </strong>
         <div className="bulk-edit-buttons">
-          <button type="button" data-selection="all" disabled={locked} onClick={onSelectAll}>
-            Select all filtered
+          <button type="button" data-selection="all" disabled={locked} onClick={onSelectAll} title="当前筛选中的标注，含折叠内容">
+            全选筛选结果
           </button>
           <button type="button" data-selection="clear" disabled={locked || count === 0} onClick={onClear}>
-            Clear selection
+            清空选择
           </button>
-          <button type="button" data-selection="exit" disabled={locked} onClick={onExit}>Done</button>
+          <button type="button" data-selection="exit" disabled={locked} onClick={onExit}>退出选择</button>
         </div>
       </div>
       <div className="bulk-edit-buttons">
         {!deletedOnly && <>
           <button type="button" data-selection="color" disabled={locked || count === 0} onClick={() => choose('color')}>
-            Change colour
+            批量改色
           </button>
           <button type="button" data-selection="comment" disabled={locked || count === 0} onClick={() => choose('comment')}>
-            Edit notes
+            批量编辑笔记
           </button>
-          <button type="button" data-selection="summarize" disabled={locked || count === 0} onClick={onSummarize}>
-            Summarize {pageCount > 0 ? `${pageCount} page${pageCount === 1 ? '' : 's'}` : 'pages'}…
+          <button type="button" data-selection="summarize" disabled={locked || count === 0} onClick={onSummarize}
+            title="整理所选页面的全部未删除标注和笔记" aria-description="整理所选页面的全部未删除标注和笔记">
+            批量整理主要内容
           </button>
         </>}
         <button
@@ -112,7 +113,7 @@ export function BulkEditActions({
           disabled={locked || count === 0}
           onClick={() => choose(deletedOnly ? 'restore' : 'delete')}
         >
-          {deletedOnly ? 'Restore selected' : 'Delete selected'}
+          {deletedOnly ? '批量恢复' : '批量删除'}
         </button>
       </div>
 

@@ -120,6 +120,7 @@ for observability without page-world coupling.
 | E71–E72 | status hints | concise default view, structured hover/focus hints, Escape dismissal without closing the dialog, pointer access, narrow viewport containment and visible actionable errors |
 | E73–E74 | scheduled / manual sync | hourly/daily/weekly/manual settings, persistent next due time, no immediate upload after edits or saves, due alarms, complete manual remote scan with unchanged zero uploads |
 | E75–E76 | concise summaries | exact old-default migration, custom prompt preservation, no expanded draft returned, one API request and preserved manually saved main content |
+| E77–E78 | card selection | visible card checkboxes, collapsed rows, full/partial states, Space toggling, direct batch entry, filtered selection and narrow-screen action access |
 
 ## Manual checklist (pre-release)
 
