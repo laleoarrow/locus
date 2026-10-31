@@ -22,6 +22,7 @@ export interface SyncResult {
 
 /** How many times to redo pull→merge→push when another device wins the race. */
 const MAX_ATTEMPTS = 3;
+class SyncSupersededError extends Error {}
 
 /**
  * One sync pass: pull the remote library, merge it into the local one, then
@@ -37,6 +38,7 @@ export async function runSync(
   config: SyncConfig,
   state: SyncState,
   appVersion: string,
+  isCurrent: () => Promise<boolean> = async () => true,
 ): Promise<{ result: SyncResult; state: SyncState }> {
   const base = normalizeCollectionUrl(config.url);
   if (!base || !isConfigComplete(config)) {
@@ -56,12 +58,18 @@ export async function runSync(
   let lastError = 'Sync failed.';
   let pulled = 0;
   let settingsPulled = 0;
+  const ensureCurrent = async () => {
+    if (!await isCurrent()) throw new SyncSupersededError();
+  };
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
+      await ensureCurrent();
       if (attempt === 1) await client.ensureCollection();
+      await ensureCurrent();
 
       const remote = await client.get(LIBRARY_FILE);
+      await ensureCurrent();
       if (remote) {
         const parsed = parseBackup(JSON.parse(remote.body));
         if ('error' in parsed) {
@@ -77,12 +85,15 @@ export async function runSync(
             state: { ...state, lastError: parsed.error },
           };
         }
+        await ensureCurrent();
         const summary = await repo.importBackup(parsed.file);
         pulled += summary.annotationsAdded + summary.annotationsUpdated;
         settingsPulled += summary.settingsUpdated;
       }
 
+      await ensureCurrent();
       const merged = await repo.exportBackup(appVersion);
+      await ensureCurrent();
       const etag = await client.put(
         LIBRARY_FILE,
         JSON.stringify(merged),
@@ -95,14 +106,16 @@ export async function runSync(
         state: { lastSyncAt: now, lastError: '', etag },
       };
     } catch (error) {
-      if (error instanceof WebDavError) {
+      if (error instanceof SyncSupersededError) {
+        lastError = 'Sync settings changed. The previous sync was stopped.';
+      } else if (error instanceof WebDavError) {
         lastError = error.message;
         // 412: another device pushed between our GET and PUT — merge again.
         if (error.status === 412 && attempt < MAX_ATTEMPTS) continue;
       } else if (error instanceof SyntaxError) {
         lastError = 'Remote file is not valid JSON.';
-      } else if (error instanceof Error) {
-        lastError = error.message || 'Network error.';
+      } else {
+        lastError = 'Network error. Check the WebDAV address and connection.';
       }
       break;
     }
@@ -126,6 +139,6 @@ export async function testConnection(config: SyncConfig): Promise<{ ok: boolean;
     return { ok: true, error: '' };
   } catch (error) {
     if (error instanceof WebDavError) return { ok: false, error: error.message };
-    return { ok: false, error: error instanceof Error ? error.message : 'Could not reach the server.' };
+    return { ok: false, error: 'Could not reach the WebDAV server. Check the address and connection.' };
   }
 }

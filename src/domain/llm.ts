@@ -37,7 +37,7 @@ export const DEFAULT_LLM_CONFIG: LLMConfig = {
 
 /** Only safe, application-authored messages may be returned to the UI. */
 export class LLMError extends Error {
-  constructor(message: string) {
+  constructor(message: string, readonly requestAttempted = false) {
     super(message);
     this.name = 'LLMError';
   }

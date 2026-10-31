@@ -2,6 +2,7 @@ import type { AltVersion, AnnotationColorExpectation } from '@/db/repo';
 import type { GroupMode } from '@/domain/library';
 import type { AnnotationEditAction, AnnotationEditExpectation, SummaryChange } from '@/domain/editing';
 import type { LLMConfigPatch, LLMConfigView } from '@/domain/llm';
+import type { ConnectionState } from '@/domain/status';
 import type { SyncConfig, SyncState } from '@/domain/sync';
 import type { SyncResult } from '@/sync/engine';
 import type { SyncConfigView } from '@/sync/store';
@@ -60,6 +61,7 @@ export type BgRequest =
   | { type: 'summary:save'; changes: SummaryChange[] }
   | { type: 'llm:status' }
   | { type: 'llm:save'; patch: LLMConfigPatch }
+  | { type: 'llm:test' }
   | { type: 'llm:generate'; sourceId: string }
   | {
       type: 'annotations:replace-color';
@@ -76,7 +78,7 @@ export type BgRequest =
   | { type: 'prefs:set-check-updates'; on: boolean }
   | { type: 'update:status' }
   | { type: 'sync:status' }
-  | { type: 'sync:save'; patch: Partial<SyncConfig> }
+  | { type: 'sync:save'; patch: Partial<SyncConfig>; expectedRevision?: number }
   | { type: 'sync:test' }
   | { type: 'sync:now' }
   | {
@@ -98,8 +100,9 @@ export interface BgResponseMap {
   'annotations:undelete': { ok: true };
   'annotations:edit': { updated: number; error?: string };
   'summary:save': { updated: number; error?: string };
-  'llm:status': { config: LLMConfigView };
-  'llm:save': { config: LLMConfigView; error?: string };
+  'llm:status': { config: LLMConfigView; connection: ConnectionState };
+  'llm:save': { config: LLMConfigView; connection: ConnectionState; error?: string };
+  'llm:test': { ok: boolean; error: string; connection: ConnectionState };
   'llm:generate': { draft?: SummaryChange; error?: string };
   'annotations:replace-color': { updated: number; error?: string };
   'prefs:set-placement': { prefs: Prefs };
@@ -109,10 +112,10 @@ export interface BgResponseMap {
   'prefs:set-detect-doi': { prefs: Prefs };
   'prefs:set-check-updates': { prefs: Prefs };
   'update:status': { current: string; info: UpdateInfo | null; hasUpdate: boolean };
-  'sync:status': { config: SyncConfigView; state: SyncState };
-  'sync:save': { config: SyncConfigView; state: SyncState };
-  'sync:test': { ok: boolean; error: string };
-  'sync:now': { result: SyncResult; state: SyncState };
+  'sync:status': { config: SyncConfigView; state: SyncState; connection: ConnectionState };
+  'sync:save': { config: SyncConfigView; state: SyncState; connection: ConnectionState; error?: string };
+  'sync:test': { ok: boolean; error: string; connection: ConnectionState };
+  'sync:now': { result: SyncResult; state: SyncState; connection: ConnectionState };
   'anchor-state:report': { ok: true };
   'library:set-mode': { mode: GroupMode };
   'library:open': { ok: true };

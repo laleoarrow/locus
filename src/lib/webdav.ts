@@ -41,6 +41,8 @@ export class WebDavClient {
       // Never let a proxy or the HTTP cache answer a sync request.
       cache: 'no-store',
       credentials: 'omit',
+      // The signal also covers response-body reads after headers arrive.
+      signal: AbortSignal.timeout(25_000),
     });
   }
 

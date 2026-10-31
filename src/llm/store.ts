@@ -7,10 +7,19 @@ import {
   type LLMConfigPatch,
   type LLMConfigView,
 } from '@/domain/llm';
+import { connectionView, EMPTY_CONNECTION_STATE, type ConnectionAttempt, type ConnectionState, type StoredConnection } from '@/domain/status';
 
 /** Kept outside Dexie so API credentials never enter backups or WebDAV sync. */
 const CONFIG_KEY = 'locus.llm.config';
+const CONNECTION_KEY = 'locus.llm.connection';
+const CONNECTION_SESSION_ID = crypto.randomUUID();
 let saveQueue: Promise<unknown> = Promise.resolve();
+
+function serial<T>(operation: () => Promise<T>): Promise<T> {
+  const pending = saveQueue.then(operation);
+  saveQueue = pending.catch(() => undefined);
+  return pending;
+}
 
 export async function getLLMConfig(): Promise<LLMConfig> {
   const stored = await chrome.storage.local.get(CONFIG_KEY);
@@ -33,6 +42,37 @@ function view(config: LLMConfig): LLMConfigView {
 
 export async function getLLMConfigView(): Promise<LLMConfigView> {
   return view(await getLLMConfig());
+}
+
+export async function getLLMConnection(): Promise<ConnectionState> {
+  const config = await getLLMConfig();
+  const stored = await chrome.storage.local.get(CONNECTION_KEY);
+  return connectionView(stored[CONNECTION_KEY] as StoredConnection | undefined, config.revision, CONNECTION_SESSION_ID);
+}
+
+/** Generation keeps the prior result while pending; explicit tests show Testing. */
+export function beginLLMConnection(revision: number, testing = true): Promise<ConnectionAttempt | null> {
+  return serial(async () => {
+    if ((await getLLMConfig()).revision !== revision) return null;
+    const previous = await getLLMConnection();
+    const attempt = { revision, id: crypto.randomUUID() };
+    await chrome.storage.local.set({ [CONNECTION_KEY]: {
+      ...previous, ...attempt, sessionId: CONNECTION_SESSION_ID, ...(testing ? { status: 'testing', error: '' } : {}),
+    } satisfies StoredConnection });
+    return attempt;
+  });
+}
+
+export function finishLLMConnection(attempt: ConnectionAttempt, ok: boolean, error = ''): Promise<boolean> {
+  return serial(async () => {
+    if ((await getLLMConfig()).revision !== attempt.revision) return false;
+    const stored = await chrome.storage.local.get(CONNECTION_KEY);
+    if ((stored[CONNECTION_KEY] as StoredConnection | undefined)?.id !== attempt.id) return false;
+    await chrome.storage.local.set({ [CONNECTION_KEY]: {
+      ...attempt, sessionId: CONNECTION_SESSION_ID, status: ok ? 'success' : 'error', checkedAt: Date.now(), error: ok ? '' : error,
+    } satisfies StoredConnection });
+    return true;
+  });
 }
 
 async function save(patch: LLMConfigPatch): Promise<LLMConfigView> {
@@ -61,14 +101,14 @@ async function save(patch: LLMConfigPatch): Promise<LLMConfigView> {
     revision: current.revision + 1,
   };
   validateLLMConfig(next);
-  await chrome.storage.local.set({ [CONFIG_KEY]: next });
+  await chrome.storage.local.set({ [CONFIG_KEY]: next, [CONNECTION_KEY]: {
+    ...EMPTY_CONNECTION_STATE, revision: next.revision, id: '', sessionId: CONNECTION_SESSION_ID,
+  } satisfies StoredConnection });
   return view(next);
 }
 
 /** Blank keys preserve the saved key; only an explicit clear or new origin removes it. */
 export function saveLLMConfig(patch: LLMConfigPatch): Promise<LLMConfigView> {
   // Serial writes preserve independent changes from the library and side panel.
-  const saved = saveQueue.then(() => save(patch));
-  saveQueue = saved.catch(() => undefined);
-  return saved;
+  return serial(() => save(patch));
 }

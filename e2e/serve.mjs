@@ -139,7 +139,7 @@ const llmRequests = new Map();
 const llmHeld = new Map();
 
 async function handleLlm(req, res, pathname) {
-  const match = /^\/__llm\/([\w-]+)\/(requests|release|(?:success|error|hold)\/chat\/completions)$/.exec(pathname);
+  const match = /^\/__llm\/([\w-]+)\/(requests|release|(?:success|error|unauthorized|hold)\/chat\/completions)$/.exec(pathname);
   if (!match) { res.writeHead(404); res.end(); return; }
   const [, token, action] = match;
   const json = (status, value) => {
@@ -162,6 +162,12 @@ async function handleLlm(req, res, pathname) {
   const requests = llmRequests.get(token) ?? [];
   requests.push({ body, authorizationPresent: Boolean(req.headers.authorization), path: pathname });
   llmRequests.set(token, requests);
+  if (action.startsWith('unauthorized/')) {
+    // Echo a synthetic test credential only in the rejected response to prove
+    // that provider messages never reach the user-facing status display.
+    json(401, { error: `PRIVATE_PROVIDER_DETAIL ${req.headers.authorization ?? ''}` });
+    return;
+  }
   if (action.startsWith('error/')) {
     json(500, { error: 'PRIVATE_PROVIDER_DETAIL' });
     return;

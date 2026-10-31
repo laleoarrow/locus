@@ -55,6 +55,13 @@ it is stored as page content only after you save it. Your API provider's
 processing, retention and billing terms apply. You can disable the feature or
 clear the saved API key at any time.
 
+The Library also offers an explicit **Test connection** action. Its LLM check
+sends a fixed synthetic sample and test prompt to your configured model, using
+your API key, without reading or sending your saved notes or personal prompt.
+WebDAV testing checks the configured collection without synchronising the
+library. Connection results and their times stay in local extension storage;
+they are excluded from backups and sync. Saving settings does not run a test.
+
 ## Data you export
 
 The side panel can export your library to a JSON file that you choose where to

@@ -35,12 +35,7 @@ async function readResponse(response: Response): Promise<unknown> {
   }
 }
 
-/** Generate an editable draft only. Saving it is a separate user action. */
-export async function generateSummary(
-  config: LLMConfig,
-  input: SummaryInput,
-  signal?: AbortSignal,
-): Promise<string> {
+function prepareSummaryRequest(config: LLMConfig, input: SummaryInput): { endpoint: string; material: string } {
   if (!config.enabled) throw new LLMError('请先在设置中启用 AI 整理。');
   validateLLMConfig(config);
   const endpoint = llmEndpoint(config.baseUrl);
@@ -55,6 +50,21 @@ export async function generateSummary(
     annotations: input.annotations.map(({ quote, note }, index) => ({ id: index + 1, quote, note })),
   });
   if (material.length > MAX_INPUT_LENGTH) throw new LLMError('所选标注内容过多，请减少选择后重试。');
+  return { endpoint, material };
+}
+
+/** Validate before taking ownership of a connection attempt. No network or storage. */
+export function validateSummaryRequest(config: LLMConfig, input: SummaryInput): void {
+  prepareSummaryRequest(config, input);
+}
+
+/** Generate an editable draft only. Saving it is a separate user action. */
+export async function generateSummary(
+  config: LLMConfig,
+  input: SummaryInput,
+  signal?: AbortSignal,
+): Promise<string> {
+  const { endpoint, material } = prepareSummaryRequest(config, input);
   if (signal?.aborted) throw new LLMError('已取消 AI 整理。');
 
   const controller = new AbortController();
@@ -100,12 +110,24 @@ export async function generateSummary(
     }
     return content.trim();
   } catch (error) {
-    if (timedOut) throw new LLMError('AI 整理超时，请稍后重试。');
-    if (signal?.aborted) throw new LLMError('已取消 AI 整理。');
-    if (error instanceof LLMError) throw error;
-    throw new LLMError('无法连接 AI 服务，请检查 API 地址和网络后重试。');
+    if (timedOut) throw new LLMError('AI 整理超时，请稍后重试。', true);
+    if (signal?.aborted) throw new LLMError('已取消 AI 整理。', true);
+    if (error instanceof LLMError) throw new LLMError(error.message, true);
+    throw new LLMError('无法连接 AI 服务，请检查 API 地址和网络后重试。', true);
   } finally {
     clearTimeout(timeout);
     signal?.removeEventListener('abort', cancel);
   }
+}
+
+/** An explicit connection check never reads saved page notes or the user's prompt. */
+export async function testLLMConnection(config: LLMConfig): Promise<void> {
+  await generateSummary({
+    ...config,
+    prompt: '这是连接测试。仅根据合成资料，用中文回复一句简短摘要并附上 [1]。',
+  }, {
+    title: 'Locus connection test',
+    url: 'https://example.invalid/locus-connection-test',
+    annotations: [{ quote: 'This is synthetic sample text for a connection test.', note: '' }],
+  });
 }

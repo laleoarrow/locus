@@ -54,6 +54,7 @@ exercising the dynamic registration and per-site disable paths).
 | U42 | placement / obstacles | deep/open/closed shadow hosts, inherited overlays, hidden/fullscreen wrappers, duplicate bounds, late changes and cached measurements; clear nearby placement with gaps, selection keep-out, and viewport limits |
 | U43 | selected editing / summaries | exact atomic selection edits, append/replace, independent color clock, stale previews and same-millisecond mutations; summary compare-and-save, v4 migration, v3 backup/source remapping, clear-safe merge and credential exclusion |
 | U44 | LLM | default-off and private local configuration, masked keys, origin changes, editable prompt, URL normalization, explicit source payload, timeout/cancellation, size limits and safe provider errors |
+| U45 | connection state / sync races | verification timestamps, configuration revisions, stale operation rejection, worker restart recovery, cross-service credential clearing, request/body timeouts and cancelled sync guards before data operations |
 
 ## E2E (Playwright, loaded extension)
 
@@ -114,6 +115,7 @@ for observability without page-world coupling.
 | E54 | selection scope | filtered/collapsed rows, page selection and all three grouping modes keep selection explicit and prune hidden records |
 | E55 | selected edit race | a concurrent note update rejects the held batch atomically; pending controls are disabled |
 | E56–E61 | main content / LLM | default-off/manual persistence, masked credentials and editable prompts, local mock API payload, editable unsaved drafts, provider errors, stale notes/settings, selected multi-page generation and summary save conflicts |
+| E62–E65 | service status | configured vs verified, synthetic-only LLM tests, cross-window status and failure recovery, WebDAV check vs actual sync, stale test responses and stale settings-form rejection |
 
 ## Manual checklist (pre-release)
 

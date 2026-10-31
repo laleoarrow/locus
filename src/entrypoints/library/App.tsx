@@ -23,6 +23,7 @@ import { BulkColorActions } from './components/BulkColorActions';
 import { BulkEditActions } from './components/BulkEditActions';
 import { SelectionProvider } from './components/SelectionContext';
 import { LLMSettings } from './components/LLMSettings';
+import { ConnectionStatus } from './components/ConnectionStatus';
 import { SummaryActions } from './components/PageSummary';
 import { SummaryReview, type SummaryReviewEntry } from './components/SummaryReview';
 import { PageCard } from './components/PageCard';
@@ -68,9 +69,6 @@ export function App() {
   const generationRun = useRef(0);
   const busy = bulkBusy || generating || summarySaving;
   useEffect(() => {
-    void requestBg({ type: 'llm:status' }).then((result) => {
-      if (result) setLlmConfig(result.config);
-    });
     return () => { generationRun.current++; };
   }, []);
 
@@ -272,8 +270,7 @@ export function App() {
               ? 'Loading…'
               : `${shown} of ${total} annotation${total === 1 ? '' : 's'}`}
           </span>
-          <button className="chip llm-settings-trigger" type="button" data-llm="settings" disabled={!llmConfig || busy}
-            onClick={() => setSettingsOpen(true)}>LLM · {llmConfig?.enabled ? 'On' : 'Off'}</button>
+          <ConnectionStatus disabled={busy} onLLMConfig={setLlmConfig} onLLMSettings={() => setSettingsOpen(true)} />
         </div>
 
         <div className="controls" inert={bulkBusy}>

@@ -107,6 +107,11 @@ bring them back reliably — even when the page shifts under you.
   organisation with your own API address, model and API key. Generation uses
   the chosen page's saved excerpts and notes, returns a draft, and saves only
   when you choose to save. The prompt is editable and can be reset.
+- **See whether services are ready.** The Library's LLM and cloud-sync lights
+  distinguish missing configuration, disabled services, untested settings,
+  checking, verified connections and failures. Click for timestamps, settings
+  and explicit connection tests. An LLM test sends synthetic sample text only;
+  a WebDAV connection check is separate from a completed library sync.
 - **Sync through storage you own.** Point Locus at a WebDAV folder (坚果云 /
   Nutstore, Nextcloud, anything WebDAV) once, and every device keeps itself
   merged — no account, no server of ours. Or just use **Export / Import** for a

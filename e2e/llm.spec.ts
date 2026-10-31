@@ -33,7 +33,7 @@ async function seed(context: BrowserContext, extensionId: string, secondPage = f
   const library = await context.newPage();
   await library.goto(`chrome-extension://${extensionId}/library.html`);
   await expect(library.locator('.page-card')).toHaveCount(secondPage ? 2 : 1);
-  await expect(library.locator('[data-llm="settings"]')).toBeEnabled();
+  await expect(library.locator('[data-status="llm"]')).toBeEnabled();
   const card = library.locator('.page-card').filter({ has: library.locator(`.page-title[title="${NESTED}"]`) });
   await expect(card).toHaveCount(1);
   return { page, library, card };
@@ -46,8 +46,15 @@ async function saveManual(card: Locator, content: string) {
   await expect(card.locator('.summary-content')).toHaveText(content);
 }
 
+async function openLLMSettings(library: Page) {
+  await library.locator('[data-status="llm"]').click();
+  await library.getByRole('dialog', { name: 'Connection status · 连接状态' })
+    .locator('[data-status-action="llm-settings"]').click();
+  await expect(library.getByRole('dialog', { name: 'LLM settings' })).toBeVisible();
+}
+
 async function configure(library: Page, token: string, mode = 'success') {
-  await library.locator('[data-llm="settings"]').click();
+  await openLLMSettings(library);
   await library.locator('[data-llm="enabled"]').check();
   await library.locator('[data-llm="url"]').fill(`${BASE_URL}/__llm/${token}/${mode}`);
   await library.locator('[data-llm="model"]').fill('fixture-model');
@@ -55,7 +62,7 @@ async function configure(library: Page, token: string, mode = 'success') {
   await library.locator('[data-llm="prompt"]').fill(CUSTOM_PROMPT);
   await library.locator('[data-llm="save"]').click();
   await expect(library.getByRole('dialog', { name: 'LLM settings' })).not.toBeVisible();
-  await expect(library.locator('[data-llm="settings"]')).toHaveText('LLM · On');
+  await expect(library.locator('[data-status="llm"]')).toContainText('待验证');
 }
 
 async function storedSummary(library: Page, sourceId: string): Promise<{ content: string; updatedAt: number } | null> {
@@ -76,7 +83,7 @@ test('E56: manual main content persists while AI is off and setup sends nothing'
 }) => {
   const token = randomUUID();
   const { library, card } = await seed(context, extensionId);
-  await expect(library.locator('[data-llm="settings"]')).toHaveText('LLM · Off');
+  await expect(library.locator('[data-status="llm"]')).toContainText(/已关闭|未配置/);
   await saveManual(card, '手动记录的主要内容，不需要模型。');
   await library.reload();
   await expect(card.locator('.summary-content')).toHaveText('手动记录的主要内容，不需要模型。');
@@ -110,7 +117,7 @@ test('E57: live page notes become an editable draft; keys stay masked and out of
   await saveManual(card, 'Previously reviewed content.');
   await configure(library, token);
 
-  await library.locator('[data-llm="settings"]').click();
+  await openLLMSettings(library);
   await expect(library.locator('[data-llm="key"]')).toHaveValue('');
   await expect(library.locator('[data-llm="key"]')).toHaveAttribute('type', 'password');
   await expect(library.locator('[data-llm="key"]')).toHaveAttribute('placeholder', /Saved/);
@@ -200,6 +207,8 @@ for (const changed of ['notes', 'settings'] as const) {
     await expect(review.getByRole('alert')).toContainText(changed === 'notes' ? 'notes changed' : 'settings changed');
     await expect(review.locator('textarea')).toHaveCount(0);
     await expect(review.locator('[data-summary-review="save"]')).toBeDisabled();
+    const connection = await library.evaluate(() => chrome.runtime.sendMessage({ type: 'llm:status' }));
+    expect(connection.connection.status).toBe(changed === 'notes' ? 'success' : 'untested');
     await review.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(card.locator('.summary-content')).toHaveText('Keep original while waiting.');
   });

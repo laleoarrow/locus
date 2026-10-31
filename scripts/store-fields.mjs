@@ -31,7 +31,7 @@ Annotations and saved page content live in your browser's local database. There 
 Three optional features reach the network, each switchable off:
 • Sync — you supply the WebDAV folder, so your annotations, notes, page URLs and saved main content travel through storage you choose. Credentials are stored locally and are excluded from backups and sync.
 • Update check — fetches public release information from GitHub to tell you when a new version exists. It sends no annotations or page content.
-• AI organisation — only when you explicitly click Generate, the chosen page's title, URL and all its live saved quotes and notes are sent to your configured API, together with your prompt and model choice. Locus does not additionally fetch or scrape the full page. The API key is used to authenticate with that provider. AI settings and the API key are saved only in local extension storage and are excluded from backups and WebDAV sync. The returned text remains a draft until you choose Save.
+• AI organisation — only when you explicitly click Generate, the chosen page's title, URL and all its live saved quotes and notes are sent to your configured API, together with your prompt and model choice. Locus does not additionally fetch or scrape the full page. The API key is used to authenticate with that provider. AI settings and the API key are saved only in local extension storage and are excluded from backups and WebDAV sync. The returned text remains a draft until you choose Save. The Library status panel offers a separate connection test using synthetic sample text only, plus the last verification and actual sync times.
 
 WHAT IT IS NOT
 Not a reference manager: no bibliography, citation formatting, tags or collaboration.
@@ -62,7 +62,7 @@ const DESCRIPTION_ZH = `Locus / 文迹 是一个网页阅读标注层。高亮�
 有三项可选功能会联网，且均可关闭：
 • 同步——由你提供 WebDAV 目录，标注、笔记、页面网址和已保存的主要内容传输到你选择的存储空间。凭据保存在本地，不进入备份和同步。
 • 更新检查——从 GitHub 获取公开版本信息以提示有新版本，不发送标注或页面内容。
-• AI 整理——只有你明确点击 Generate 时，才会将所选页面的标题、网址及该页全部未删除的已保存摘录和笔记，连同提示词与模型选择发送到你配置的 API，不另行抓取页面全文。API key 用于向该服务认证。AI 设置和 API key 仅保存在本地扩展存储中，不进入备份或 WebDAV 同步。返回内容保留为草稿，点击 Save 后才保存。
+• AI 整理——只有你明确点击 Generate 时，才会将所选页面的标题、网址及该页全部未删除的已保存摘录和笔记，连同提示词与模型选择发送到你配置的 API，不另行抓取页面全文。API key 用于向该服务认证。AI 设置和 API key 仅保存在本地扩展存储中，不进入备份或 WebDAV 同步。返回内容保留为草稿，点击 Save 后才保存。资料库状态区另有连接测试，仅发送示例文字，并分别显示最近验证与实际同步时间。
 
 它不是什么
 不是文献管理器：不提供参考文献、引文格式、标签或协作功能。
@@ -95,7 +95,7 @@ NETWORK ACCESS (three optional features, all user-controlled)
 
 No remote code is loaded or executed; everything is bundled in the package. Provider JSON is treated as data and the generated text as an editable draft, never executable code.`;
 
-const DATA_STATEMENT = `Locus has no backend, account system or telemetry. Annotations, notes, page metadata and saved page summaries are stored locally in IndexedDB. Three optional features make network requests: enabled WebDAV sync transfers those saved records to a server the user configures; update checking requests public GitHub release metadata without annotations or page content; and AI organisation, off by default, sends a chosen page's title, URL and all its live saved quotes and notes only when the user explicitly clicks Generate. The AI request goes to the user's configured OpenAI-compatible API with their chosen model, prompt and API key for authentication; it does not additionally fetch or scrape the full page. AI results remain drafts until Save. AI configuration and API key are saved in chrome.storage.local and excluded from backups and sync. Disclose these user-directed transfers, including website content and URLs, in the store's applicable data categories; do not represent all categories as having no transmission.`;
+const DATA_STATEMENT = `Locus has no backend, account system or telemetry. Annotations, notes, page metadata and saved page summaries are stored locally in IndexedDB. Three optional features make network requests: enabled WebDAV sync transfers those saved records to a server the user configures; update checking requests public GitHub release metadata without annotations or page content; and AI organisation, off by default, sends a chosen page's title, URL and all its live saved quotes and notes only when the user explicitly clicks Generate. The AI request goes to the user's configured OpenAI-compatible API with their chosen model, prompt and API key for authentication; it does not additionally fetch or scrape the full page. Explicit LLM connection tests send synthetic sample text instead of saved notes or the personal prompt. AI results remain drafts until Save. AI configuration and API key are saved in chrome.storage.local and excluded from backups and sync. Disclose these user-directed transfers, including website content and URLs, in the store's applicable data categories; do not represent all categories as having no transmission.`;
 
 export const FIELDS = [
   // ── Listing basics ──

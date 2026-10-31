@@ -6,15 +6,19 @@ import { db } from '@/db/schema';
 import { toUrlKey } from '@/domain/url';
 import { isConfigComplete, type SyncState } from '@/domain/sync';
 import { isNewerVersion } from '@/domain/version';
-import { generateSummary } from '@/llm/client';
-import { getLLMConfig, getLLMConfigView, saveLLMConfig } from '@/llm/store';
+import { LLMError, validateLLMConfig } from '@/domain/llm';
+import type { ConnectionAttempt, ConnectionState } from '@/domain/status';
+import { generateSummary, testLLMConnection, validateSummaryRequest } from '@/llm/client';
+import { beginLLMConnection, finishLLMConnection, getLLMConfig, getLLMConfigView, getLLMConnection, saveLLMConfig } from '@/llm/store';
 import type { BgRequest, BgResponseFor, ChangeBroadcast, TabMessage } from '@/messaging/protocol';
 import { runSync, testConnection, type SyncResult } from '@/sync/engine';
 import {
   getSyncConfig,
+  getSyncConnection,
   getSyncState,
+  beginSyncConnection,
+  finishSyncConnection,
   setSyncConfig,
-  setSyncState,
   toConfigView,
 } from '@/sync/store';
 
@@ -30,7 +34,7 @@ let syncing = false;
 /** A local mutation that still needs a pass after the active one finishes. */
 let syncQueued = false;
 
-async function syncNow(): Promise<{ result: SyncResult; state: SyncState }> {
+async function syncNow(): Promise<{ result: SyncResult; state: SyncState; connection: ConnectionState }> {
   const config = await getSyncConfig();
   const state = await getSyncState();
   if (!config.enabled || !isConfigComplete(config)) {
@@ -46,6 +50,7 @@ async function syncNow(): Promise<{ result: SyncResult; state: SyncState }> {
         error: 'Sync is off.',
       },
       state,
+      connection: await getSyncConnection(),
     };
   }
   if (syncing) {
@@ -58,6 +63,7 @@ async function syncNow(): Promise<{ result: SyncResult; state: SyncState }> {
         error: 'Already syncing.',
       },
       state,
+      connection: await getSyncConnection(),
     };
   }
   clearTimeout(syncTimer);
@@ -67,8 +73,14 @@ async function syncNow(): Promise<{ result: SyncResult; state: SyncState }> {
   syncQueued = false;
   syncing = true;
   try {
-    const outcome = await runSync(config, state, chrome.runtime.getManifest().version);
-    await setSyncState(outcome.state);
+    const attempt = await beginSyncConnection(config.revision);
+    if (!attempt) return {
+      result: { ok: false, pulled: 0, settingsPulled: 0, pushed: false, error: 'Sync settings changed. Run sync again.' },
+      state: await getSyncState(), connection: await getSyncConnection(),
+    };
+    const outcome = await runSync(config, state, chrome.runtime.getManifest().version,
+      async () => (await getSyncConfig()).revision === config.revision);
+    await finishSyncConnection(attempt, outcome.result.ok, outcome.result.error, outcome.state);
     if (outcome.result.pulled > 0) {
       // Pulled rows change what pages should render: refresh every tab.
       const tabs = await chrome.tabs.query({});
@@ -87,7 +99,12 @@ async function syncNow(): Promise<{ result: SyncResult; state: SyncState }> {
     if (outcome.result.pulled > 0 || outcome.result.settingsPulled > 0) {
       await broadcastOpenPageColors();
     }
-    return outcome;
+    const current = await getSyncConfig();
+    return {
+      result: current.revision === config.revision ? outcome.result
+        : { ...outcome.result, ok: false, error: 'Sync settings changed during this run. Run sync again.' },
+      state: await getSyncState(), connection: await getSyncConnection(),
+    };
   } finally {
     syncing = false;
     if (syncQueued) armScheduledSync();
@@ -335,18 +352,39 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
       }
     }
     case 'llm:status':
-      return { config: await getLLMConfigView() };
+      return { config: await getLLMConfigView(), connection: await getLLMConnection() };
     case 'llm:save': {
       try {
-        return { config: await saveLLMConfig(message.patch) };
+        return { config: await saveLLMConfig(message.patch), connection: await getLLMConnection() };
       } catch (error) {
         return {
           config: await getLLMConfigView(),
+          connection: await getLLMConnection(),
           error: error instanceof Error ? error.message : 'Could not save LLM settings.',
         };
       }
     }
+    case 'llm:test': {
+      let attempt: ConnectionAttempt | null = null;
+      try {
+        const config = await getLLMConfig();
+        if (!config.enabled) throw new LLMError('请先在设置中启用 AI 整理。');
+        validateLLMConfig(config);
+        attempt = await beginLLMConnection(config.revision);
+        if (!attempt) throw new LLMError('LLM 设置已改变，请重新测试。');
+        await testLLMConnection(config);
+        if (!await finishLLMConnection(attempt, true)) throw new LLMError('设置已改变或已有更新的测试，请重新查看连接状态。');
+        return { ok: true, error: '', connection: await getLLMConnection() };
+      } catch (error) {
+        const message = error instanceof LLMError ? error.message : 'Could not test the LLM connection.';
+        if (attempt && error instanceof LLMError && error.requestAttempted) {
+          await finishLLMConnection(attempt, false, message);
+        }
+        return { ok: false, error: message, connection: await getLLMConnection() };
+      }
+    }
     case 'llm:generate': {
+      let attempt: ConnectionAttempt | null = null;
       try {
         const config = await getLLMConfig();
         const source = await db.sources.get(message.sourceId);
@@ -357,11 +395,16 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
         const notes = await readNotes();
         if (notes.length === 0) throw new Error('This page has no live annotations to organise.');
         const summary = await getPageSummary(source.id);
-        const content = await generateSummary(config, {
+        const input = {
           title: source.title,
           url: source.url,
           annotations: notes.map(({ quote, note }) => ({ quote, note })),
-        });
+        };
+        validateSummaryRequest(config, input);
+        attempt = await beginLLMConnection(config.revision, false);
+        if (!attempt) throw new Error('LLM settings changed during generation. Generate again with the current settings.');
+        const content = await generateSummary(config, input);
+        await finishLLMConnection(attempt, true);
         if ((await getLLMConfig()).revision !== config.revision) {
           throw new Error('LLM settings changed during generation. Generate again with the current settings.');
         }
@@ -370,6 +413,9 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
         }
         return { draft: { sourceId: source.id, content, expectedUpdatedAt: summary?.updatedAt ?? 0 } };
       } catch (error) {
+        if (attempt && error instanceof LLMError && error.requestAttempted) {
+          await finishLLMConnection(attempt, false, error.message);
+        }
         return { error: error instanceof Error ? error.message : 'Could not generate main content.' };
       }
     }
@@ -427,15 +473,31 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
     case 'update:status':
       return updateStatus();
     case 'sync:status':
-      return { config: toConfigView(await getSyncConfig()), state: await getSyncState() };
+      return { config: toConfigView(await getSyncConfig()), state: await getSyncState(), connection: await getSyncConnection() };
     case 'sync:save': {
-      const config = await setSyncConfig(message.patch);
-      await rescheduleSyncAlarm();
-      if (config.enabled && isConfigComplete(config)) scheduleSync();
-      return { config: toConfigView(config), state: await getSyncState() };
+      try {
+        const config = await setSyncConfig(message.patch, message.expectedRevision);
+        await rescheduleSyncAlarm();
+        if (config.enabled && isConfigComplete(config)) scheduleSync();
+        return { config: toConfigView(config), state: await getSyncState(), connection: await getSyncConnection() };
+      } catch (error) {
+        return {
+          config: toConfigView(await getSyncConfig()), state: await getSyncState(), connection: await getSyncConnection(),
+          error: error instanceof Error ? error.message : 'Could not save sync settings.',
+        };
+      }
     }
-    case 'sync:test':
-      return testConnection(await getSyncConfig());
+    case 'sync:test': {
+      const config = await getSyncConfig();
+      const attempt = await beginSyncConnection(config.revision);
+      if (!attempt) return { ok: false, error: 'Sync settings changed. Test again.', connection: await getSyncConnection() };
+      const result = await testConnection(config);
+      const current = await finishSyncConnection(attempt, result.ok, result.error);
+      return {
+        ...(current ? result : { ok: false, error: 'Settings changed or a newer check started. Test again.' }),
+        connection: await getSyncConnection(),
+      };
+    }
     case 'sync:now':
       return syncNow();
     case 'anchor-state:report': {
