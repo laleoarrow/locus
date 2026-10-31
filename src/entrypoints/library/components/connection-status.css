@@ -16,6 +16,14 @@
 .connection-footer { margin: 18px 0 0; font-size: 11px; text-align: center; color: var(--locus-fg-muted); }
 .connection-sync-form { border-top: 1px solid var(--locus-border); padding-top: 16px; margin-top: 16px; }
 .llm-fields .connection-sync-toggle { display: flex; align-items: center; gap: 8px; }
+.connection-help-trigger { text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 4px; cursor: help; }
+.connection-help-trigger:focus-visible { outline: 2px solid var(--locus-accent); outline-offset: 4px; border-radius: 3px; }
+button.connection-help-trigger { cursor: pointer; }
+button.connection-help-trigger[aria-disabled='true'] { opacity: .45; cursor: help; }
+.connection-help-tip { position: fixed; inset: auto; box-sizing: border-box; width: 300px; margin: 0; padding: 12px 14px; overflow-y: auto; border: 1px solid var(--locus-border); border-radius: 10px; background: var(--locus-bg); color: var(--locus-fg); box-shadow: 0 8px 28px #0003; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.connection-help-tip strong { display: block; font-size: 12px; font-weight: 600; }
+.connection-help-tip ul { margin: 6px 0 0; padding-left: 17px; color: var(--locus-fg-muted); }
+.connection-help-tip li + li { margin-top: 4px; }
 @keyframes connection-pulse { 50% { box-shadow: 0 0 0 4px #68a7ec24; opacity: .6; } }
 @media (prefers-reduced-motion: reduce) { [data-tone='testing'] .connection-light { animation: none; } }
 @media (max-width: 760px) { .title-row { flex-wrap: wrap; } .connection-chips { margin-left: 0; width: 100%; } }

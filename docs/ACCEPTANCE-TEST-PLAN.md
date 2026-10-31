@@ -117,6 +117,7 @@ for observability without page-world coupling.
 | E56–E61 | main content / LLM | default-off/manual persistence, masked credentials and editable prompts, local mock API payload, editable unsaved drafts, provider errors, stale notes/settings, selected multi-page generation and summary save conflicts |
 | E62–E65 | service status | configured vs verified, synthetic-only LLM tests, cross-window status and failure recovery, WebDAV check vs actual sync, stale test responses and stale settings-form rejection |
 | E66–E70 | efficient sync | prune visit-only pages during migration, zero-PUT unchanged/visit passes, one-page writes, concurrent manifest conflicts, quota pause/manual retry and failed migration preserving the old root |
+| E71–E72 | status hints | concise default view, structured hover/focus hints, Escape dismissal without closing the dialog, pointer access, narrow viewport containment and visible actionable errors |
 
 ## Manual checklist (pre-release)
 

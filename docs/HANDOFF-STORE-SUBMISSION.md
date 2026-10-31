@@ -9,7 +9,7 @@
 把浏览器扩展 **Locus / 文迹** 提交到 **Microsoft Edge Add-ons** 和 **Chrome Web Store**。
 上架的唯一目的是让用户获得**自动更新**——sideload（开发人员模式加载）的扩展浏览器永远不会自动更新，上架后才会。
 
-仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（当前源码版本 v0.9.0；发布、安装和上传包状态须在继续前核对，不能沿用下方 v0.7.2 的历史记录）
+仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（当前源码版本 v0.9.1；发布、安装和上传包状态须在继续前核对，不能沿用下方 v0.7.2 的历史记录）
 
 ## 项目背景（够用即止）
 
@@ -27,7 +27,7 @@ AI 设置和 API key 仅保存在本机的 `chrome.storage.local` 中，不进�
 
 ## 当前进度（从这里继续）
 
-v0.9.0 已通过 typecheck、257 项单元测试和全部 64 项浏览器测试，Chrome/Edge 安装包与 Edge keyless 商店包已验证。现有 Edge 固定 ID 安装已原位 Reload 到 0.9.0，全部 30 条当前有效标注保留。省流迁移实际发送 125,835 字节，网盘现有 23 个页面文件和 3,405 字节的 v4 索引，已独立只读核对。LLM 与网盘均已验证，自动同步已恢复；无变化零上传、流量不足自动暂停。GitHub 0.9.0 发布正在进行。商店包为 `.output/locus-0.9.0-edge-store.zip`；不要使用下方历史旧包。
+v0.9.1 已通过 typecheck、257 项单元测试和全部 66 项浏览器测试；最终定位修复后另重跑 6 项状态测试，全部通过。Chrome/Edge 安装包与 Edge keyless 商店包已验证。现有 Edge 固定 ID 安装已原位 Reload 到 0.9.1，全部 30 条当前有效标注保留；标签提示和 Escape 行为已实机验证。LLM 与网盘均显示已验证。0.9.0 省流迁移实际发送 125,835 字节，后续无修改同步实机显示 0 B；这次 UI 测试未新增真实服务探测。GitHub v0.9.0 已发布；v0.9.1 发布和合并后的更新邮件正在完成。当前商店包为 `.output/locus-0.9.1-edge-store.zip`；不要使用下方历史旧包。
 
 ### 历史记录：2026-08-01，v0.7.2
 
@@ -83,7 +83,7 @@ node scripts/store-copy.mjs next            # 复制下一项
 
 | 文件 | 用途 |
 |---|---|
-| `1-PACKAGE-edge-上传这个.zip` | 当前版本 Edge 扩展包（keyless，商店上传专用）；本次目标 v0.9.0，上传前必须核验并替换历史包 |
+| `1-PACKAGE-edge-上传这个.zip` | 当前版本 Edge 扩展包（keyless，商店上传专用）；本次目标 v0.9.1，上传前必须核验并替换历史包 |
 | `2-LOGO-300x300.png` | Edge 商店 logo |
 | `4-截图1~5-*.png` | 5 张 1280×800 Edge 截图；历史素材来自 v0.7.2，本次提交前须复核并与最终版本保持一致 |
 

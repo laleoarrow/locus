@@ -227,3 +227,112 @@ test('E65: an old WebDAV settings form cannot overwrite another window and missi
   const unchanged = await other.evaluate(() => chrome.runtime.sendMessage({ type: 'sync:status' }));
   expect(unchanged.config).toMatchObject({ url: newerUrl, username: 'newer-user', hasPassword: true });
 });
+
+test('E71: status explanations use structured hover and keyboard tooltips without dismissing the dialog', async ({
+  context, serviceWorker, extensionId, request,
+}, testInfo) => {
+  const token = randomUUID();
+  const library = await openLibrary(context, extensionId);
+  await saveLLM(library, token);
+  const dialog = await openStatus(library, 'llm');
+  await expect(dialog.locator('.dialog-help:visible')).toHaveCount(0);
+  await expect(library.getByRole('tooltip')).toHaveCount(0);
+
+  const state = dialog.locator('[data-status-help="llm-state"]');
+  const stateTip = library.locator('[data-status-help-content="llm-state"]');
+  await state.hover();
+  await expect(stateTip).toBeVisible();
+  await expect(stateTip).toHaveAttribute('role', 'tooltip');
+  await expect(stateTip.locator('strong')).toBeVisible();
+  expect(await stateTip.locator('ul > li').count()).toBeGreaterThanOrEqual(2);
+  await expect(stateTip).toContainText(/验证|测试/);
+  await expect(state).toHaveAttribute('aria-describedby', (await stateTip.getAttribute('id'))!);
+  await library.screenshot({ path: testInfo.outputPath('connection-status-help.png') });
+
+  // The tooltip must remain readable when the pointer leaves its label for
+  // the tooltip itself, including after the hover-close grace period.
+  await stateTip.hover();
+  await library.waitForTimeout(350);
+  await expect(stateTip).toBeVisible();
+  expect(await stateTip.evaluate((element) => getComputedStyle(element).pointerEvents)).not.toBe('none');
+  await library.keyboard.press('Escape');
+  await expect(stateTip).not.toBeVisible();
+  await expect(dialog).toBeVisible();
+
+  await library.mouse.move(0, 0);
+  await dialog.getByRole('button', { name: 'Close', exact: true }).focus();
+  const checked = dialog.locator('[data-status-help="llm-checked"]');
+  for (let step = 0; step < 12; step++) {
+    await library.keyboard.press('Tab');
+    if (await checked.evaluate((element) => element === document.activeElement)) break;
+  }
+  await expect(checked).toBeFocused();
+  const checkedTip = library.locator('[data-status-help-content="llm-checked"]');
+  await expect(checkedTip).toBeVisible();
+  await library.keyboard.press('Escape');
+  await expect(checkedTip).not.toBeVisible();
+  await expect(checked).toBeFocused();
+  await expect(dialog).toBeVisible();
+  await library.keyboard.press('Escape');
+  await expect(dialog).not.toBeVisible();
+  expect((await llmRequests(request, token)).requests).toHaveLength(0);
+});
+
+test('E72: status tooltips fit a narrow viewport while errors remain visible and help causes no requests', async ({
+  context, serviceWorker, extensionId, request,
+}) => {
+  const token = randomUUID();
+  const library = await openLibrary(context, extensionId);
+  await saveLLM(library, token, 'unauthorized');
+  await library.evaluate((url) => chrome.runtime.sendMessage({
+    type: 'sync:save', patch: { enabled: false, url, username: 'tester', password: 'app-password' },
+  }), `${BASE_URL}/dav/${token}/`);
+  const other = await secondWindow(context, library);
+  const dialog = await openStatus(library, 'llm');
+  const lastSync = dialog.locator('[data-status-help="sync-last-sync"]');
+  const lastSyncTip = library.locator('[data-status-help-content="sync-last-sync"]');
+  await lastSync.focus();
+  await expect(lastSyncTip).toBeVisible();
+  const beforeAnchor = (await lastSync.boundingBox())!;
+  const beforeTip = (await lastSyncTip.boundingBox())!;
+
+  // An error arriving from another window expands the preceding card without
+  // resizing this label; the already-open hint must follow its new position.
+  await other.evaluate(() => chrome.runtime.sendMessage({ type: 'llm:test' }));
+  const error = dialog.locator('[data-status-section="llm"]').getByRole('alert');
+  await expect(error).toContainText(/授权|API key|401/);
+  await expect(error).toBeVisible();
+  await expect(lastSync).toBeFocused();
+  await expect.poll(async () => Math.abs((await lastSync.boundingBox())!.y - beforeAnchor.y)).toBeGreaterThan(5);
+  await expect.poll(async () => {
+    const anchor = (await lastSync.boundingBox())!;
+    const tip = (await lastSyncTip.boundingBox())!;
+    return Math.abs((tip.y - anchor.y) - (beforeTip.y - beforeAnchor.y));
+  }).toBeLessThan(1);
+  await library.keyboard.press('Escape');
+  await expect(lastSyncTip).not.toBeVisible();
+  await expect(dialog).toBeVisible();
+  await expect(dialog).not.toContainText(TEST_KEY);
+  await expect(dialog).not.toContainText('PRIVATE_PROVIDER_DETAIL');
+  expect((await llmRequests(request, token)).requests).toHaveLength(1);
+
+  await library.setViewportSize({ width: 390, height: 700 });
+  for (const key of ['llm-state', 'sync-test']) {
+    await dialog.locator(`[data-status-help="${key}"]`).hover();
+    const tip = library.locator(`[data-status-help-content="${key}"]`);
+    await expect(tip).toBeVisible();
+    await expect.poll(() => tip.evaluate((element) => {
+      const box = element.getBoundingClientRect();
+      return box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight;
+    })).toBe(true);
+    await library.keyboard.press('Escape');
+    await expect(tip).not.toBeVisible();
+    await expect(dialog).toBeVisible();
+  }
+  await error.scrollIntoViewIfNeeded();
+  await expect(error).toBeVisible();
+  await expect(dialog.locator('.dialog-help:visible')).toHaveCount(0);
+  expect((await llmRequests(request, token)).requests).toHaveLength(1);
+  const dav = await (await request.get(`${BASE_URL}/__dav-state?prefix=${encodeURIComponent(`/dav/${token}/`)}`)).json();
+  expect(dav.requests).toHaveLength(0);
+});
