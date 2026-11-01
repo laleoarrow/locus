@@ -29,6 +29,16 @@ const SHADOW_CSS = `
 :host { all: initial; }
 * { box-sizing: border-box; }
 
+.coordinate-reference {
+  position: fixed;
+  left: 0;
+  top: 0;
+  width: 100px;
+  height: 100px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .glass {
   position: fixed;
   z-index: 2147483647;
@@ -308,10 +318,18 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function setPixelStyle(style: CSSStyleDeclaration, property: 'left' | 'top' | 'maxWidth', value: number): void {
+  // CSSOM rounds fractional pixels; comparing strings would rewrite the same
+  // position on every Auto tick when a page uses fractional zoom.
+  const previous = Number.parseFloat(style[property]);
+  if (!Number.isFinite(previous) || Math.abs(previous - value) >= 0.01) style[property] = `${value}px`;
+}
+
 /** All in-page UI, isolated in a shadow root on a host outside <body>. */
 export class LocusUI {
   private readonly host: HTMLDivElement;
   private readonly shadow: ShadowRoot;
+  private readonly coordinateReference: HTMLDivElement;
   private readonly toolbar: HTMLDivElement;
   private readonly noteCard: HTMLDivElement;
   private readonly colorInput: HTMLInputElement;
@@ -338,6 +356,11 @@ export class LocusUI {
     const style = doc.createElement('style');
     style.textContent = SHADOW_CSS;
     this.shadow.appendChild(style);
+
+    this.coordinateReference = doc.createElement('div');
+    this.coordinateReference.className = 'coordinate-reference';
+    this.coordinateReference.setAttribute('aria-hidden', 'true');
+    this.shadow.appendChild(this.coordinateReference);
 
     this.toolbar = doc.createElement('div');
     this.toolbar.className = 'glass toolbar hidden';
@@ -443,8 +466,15 @@ export class LocusUI {
     }
     if (!this.isToolbarVisible()) this.toolbar.classList.remove('hidden');
     const view = this.doc.defaultView;
-    const width = this.toolbar.offsetWidth;
-    const height = this.toolbar.offsetHeight;
+    // Fixed descendants can share an HTML root's transform or effective zoom.
+    // Measure that coordinate system independently of the toolbar's entrance
+    // animation; collision detection still uses viewport pixels throughout.
+    const reference = this.coordinateReference.getBoundingClientRect();
+    const scaleX = reference.width > 0 ? reference.width / 100 : 1;
+    const scaleY = reference.height > 0 ? reference.height / 100 : 1;
+    setPixelStyle(this.toolbar.style, 'maxWidth', Math.max(0, (view?.innerWidth ?? 0) - 16) / scaleX);
+    const width = this.toolbar.offsetWidth * scaleX;
+    const height = this.toolbar.offsetHeight * scaleY;
     const { placement, box } = resolveToolbarPosition(preference, {
       selection: anchor,
       toolbarWidth: width,
@@ -457,10 +487,8 @@ export class LocusUI {
     });
     this.lastPlacement = placement;
     if (this.toolbar.dataset['placement'] !== placement) this.toolbar.dataset['placement'] = placement;
-    const left = `${box.left}px`;
-    const top = `${box.top}px`;
-    if (this.toolbar.style.left !== left) this.toolbar.style.left = left;
-    if (this.toolbar.style.top !== top) this.toolbar.style.top = top;
+    setPixelStyle(this.toolbar.style, 'left', (box.left - reference.left) / scaleX);
+    setPixelStyle(this.toolbar.style, 'top', (box.top - reference.top) / scaleY);
   }
 
   hideToolbar(): void {

@@ -211,18 +211,57 @@ describe('toolbar repeated-update work', () => {
   });
 
   it('measures every static Auto tick without repeatedly writing unchanged DOM attributes', () => {
-    const { ui, toolbar, width, height, anchor } = toolbarSetup();
+    const { ui, shadow, toolbar, width, height, anchor } = toolbarSetup();
     width.mockClear(); height.mockClear();
+    const reference = shadow.querySelector<HTMLElement>('.coordinate-reference')!;
+    const coordinates = vi.spyOn(reference, 'getBoundingClientRect');
     const leftWrites = vi.spyOn(toolbar.style, 'left', 'set');
     const topWrites = vi.spyOn(toolbar.style, 'top', 'set');
     const observer = new MutationObserver(() => {});
-    observer.observe(toolbar, { attributes: true, subtree: true });
+    observer.observe(shadow, { attributes: true, childList: true, subtree: true });
     for (let i = 0; i < 20; i++) ui.showToolbar(anchor, 'yellow', 'auto');
     const records = observer.takeRecords();
     observer.disconnect();
     expect({ attributeWrites: records.length, widthReads: width.mock.calls.length,
       heightReads: height.mock.calls.length, positionWrites: leftWrites.mock.calls.length + topWrites.mock.calls.length })
       .toEqual({ attributeWrites: 0, widthReads: 20, heightReads: 20, positionWrites: 0 });
+    expect(coordinates).toHaveBeenCalledTimes(20);
+    expect(shadow.querySelector('.coordinate-reference')).toBe(reference);
+  });
+
+  it.each([
+    { origin: [35, 300], scale: [1, 1] },
+    { origin: [0, 0], scale: [1.5, 1.5] },
+    { origin: [-40, 120], scale: [0.75, 1.25] },
+  ])('places a toolbar in viewport coordinates with root mapping $origin / $scale', ({ origin, scale }) => {
+    const { ui, shadow, toolbar } = toolbarSetup();
+    const reference = shadow.querySelector<HTMLElement>('.coordinate-reference')!;
+    vi.spyOn(reference, 'getBoundingClientRect').mockReturnValue(
+      new DOMRect(origin[0]!, origin[1]!, 100 * scale[0]!, 100 * scale[1]!),
+    );
+    const anchor = new DOMRect(300, 500, 20, 20);
+    ui.showToolbar(anchor, 'yellow', 'below');
+    const rendered = () => ({
+      left: Number.parseFloat(toolbar.style.left) * scale[0]! + origin[0]!,
+      top: Number.parseFloat(toolbar.style.top) * scale[1]! + origin[1]!,
+    });
+    expect(rendered().top).toBeCloseTo(530);
+    expect(rendered().left + 90 * scale[0]!).toBeCloseTo(310);
+    expect(Number.parseFloat(toolbar.style.maxWidth) * scale[0]!).toBeCloseTo(window.innerWidth - 16);
+    // Chromium serializes e.g. 116.6666667px as 116.667px. Static Auto work
+    // must remain read-only after that CSSOM rounding.
+    for (const property of ['left', 'top', 'maxWidth'] as const) {
+      toolbar.style[property] = `${Number.parseFloat(toolbar.style[property]).toFixed(3)}px`;
+    }
+    const observer = new MutationObserver(() => {});
+    observer.observe(shadow, { attributes: true, childList: true, subtree: true });
+    ui.showToolbar(anchor, 'yellow', 'below');
+    expect(observer.takeRecords()).toHaveLength(0);
+    observer.disconnect();
+
+    ui.showToolbar(anchor, 'yellow', 'auto', [{ left: 0, top: 525, right: 1000, bottom: 650 }]);
+    expect(toolbar.dataset['placement']).toBe('above');
+    expect(rendered().top + 44 * scale[1]!).toBeCloseTo(490);
   });
 
   it('applies changed last colour, obstacles, viewport, dimensions and palette immediately', () => {

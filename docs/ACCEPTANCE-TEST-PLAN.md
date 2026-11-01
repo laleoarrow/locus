@@ -131,6 +131,7 @@ for observability without page-world coupling.
 | E96–E97 | Library draft lifetime | grouping/filter/live-search unmount preserves draft and expected version; hidden in-flight write failure returns with retryable draft |
 
 | E98–E99 | performance without feature loss | note/preferences/colour updates retain image-ring identity; 16-image batch restoration, live layout, visibility, clipping, nested scrolling and reload remain correct |
+| E100–E102 | toolbar distance | single punctuation in a tall dictionary card stays near and avoids the search bubble; positive root zoom/scale/translation remain correct across nested/window scrolling and resize; element-boundary selection uses actual glyphs while preserving saved highlights after reflow and reload |
 
 All browser contexts explicitly run headless with disposable profiles. Public DNS
 is disabled in this harness; API/WebDAV fixtures use localhost. The audit does not

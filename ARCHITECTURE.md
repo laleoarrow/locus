@@ -252,11 +252,20 @@ resolution shares a per-batch resource index, never a long-lived DOM cache.
   after initial traversal. Browser-native or desktop overlays outside the page
   DOM cannot be measured by this mechanism.
 
+  Text toolbar geometry measures the selected text subranges, excluding fully
+  selected elements' padding and empty height; the original Range remains the
+  capture source. A single Text-node selection requires no tree walk. A hidden
+  fixed reference measures the HTML root's positive axis scale and translation:
+  collision calculations stay in viewport coordinates, then positions map back
+  into local CSS coordinates. This also keeps long palettes inside the viewport
+  under CSS zoom. Root rotation, skew and mirroring remain unsupported.
+
   Scrolling/resizing remeasures the pending Range or image. Preference and
   palette changes retain current avoidance information; hiding the toolbar
   stops tracking. Repeated identical palettes preserve their controls and focus;
   unchanged placement attributes/styles are skipped without reducing measurement
-  or obstacle-check frequency. Long palettes scroll within the viewport. E26, E50–E52 and E81–E82
+  or obstacle-check frequency. CSSOM fractional rounding does not trigger repeated
+  writes. Long palettes scroll within the viewport. E26, E50–E52, E81–E82 and E100–E102
   cover late/animated/nested/shadow controls, live preference changes, resize,
   and obstacles on both sides.
 - **⌘/Ctrl-hover** on the toolbar's right edge slides out a ✕ zone that

@@ -3,6 +3,7 @@ import { HighlightRenderer, imageGeometry } from '@/content/highlights';
 import { LocusUI } from '@/content/ui';
 import { FloatingObstacles } from '@/content/obstacles';
 import { mutationAnchorWork } from '@/content/mutations';
+import { selectionTextRect } from '@/content/selectionGeometry';
 import { captureAnchor } from '@/domain/anchor/capture';
 import { buildImageIndex, captureImageAnchor, resolveImageAnchor, type ImageIndex } from '@/domain/anchor/image';
 import { resolveAnchor } from '@/domain/anchor/resolve';
@@ -587,8 +588,8 @@ export class LocusContent {
       this.hideToolbar();
       return;
     }
-    const rect = target.getBoundingClientRect();
-    if (rect.bottom <= 0 || rect.top >= window.innerHeight ||
+    const rect = this.pending.type === 'text' ? selectionTextRect(this.pending.range) : target.getBoundingClientRect();
+    if (!rect || rect.bottom <= 0 || rect.top >= window.innerHeight ||
       rect.right <= 0 || rect.left >= window.innerWidth) {
       this.hideToolbar();
       return;
@@ -633,8 +634,9 @@ export class LocusContent {
     }
     if (!this.ui.closeNoteEditor()) return true;
     this.pending = { type: 'text', range: range.cloneRange() };
-    const rect = range.getBoundingClientRect();
-    this.presentToolbar(rect);
+    const rect = selectionTextRect(range);
+    if (rect) this.presentToolbar(rect);
+    else this.hideToolbar();
     return true;
   }
 
