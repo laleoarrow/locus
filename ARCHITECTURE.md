@@ -210,17 +210,24 @@ fixtures) without a permanent observer cost.
   *above*, or *auto*. The decision itself is pure geometry in
   `src/domain/placement.ts` (unit-tested without a DOM): given the selection
   box, measured toolbar size and other floating rectangles, it tries the usual
-  positions above/below, then finds a nearby clear gap at obstacle edges. A
-  horizontal sweep merges forbidden vertical intervals, avoiding cubic work
+  positions above/below, then finds a nearby clear gap at obstacle edges. Auto
+  candidates remain within a rectangle-to-selection gap of `max(96, 2h + gap)`
+  CSS pixels, ranked against both usual anchor positions. A horizontal sweep
+  merges forbidden vertical intervals, avoiding cubic work
   when many controls are visible. Selection text and other surfaces receive a
   keep-out gap; the final box stays inside the viewport. If no clear space
-  exists, it minimises overlap among bounded fallback candidates.
+  exists nearby, it preserves selected text where possible and minimises local
+  overlap instead of escaping to a distant viewport edge.
 
   `content/obstacles.ts` walks nested light DOM and open/closed shadow roots
   using the extension DOM API. It measures fixed/sticky/raised controls,
   including children of zero-size or fullscreen wrappers, and handles passive
   `pointer-events: none` layers. Contained boxes are coalesced; invisible,
-  offscreen and full-page scrim rectangles are skipped. Mutation observers
+  offscreen and full-page scrim rectangles are skipped. The pending Range/image
+  supplies its composed ancestor chain: the selected container and its ordinary
+  descendants stop inheriting obstacle status, while independently floating
+  children remain rivals. Cached own-floating flags avoid extra per-tick style
+  walks, including assigned-slot boundaries. Mutation observers
   update cached candidates, and animation checks remeasure them every 200 ms
   only while Auto is visible. A slower check discovers shadow roots attached
   after initial traversal. Browser-native or desktop overlays outside the page
@@ -228,7 +235,7 @@ fixtures) without a permanent observer cost.
 
   Scrolling/resizing remeasures the pending Range or image. Preference and
   palette changes retain current avoidance information; hiding the toolbar
-  stops tracking. Long palettes scroll within the viewport. E26 and E50–E52
+  stops tracking. Long palettes scroll within the viewport. E26, E50–E52 and E81–E82
   cover late/animated/nested/shadow controls, live preference changes, resize,
   and obstacles on both sides.
 - **⌘/Ctrl-hover** on the toolbar's right edge slides out a ✕ zone that

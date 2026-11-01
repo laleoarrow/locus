@@ -7,9 +7,10 @@ function isOwnUI(element: Element): boolean {
   return element.id === LOCUS_HOST_ID || element.id === 'locus-ring-host';
 }
 
-function parentElement(element: Element): Element | null {
-  const root = element.getRootNode();
-  return element.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+function parentElement(node: Node): Element | null {
+  const root = node.getRootNode();
+  const slot = node instanceof Element || node instanceof Text ? node.assignedSlot : null;
+  return slot ?? node.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
 }
 
 function shadowRoot(element: Element): ShadowRoot | null {
@@ -28,7 +29,7 @@ function floating(style: CSSStyleDeclaration, inherited: boolean, inShadow: bool
 
 /** Cache floating subtrees; animation ticks only measure those, not the whole article. */
 export class FloatingObstacles {
-  private readonly candidates = new Set<Element>();
+  private readonly candidates = new Map<Element, boolean>();
   private readonly roots = new Set<ShadowRoot>();
   private readonly shadowless = new Set<Element>();
   private readonly dirty = new Set<Element | ShadowRoot>();
@@ -84,8 +85,9 @@ export class FloatingObstacles {
   private scan(element: Element, inherited: boolean, inShadow: boolean): void {
     if (isOwnUI(element) || SKIP_TAGS.has(element.tagName)) return;
     const style = this.doc.defaultView!.getComputedStyle(element);
-    const overlay = inherited || floating(style, inherited, inShadow);
-    if (overlay) this.candidates.add(element);
+    const ownOverlay = floating(style, inherited, inShadow);
+    const overlay = inherited || ownOverlay;
+    if (overlay) this.candidates.set(element, ownOverlay);
     else this.candidates.delete(element);
     for (const child of element.children) this.scan(child, overlay, inShadow);
     const shadow = shadowRoot(element);
@@ -109,7 +111,7 @@ export class FloatingObstacles {
     return false;
   }
 
-  collect(): Box[] {
+  collect(anchorNode?: Node): Box[] {
     const view = this.doc.defaultView;
     if (!view || !this.observer) return [];
     // attachShadow() itself emits no DOM mutation. Probe cached hosts at a
@@ -133,6 +135,21 @@ export class FloatingObstacles {
     }
     this.dirty.clear();
 
+    const anchorAncestors = new Set<Element>();
+    for (let node = anchorNode instanceof Element ? anchorNode : anchorNode ? parentElement(anchorNode) : null;
+      node; node = parentElement(node)) anchorAncestors.add(node);
+    const independent = new Map<Element, boolean>();
+    const isRival = (element: Element): boolean => {
+      // The selected card is reading content. Its static descendants do not
+      // inherit obstacle status, but a floating toolbar inside it still does.
+      if (anchorAncestors.has(element)) return false;
+      const cached = independent.get(element);
+      if (cached !== undefined) return cached;
+      const parent = parentElement(element);
+      const value = this.candidates.get(element) === true || (!!parent && isRival(parent));
+      independent.set(element, value);
+      return value;
+    };
     const visible = new Map<Element, boolean>();
     const isVisible = (element: Element): boolean => {
       const cached = visible.get(element);
@@ -145,11 +162,12 @@ export class FloatingObstacles {
       return value;
     };
     const boxes: Box[] = [];
-    for (const element of this.candidates) {
+    for (const element of this.candidates.keys()) {
       if (!element.isConnected) {
         this.candidates.delete(element);
         continue;
       }
+      if (anchorNode && !isRival(element)) continue;
       if (!isVisible(element)) continue;
       const rect = element.getBoundingClientRect();
       if (rect.width <= 0 || rect.height <= 0 ||

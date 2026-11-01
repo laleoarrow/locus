@@ -90,7 +90,18 @@ function overlaps(a: Box, b: Box): boolean {
   return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
 
+function boxGap(a: Box, b: Box): number {
+  return Math.hypot(Math.max(a.left - b.right, b.left - a.right, 0),
+    Math.max(a.top - b.bottom, b.top - a.bottom, 0));
+}
+
 describe('resolveToolbarPosition', () => {
+  it('keeps the usual anchor when there are no obstacles, including an empty selection box', () => {
+    expect(resolveToolbarPosition('auto', base).box).toEqual(toolbarBox(base, 'below'));
+    const input = { ...base, selection: { top: 300, bottom: 300, left: 300, right: 300 } };
+    expect(resolveToolbarPosition('auto', input).box).toEqual(toolbarBox(input, 'below'));
+  });
+
   it('moves sideways when rivals occupy both centred positions', () => {
     const input = { ...base, obstacles: [rivalBelow, rivalAbove] };
     const { box } = resolveToolbarPosition('auto', input);
@@ -108,6 +119,46 @@ describe('resolveToolbarPosition', () => {
     const { box } = resolveToolbarPosition('auto', { ...base, obstacles });
     for (const obstacle of [...obstacles, base.selection]) expect(overlaps(box, obstacle)).toBe(false);
     expect(box.bottom <= 230 - base.gap || box.top >= 390 + base.gap).toBe(true);
+    expect(boxGap(box, base.selection)).toBeLessThanOrEqual(96);
+  });
+
+  it('does not move hundreds of pixels away just to escape a giant obstacle', () => {
+    const obstacle = { top: 0, left: 0, right: 1000, bottom: 650 };
+    const { box } = resolveToolbarPosition('auto', { ...base, obstacles: [obstacle] });
+    expect(boxGap(box, base.selection)).toBeLessThanOrEqual(96);
+    expect(overlaps(box, base.selection)).toBe(false);
+    expect(overlaps(box, obstacle)).toBe(true);
+  });
+
+  it('uses a nearby horizontal gap instead of clear space far below the selection', () => {
+    const input = {
+      ...base,
+      selection: { top: 300, left: 400, right: 500, bottom: 320 },
+      obstacles: [
+        { top: 0, left: 0, right: 1000, bottom: 294 },
+        { top: 326, left: 0, right: 520, bottom: 700 },
+      ],
+    };
+    const { box } = resolveToolbarPosition('auto', input);
+    expect(box.left).toBe(530);
+    expect(box.top).toBe(330);
+    expect(boxGap(box, input.selection)).toBeLessThanOrEqual(96);
+    for (const obstacle of [...input.obstacles, input.selection]) expect(overlaps(box, obstacle)).toBe(false);
+  });
+
+  it('compares escape distance to both usual anchors instead of favouring a farther side', () => {
+    const input = {
+      ...base,
+      obstacles: [
+        { top: 242, left: 0, right: 1000, bottom: 292 },
+        { top: 326, left: 0, right: 1000, bottom: 390 },
+      ],
+    };
+    expect(choosePlacement(input)).toBe('below');
+    const result = resolveToolbarPosition('auto', input);
+    expect(result.placement).toBe('above');
+    expect(result.box.bottom).toBe(232);
+    expect(boxGap(result.box, input.selection)).toBeLessThanOrEqual(96);
   });
 
   it('keeps a gap even when a rival only nearly touches the toolbar', () => {
@@ -142,5 +193,23 @@ describe('resolveToolbarPosition', () => {
     expect(box.top).toBeGreaterThanOrEqual(8);
     expect(box.right).toBeLessThanOrEqual(992);
     expect(box.bottom).toBeLessThanOrEqual(792);
+    expect(boxGap(box, input.selection)).toBeLessThanOrEqual(96);
+  });
+
+  it('returns a finite clamped fallback when the selection fills the viewport', () => {
+    const input = {
+      ...base,
+      viewportWidth: 200,
+      viewportHeight: 100,
+      selection: { top: 0, left: 0, right: 200, bottom: 100 },
+      obstacles: [{ top: 0, left: 0, right: 200, bottom: 100 }],
+    };
+    const { box } = resolveToolbarPosition('auto', input);
+    expect(Object.values(box).every(Number.isFinite)).toBe(true);
+    expect(box.left).toBeGreaterThanOrEqual(8);
+    expect(box.top).toBeGreaterThanOrEqual(8);
+    expect(box.right).toBeLessThanOrEqual(192);
+    expect(box.bottom).toBeLessThanOrEqual(92);
+    expect(boxGap(box, input.selection)).toBe(0);
   });
 });

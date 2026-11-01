@@ -69,6 +69,17 @@ async function expectClearToolbar(page: Page): Promise<void> {
   });
 }
 
+async function expectNearbyToolbar(page: Page): Promise<void> {
+  await expect.poll(() => page.evaluate(() => {
+    const selected = getSelection()!.getRangeAt(0).getBoundingClientRect();
+    const toolbar = document.getElementById('locus-host')!.shadowRoot!
+      .querySelector('[data-locus-toolbar]')!.getBoundingClientRect();
+    const dx = Math.max(selected.left - toolbar.right, toolbar.left - selected.right, 0);
+    const dy = Math.max(selected.top - toolbar.bottom, toolbar.top - selected.bottom, 0);
+    return Math.hypot(dx, dy) <= Math.max(96, 2 * toolbar.height + 10);
+  })).toBe(true);
+}
+
 test('E1: content script auto-injects on a granted origin', async ({ context, serviceWorker }) => {
   const page = await context.newPage();
   await page.goto(NESTED);
@@ -825,6 +836,43 @@ test('E52: auto finds clear nearby space when rival bars occupy both vertical po
     document.body.appendChild(above);
   });
   await expectClearToolbar(page);
+});
+
+test('E81: auto stays near selected text inside a positioned content card while avoiding its floating bubble', async ({
+  context, serviceWorker, extensionId,
+}) => {
+  const url = `${BASE_URL}/fixtures/competitor.html?mode=content-card`;
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(url);
+  const panel = await openPanelFor(page, serviceWorker, extensionId, url);
+  await panel.locator('.segmented button[data-placement="auto"]').click();
+  await expect(panel.locator('.segmented button[data-placement="auto"]')).toHaveClass('on');
+  await selectText(page, '#probe-2', 'dictionary entry');
+  await expect(page.locator('html')).toHaveAttribute('data-rival-shown', '1');
+  await expectClearToolbar(page);
+  await expectNearbyToolbar(page);
+});
+
+test('E82: auto prefers a nearby text-safe fallback when only distant space clears a large overlay', async ({
+  context, serviceWorker, extensionId,
+}) => {
+  const url = `${BASE_URL}/fixtures/competitor.html?mode=giant-overlay`;
+  const page = await context.newPage();
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(url);
+  const panel = await openPanelFor(page, serviceWorker, extensionId, url);
+  await panel.locator('.segmented button[data-placement="auto"]').click();
+  await expect(panel.locator('.segmented button[data-placement="auto"]')).toHaveClass('on');
+  await selectText(page, '#probe-2', 'dictionary entry');
+  await expect(page.locator('html')).toHaveAttribute('data-rival-shown', '1');
+  // Allow the recurring placement check to observe the overlay; the first
+  // frame is nearby even in the old implementation, before it escapes.
+  await page.waitForTimeout(450);
+  await expectNearbyToolbar(page);
+  await expect.poll(() => toolbarGeometry(page)).toEqual({
+    visible: true, insideViewport: true, overlapsRival: true, overlapsSelection: false,
+  });
 });
 
 test('E19: ⌘-hover reveals the site-off switch; ✕ disables Locus on this site', async ({

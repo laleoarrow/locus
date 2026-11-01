@@ -29,11 +29,24 @@
     //   ?mode=deep            fixed bar under six static wrappers
     //   ?mode=shadow-open/closed  fixed bar inside a zero-size shadow host
     //   ?mode=moving          slides into the collision after 900ms
+    //   ?mode=content-card    selected text belongs to a raised content card
+    //   ?mode=giant-overlay   every nearby position intersects a large overlay
     // ?offset=N shifts it horizontally so a single-column probe can miss it.
     const params = new URLSearchParams(location.search);
     const mode = params.get('mode') || 'pointer-events';
     const offset = Number(params.get('offset') || 0);
     const delay = mode === 'slow' ? 900 : mode === 'late' ? 250 : 0;
+
+    if (mode === 'content-card' || mode === 'giant-overlay') {
+      document.body.style.marginTop = '80px';
+      const article = document.querySelector('article');
+      article.style.cssText = 'box-sizing:border-box;min-height:430px;padding:24px;border:1px solid #ddd;border-radius:16px;background:#fff;';
+      if (mode === 'content-card') article.style.cssText += 'position:relative;z-index:2000;';
+      article.innerHTML = '<h1>Dictionary result</h1>' +
+        '<p id="card-before">This ordinary paragraph explains a word and its usage. It is static content within the result card, not another floating control.</p>' +
+        '<p id="probe-2" style="margin:50px 0;text-align:center">dictionary entry</p>' +
+        '<p id="card-after">This second block provides additional reading context. A small search bubble can appear nearby while the entire card stays in place.</p>';
+    }
 
     let host = null;
     let bars = [];
@@ -54,6 +67,13 @@
       const wrapper = document.createElement('div');
       wrapper.id = 'rival-wrapper';
       host = wrapper;
+      if (mode === 'giant-overlay') {
+        wrapper.style.cssText = 'position:fixed;left:120px;right:120px;top:80px;bottom:120px;z-index:2147483000;background:rgba(45,45,50,.08);pointer-events:none;';
+        document.body.appendChild(wrapper);
+        bars.push(wrapper);
+        document.documentElement.setAttribute('data-rival-shown', '1');
+        return;
+      }
       // The wrapper is a passive overlay layer: only the inner control is
       // clickable. This is the detail that hides it from elementsFromPoint.
       const passive = mode === 'pointer-events';
@@ -108,7 +128,7 @@
         setTimeout(() => { wrapper.style.transform = 'translateY(0)'; }, 900);
       }
 
-      document.body.appendChild(wrapper);
+      (mode === 'content-card' ? document.querySelector('article') : document.body).appendChild(wrapper);
       document.documentElement.setAttribute('data-rival-shown', '1');
     }
 

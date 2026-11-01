@@ -537,7 +537,8 @@ class LocusContent {
   private presentToolbar(rect: DOMRect): void {
     if (this.prefs.placement === 'auto') this.obstacles.start();
     else this.obstacles.stop();
-    this.ui.showToolbar(rect, this.effectiveLastColor(), this.prefs.placement, this.obstacles.collect());
+    const anchorNode = this.pending?.type === 'text' ? this.pending.range.commonAncestorContainer : this.pending?.image;
+    this.ui.showToolbar(rect, this.effectiveLastColor(), this.prefs.placement, this.obstacles.collect(anchorNode));
     clearTimeout(this.placementRecheck);
     if (this.prefs.placement !== 'auto') return;
     this.placementRecheck = setTimeout(() => this.refreshToolbar(), PLACEMENT_RECHECK_MS);

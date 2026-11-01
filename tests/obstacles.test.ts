@@ -76,6 +76,64 @@ describe('floating obstacle discovery', () => {
     expect(obstacles.collect()).toEqual([]);
   });
 
+  it('ignores the selected positioned card and its ordinary flow content', () => {
+    const card = element(document.body, 'position:relative;z-index:2000', new DOMRect(100, 100, 600, 500));
+    const selected = element(card, '', new DOMRect(120, 200, 240, 24));
+    selected.textContent = 'Selected dictionary definition';
+    element(card, '', new DOMRect(120, 250, 560, 300));
+    obstacles.start();
+    expect(obstacles.collect(selected.firstChild!)).toEqual([]);
+    // A new selection outside this card must restore its obstacle status.
+    expect(obstacles.collect(document.body)).toEqual([new DOMRect(100, 100, 600, 500)]);
+  });
+
+  it('follows assigned slots when selected content is inside a shadow card', () => {
+    const host = element(document.body);
+    const selected = element(host);
+    selected.textContent = 'Slotted dictionary definition';
+    const wrapper = element(host.attachShadow({ mode: 'open' }), 'position:relative;z-index:2000',
+      new DOMRect(100, 100, 600, 500));
+    wrapper.appendChild(document.createElement('slot'));
+    element(wrapper, '', new DOMRect(120, 250, 560, 300));
+    obstacles.start();
+    expect(obstacles.collect(selected.firstChild!)).toEqual([]);
+    const bareText = document.createTextNode('Directly slotted text');
+    host.appendChild(bareText);
+    expect(obstacles.collect(bareText)).toEqual([]);
+  });
+
+  it('still avoids independently floating descendants within the selected card', () => {
+    const card = element(document.body, 'position:relative;z-index:2000', new DOMRect(100, 100, 600, 500));
+    const selected = element(card);
+    const rival = element(element(card), 'position:absolute', barRect());
+    element(rival, '', new DOMRect(210, 310, 30, 20));
+    const shadow = element(card).attachShadow({ mode: 'open' });
+    const shadowRect = new DOMRect(500, 300, 150, 40);
+    element(shadow, 'position:fixed', shadowRect);
+    obstacles.start();
+    expect(obstacles.collect(selected)).toEqual([barRect(), shadowRect]);
+  });
+
+  it('crosses shadow hosts to ignore the selected container without ignoring an outside overlapping overlay', () => {
+    const card = element(document.body, 'position:fixed', new DOMRect(100, 100, 600, 500));
+    const shadow = card.attachShadow({ mode: 'open' });
+    const image = document.createElement('img');
+    shadow.appendChild(image);
+    element(shadow, '', new DOMRect(120, 250, 560, 300));
+    element(document.body, 'position:fixed', barRect());
+    vi.spyOn(image, 'getBoundingClientRect').mockReturnValue(barRect());
+    obstacles.start();
+    expect(obstacles.collect(image)).toEqual([barRect()]);
+  });
+
+  it('does not promote an ordinary absolute sibling outside any floating context', () => {
+    const article = element(document.body);
+    const selected = element(article);
+    element(article, 'position:absolute', barRect());
+    obstacles.start();
+    expect(obstacles.collect(selected)).toEqual([]);
+  });
+
   it('tracks late additions, visibility, movement and removal', async () => {
     obstacles.start();
     const wrapper = element(document.body, 'opacity:0');
@@ -127,6 +185,17 @@ describe('floating obstacle discovery', () => {
     obstacles.stop();
     style.mockClear();
     expect(obstacles.collect()).toEqual([]);
+    expect(style).not.toHaveBeenCalled();
+  });
+
+  it('uses cached floating context when filtering a long selected card on each tick', () => {
+    const card = element(document.body, 'position:relative;z-index:2000', new DOMRect(100, 100, 600, 500));
+    card.innerHTML = '<p>Dictionary definition</p>'.repeat(250);
+    const style = vi.spyOn(window, 'getComputedStyle');
+    obstacles.start();
+    style.mockClear();
+    expect(obstacles.collect(card.firstChild!)).toEqual([]);
+    expect(obstacles.collect(card.firstChild!)).toEqual([]);
     expect(style).not.toHaveBeenCalled();
   });
 });

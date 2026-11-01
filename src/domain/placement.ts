@@ -117,29 +117,52 @@ export function resolveToolbarPosition(
 
   const maxLeft = Math.max(margin, input.viewportWidth - width - margin);
   const maxTop = Math.max(margin, input.viewportHeight - height - margin);
-  const xs = new Set([preferred.left, margin, maxLeft]);
+  // Dodging a rival must not detach the toolbar from the selected text. Bound
+  // the shortest rectangle-to-rectangle gap, including diagonal escapes.
+  const reach = Math.max(96, 2 * height + gap);
+  const minLeft = Math.max(margin, selection.left - width - reach);
+  const nearMaxLeft = Math.min(maxLeft, selection.right + reach);
+  if (minLeft > nearMaxLeft) return { placement, box: preferred };
+  const xs = new Set([clamp(preferred.left, minLeft, nearMaxLeft), minLeft, nearMaxLeft]);
   for (const box of [selected, ...obstacles]) {
-    xs.add(clamp(box.left - width, margin, maxLeft));
-    xs.add(clamp(box.right, margin, maxLeft));
+    xs.add(clamp(box.left - width, minLeft, nearMaxLeft));
+    xs.add(clamp(box.right, minLeft, nearMaxLeft));
   }
+  const verticalBounds = (left: number): [number, number] => {
+    const dx = Math.max(selection.left - left - width, left - selection.right, 0);
+    const dy = Math.sqrt(Math.max(0, reach * reach - dx * dx));
+    return [Math.max(margin, selection.top - height - dy), Math.min(maxTop, selection.bottom + dy)];
+  };
+  const preferredDistance = (left: number, top: number): number =>
+    (left - preferred.left) ** 2 + (top - preferred.top) ** 2;
+  const anchorDistance = (left: number, top: number): number => Math.min(
+    preferredDistance(left, top), (left - opposite.left) ** 2 + (top - opposite.top) ** 2,
+  );
 
   // At each horizontal edge, merge the blocked vertical intervals and choose
   // the nearest free gap. This avoids testing every X/Y/obstacle combination
   // on pages with many floating elements (quadratic-logarithmic, not cubic).
   let clear: Box | undefined;
   let clearDistance = Infinity;
+  let clearPreferredDistance = Infinity;
   for (const left of xs) {
+    const [minTop, nearMaxTop] = verticalBounds(left);
+    if (minTop > nearMaxTop) continue;
     const intervals = [selected, ...obstacles]
       .filter((box) => box.left < left + width && box.right > left)
       .map((box) => [box.top - height, box.bottom] as const)
       .sort((a, b) => a[0] - b[0]);
     const offerGap = (start: number, end: number): void => {
-      if (start > end || start > maxTop || end < margin) return;
-      const top = clamp(preferred.top, Math.max(margin, start), Math.min(maxTop, end));
-      const distance = (left - preferred.left) ** 2 + (top - preferred.top) ** 2;
-      if (distance < clearDistance) {
-        clear = { left, top, right: left + width, bottom: top + height };
-        clearDistance = distance;
+      if (start > end || start > nearMaxTop || end < minTop) return;
+      for (const anchor of [preferred, opposite]) {
+        const top = clamp(anchor.top, Math.max(minTop, start), Math.min(nearMaxTop, end));
+        const distance = anchorDistance(left, top);
+        const preferenceDistance = preferredDistance(left, top);
+        if (distance < clearDistance || (distance === clearDistance && preferenceDistance < clearPreferredDistance)) {
+          clear = { left, top, right: left + width, bottom: top + height };
+          clearDistance = distance;
+          clearPreferredDistance = preferenceDistance;
+        }
       }
     };
     let cursor = margin;
@@ -150,26 +173,33 @@ export function resolveToolbarPosition(
     offerGap(cursor, maxTop);
   }
 
-  // If the viewport has no clear space, keep text uncovered when possible,
-  // then minimise overlap among the usual rows and viewport edges.
+  // If nearby space is obstructed, keep text uncovered when possible, then
+  // minimise overlap locally instead of escaping to a distant viewport edge.
   let best = preferred;
   let bestSelected = overlapArea(best, selected);
   let bestCollision = collision(best);
   let bestDistance = 0;
+  let bestPreferredDistance = 0;
   if (clear) best = clear;
   else {
     for (const left of xs) {
-      for (const top of [preferred.top, opposite.top, margin, maxTop]) {
+      const [minTop, nearMaxTop] = verticalBounds(left);
+      if (minTop > nearMaxTop) continue;
+      for (const wanted of [preferred.top, opposite.top, minTop, nearMaxTop]) {
+        const top = clamp(wanted, minTop, nearMaxTop);
         const box = { left, top, right: left + width, bottom: top + height };
         const selectedHit = overlapArea(box, selected);
         const hit = collision(box);
-        const distance = (left - preferred.left) ** 2 + (top - preferred.top) ** 2;
+        const distance = anchorDistance(left, top);
+        const preferenceDistance = preferredDistance(left, top);
         if (selectedHit < bestSelected || (selectedHit === bestSelected &&
-          (hit < bestCollision || (hit === bestCollision && distance < bestDistance)))) {
+          (hit < bestCollision || (hit === bestCollision && (distance < bestDistance ||
+            (distance === bestDistance && preferenceDistance < bestPreferredDistance)))))) {
           best = box;
           bestSelected = selectedHit;
           bestCollision = hit;
           bestDistance = distance;
+          bestPreferredDistance = preferenceDistance;
         }
       }
     }

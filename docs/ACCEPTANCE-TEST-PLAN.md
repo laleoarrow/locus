@@ -122,6 +122,7 @@ for observability without page-world coupling.
 | E75–E76 | concise summaries | exact old-default migration, custom prompt preservation, no expanded draft returned, one API request and preserved manually saved main content |
 | E77–E78 | card selection | contained right-side card checkboxes, collapsed rows, full/partial states, Space toggling, direct batch entry, filtered selection and narrow-screen action access |
 | E79–E80 | blank-area selection | card/row selection without mode entry, isolated row toggles, navigation and editor controls, drag-selected text and pending-action guards |
+| E81–E82 | nearby Auto placement | positioned reading card excluded while its rival bubble remains avoided; delayed giant-overlay fallback stays close and keeps selected text visible |
 
 ## Manual checklist (pre-release)
 

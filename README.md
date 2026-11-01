@@ -90,8 +90,9 @@ bring them back reliably — even when the page shifts under you.
   already made with it. The toolbar shows below the selection by default, or
   set it to *above* / *auto*. Auto follows in-page floating toolbars as they
   appear or move, including deeply nested and shadow-root controls, and finds
-  nearby space when both sides are occupied. It also follows scrolling and
-  resizing; long palettes stay within the window.
+  nearby space when both sides are occupied. It ignores the content container
+  you are selecting within and keeps avoidance close to the selection, instead
+  of escaping to a distant part of the page. It also follows scrolling and resizing; long palettes stay within the window.
 - **One library for everything.** A full page listing every annotation across
   every site — grouped by page, by site, or as a timeline; searchable over
   quotes, notes and titles; filterable by colour, site, date, detached or

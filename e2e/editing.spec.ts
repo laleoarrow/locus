@@ -393,8 +393,10 @@ test('E80: navigation, note editing and text dragging do not trigger blank-area 
   await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
 
   const text = first.locator('.note p').last();
-  await text.scrollIntoViewIfNeeded();
   const line = await text.evaluate((element) => {
+    // Navigation can refresh the live-query rows. Scroll and measure the
+    // currently attached text in one DOM operation, without a stale handle.
+    element.scrollIntoView({ block: 'center' });
     const range = document.createRange();
     range.selectNodeContents(element);
     const box = range.getClientRects()[0]!;
