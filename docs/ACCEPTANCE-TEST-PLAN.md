@@ -134,6 +134,8 @@ for observability without page-world coupling.
 | E100–E102 | toolbar distance | single punctuation in a tall dictionary card stays near and avoids the search bubble; positive root zoom/scale/translation remain correct across nested/window scrolling and resize; element-boundary selection uses actual glyphs while preserving saved highlights after reflow and reload |
 | E103–E106 | direct first reveal | every visible frame stays at the resolved destination with immediate/250 ms rivals; cancelled/replaced selections and queued keyboard work do not resurrect stale targets; text/image digit shortcuts work during preflight; switching Auto to an explicit side reveals there immediately |
 
+| E107–E108 | rival stability | 350 ms arrival, sliding entry, late shadow attachment and tall-card punctuation: every visible frame stays near the selection without overlap or a hop; independent production ZIP and native mouse Bing checks recorded in rival audit |
+
 All browser contexts explicitly run headless with disposable profiles. Public DNS
 is disabled in this harness; API/WebDAV fixtures use localhost. The audit does not
 write to the installed extension directory or use live cloud/LLM credentials.

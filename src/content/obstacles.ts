@@ -35,6 +35,7 @@ export class FloatingObstacles {
   private readonly dirty = new Set<Element | ShadowRoot>();
   private observer: MutationObserver | null = null;
   private nextShadowCheck = 0;
+  private readonly onResize = () => this.dirty.add(this.doc.documentElement);
 
   constructor(private readonly doc: Document) {}
 
@@ -60,11 +61,13 @@ export class FloatingObstacles {
     });
     this.observe(this.doc.documentElement);
     this.scan(this.doc.documentElement, false, false);
+    this.doc.defaultView.addEventListener('resize', this.onResize);
     this.nextShadowCheck = Date.now() + 1000;
   }
 
   stop(): void {
     this.observer?.disconnect();
+    this.doc.defaultView?.removeEventListener('resize', this.onResize);
     this.observer = null;
     this.candidates.clear();
     this.roots.clear();
@@ -111,12 +114,13 @@ export class FloatingObstacles {
     return false;
   }
 
-  collect(anchorNode?: Node): Box[] {
+  collect(anchorNode?: Node, probeShadows = false): Box[] {
     const view = this.doc.defaultView;
     if (!view || !this.observer) return [];
     // attachShadow() itself emits no DOM mutation. Probe cached hosts at a
-    // slower cadence; this does not recompute styles across the article.
-    if (Date.now() >= this.nextShadowCheck) {
+    // slower cadence, or once just before the initial reveal when requested.
+    // This does not recompute styles across the article.
+    if (probeShadows || Date.now() >= this.nextShadowCheck) {
       this.nextShadowCheck = Date.now() + 1000;
       for (const host of this.shadowless) {
         if (!host.isConnected) this.shadowless.delete(host);
@@ -125,9 +129,15 @@ export class FloatingObstacles {
     }
     for (const root of this.dirty) {
       if (!root.isConnected) continue;
+      // Scanning a dirty ancestor already visits its light and shadow trees.
+      let ancestor: Node | null = root instanceof ShadowRoot ? root.host : root.parentNode;
+      for (; ancestor; ancestor = ancestor instanceof ShadowRoot ? ancestor.host : ancestor.parentNode) {
+        if ((ancestor instanceof Element || ancestor instanceof ShadowRoot) && this.dirty.has(ancestor)) break;
+      }
+      if (ancestor) continue;
       if (root instanceof ShadowRoot) {
         const inherited = this.inheritedOverlay(root.host) ||
-          floating(view.getComputedStyle(root.host), false, false);
+          floating(view.getComputedStyle(root.host), false, root.host.getRootNode() instanceof ShadowRoot);
         for (const child of root.children) this.scan(child, inherited, true);
       } else {
         this.scan(root, this.inheritedOverlay(root), root.getRootNode() instanceof ShadowRoot);

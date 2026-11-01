@@ -32,6 +32,10 @@ import { requestBg, type AnchorStateReply, type TabMessage } from '@/messaging/p
 const PLACEMENT_RECHECK_MS = 200;
 /** Let selection-triggered page/extension controls appear before Auto's first paint. */
 const TOOLBAR_REVEAL_MS = 300;
+const TOOLBAR_REVEAL_MIN_MS = 400;
+const TOOLBAR_REVEAL_MAX_MS = 700;
+const TOOLBAR_SETTLE_MS = 100;
+const TOOLBAR_SAMPLE_MS = 50;
 const MUTATION_DEBOUNCE_MS = 300;
 const DETACHED_RETRY_MS = 2_000;
 /** Separates an intentional image-selection drag from ordinary click jitter. */
@@ -97,6 +101,10 @@ export class LocusContent {
   private placementRecheck: ReturnType<typeof setTimeout> | undefined;
   private toolbarReveal: ReturnType<typeof setTimeout> | undefined;
   private toolbarGeneration = 0;
+  private toolbarRevealStarted = 0;
+  private toolbarStableSince = 0;
+  private toolbarGeometry: number[] = [];
+  private toolbarShadowsChecked = false;
   private imageDrag: ImageDragGesture | null = null;
   private suppressImageClick = false;
   private suppressImageClickTimer: ReturnType<typeof setTimeout> | undefined;
@@ -210,20 +218,21 @@ export class LocusContent {
     this.wireKeyboard();
     this.wireMessages();
     this.watchMutations();
-    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
-    window.addEventListener('resize', () => {
-      this.refreshToolbar();
-      clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => this.renderer.repositionRings(), 150);
-    });
-    let scrollFrame = 0;
-    this.doc.addEventListener('scroll', () => {
-      this.refreshToolbar();
-      if (!scrollFrame) scrollFrame = requestAnimationFrame(() => {
-        scrollFrame = 0;
+    this.wireViewport();
+  }
+
+  private wireViewport(): void {
+    let viewportFrame = 0;
+    const refresh = () => {
+      if (!viewportFrame) viewportFrame = requestAnimationFrame(() => {
+        viewportFrame = 0;
+        this.refreshToolbar();
         if (this.active) this.renderer.repositionRings();
       });
-    }, true);
+    };
+    // Run after resize invalidation and merge nested scroll events per frame.
+    window.addEventListener('resize', refresh);
+    this.doc.addEventListener('scroll', refresh, true);
   }
 
   private setItems(items: AnnotationWithAnchor[]): Set<string> {
@@ -537,7 +546,7 @@ export class LocusContent {
       }
     });
     this.doc.addEventListener('selectionchange', () => {
-      if (this.toolbarReveal !== undefined && this.pending?.type === 'text' &&
+      if (this.pending?.type === 'text' && !this.ui.hasFocus() &&
         !this.isCurrentSelection(this.pending.range)) {
         // Retire the old target without discarding a queued keyup that will
         // capture the new live selection.
@@ -598,6 +607,8 @@ export class LocusContent {
     if (invalidateSelectionTasks) this.toolbarGeneration++;
     clearTimeout(this.toolbarReveal);
     this.toolbarReveal = undefined;
+    this.toolbarGeometry = [];
+    this.toolbarShadowsChecked = false;
     this.stopPlacementTracking();
     this.ui.hideToolbar();
   }
@@ -622,16 +633,8 @@ export class LocusContent {
       this.refreshToolbar(true);
       return;
     }
-    this.toolbarReveal = setTimeout(() => {
-      this.toolbarReveal = undefined;
-      if (!this.active || this.pending !== target) return;
-      if (target.type === 'text' && !this.isCurrentSelection(target.range)) {
-        this.hideToolbar();
-        this.pending = null;
-        return;
-      }
-      this.refreshToolbar(true);
-    }, TOOLBAR_REVEAL_MS);
+    this.toolbarRevealStarted = Date.now();
+    this.toolbarReveal = setTimeout(() => this.refreshToolbar(true), TOOLBAR_REVEAL_MS);
   }
 
   /** Re-measure the target because scrolling and page layout can move it. */
@@ -642,14 +645,12 @@ export class LocusContent {
       return;
     }
     if (waiting) {
-      if (this.prefs.placement === 'auto') return;
-      clearTimeout(this.toolbarReveal);
-      this.toolbarReveal = undefined;
-      if (this.pending.type === 'text' && !this.isCurrentSelection(this.pending.range)) {
-        this.hideToolbar();
-        this.pending = null;
-        return;
-      }
+      if (this.prefs.placement === 'auto' && !reveal) return;
+    }
+    if (this.pending.type === 'text' && !this.ui.hasFocus() && !this.isCurrentSelection(this.pending.range)) {
+      this.hideToolbar();
+      this.pending = null;
+      return;
     }
     const target = this.pending.type === 'text' ? this.pending.range : this.pending.image;
     const connected = target instanceof Range
@@ -665,15 +666,35 @@ export class LocusContent {
       this.hideToolbar();
       return;
     }
-    this.presentToolbar(rect);
-  }
-
-  /** Keep checking cached floating elements until the toolbar is dismissed. */
-  private presentToolbar(rect: DOMRect): void {
     if (this.prefs.placement === 'auto') this.obstacles.start();
     else this.obstacles.stop();
-    const anchorNode = this.pending?.type === 'text' ? this.pending.range.commonAncestorContainer : this.pending?.image;
-    this.ui.showToolbar(rect, this.effectiveLastColor(), this.prefs.placement, this.obstacles.collect(anchorNode));
+    const anchorNode = this.pending.type === 'text' ? this.pending.range.commonAncestorContainer : this.pending.image;
+    // Attaching a shadow root emits no mutation. Probe cached hosts once just
+    // before the earliest reveal, keeping the regular slower cadence intact.
+    const probeShadows = waiting && this.prefs.placement === 'auto' && !this.toolbarShadowsChecked &&
+      Date.now() - this.toolbarRevealStarted >= TOOLBAR_REVEAL_MIN_MS;
+    if (probeShadows) this.toolbarShadowsChecked = true;
+    const obstacles = this.obstacles.collect(anchorNode, probeShadows);
+    if (waiting && this.prefs.placement === 'auto') {
+      // A rival may be sliding in when the initial delay expires. Measure it
+      // while hidden and require a quiet geometry window, with a bounded wait.
+      const now = Date.now();
+      const geometry = [rect.left, rect.top, rect.right, rect.bottom,
+        ...obstacles.flatMap((box) => [box.left, box.top, box.right, box.bottom])];
+      if (geometry.length !== this.toolbarGeometry.length ||
+        geometry.some((value, i) => Math.abs(value - this.toolbarGeometry[i]!) > 0.5)) {
+        this.toolbarStableSince = now;
+        this.toolbarGeometry = geometry;
+      }
+      if (now - this.toolbarRevealStarted < TOOLBAR_REVEAL_MIN_MS ||
+        (now - this.toolbarRevealStarted < TOOLBAR_REVEAL_MAX_MS && now - this.toolbarStableSince < TOOLBAR_SETTLE_MS)) {
+        this.toolbarReveal = setTimeout(() => this.refreshToolbar(true), TOOLBAR_SAMPLE_MS);
+        return;
+      }
+    }
+    clearTimeout(this.toolbarReveal);
+    this.toolbarReveal = undefined;
+    this.ui.showToolbar(rect, this.effectiveLastColor(), this.prefs.placement, obstacles);
     clearTimeout(this.placementRecheck);
     if (this.prefs.placement !== 'auto') return;
     this.placementRecheck = setTimeout(() => this.refreshToolbar(), PLACEMENT_RECHECK_MS);
@@ -751,8 +772,7 @@ export class LocusContent {
         // Digits pick a palette color for the pending selection or image.
         if (!event.metaKey && !event.ctrlKey && !event.altKey &&
           (this.ui.isToolbarVisible() || this.toolbarReveal !== undefined)) {
-          if (this.toolbarReveal !== undefined && this.pending?.type === 'text' &&
-            !this.isCurrentSelection(this.pending.range)) {
+          if (this.pending?.type === 'text' && !this.isCurrentSelection(this.pending.range)) {
             this.hideToolbar();
             this.pending = null;
             return;

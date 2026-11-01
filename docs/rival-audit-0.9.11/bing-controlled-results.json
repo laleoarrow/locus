@@ -1,0 +1,50 @@
+[
+  {
+    "mode": "late350",
+    "requested": "英语口语",
+    "selected": "英语口语",
+    "firstVisible": 505.9000000357628,
+    "displacement": 0,
+    "maxGap": 56,
+    "overlapFrames": 0,
+    "rivalFrames": 103,
+    "nativeQuickSearchFrames": 144,
+    "nativeOverlapFrames": 0
+  },
+  {
+    "mode": "late350",
+    "requested": "，",
+    "selected": "，",
+    "firstVisible": 480.69999998807907,
+    "displacement": 0,
+    "maxGap": 56,
+    "overlapFrames": 0,
+    "rivalFrames": 103,
+    "nativeQuickSearchFrames": 144,
+    "nativeOverlapFrames": 0
+  },
+  {
+    "mode": "entering",
+    "requested": "英语口语",
+    "selected": "英语口语",
+    "firstVisible": 630.3000000119209,
+    "displacement": 0,
+    "maxGap": 56,
+    "overlapFrames": 0,
+    "rivalFrames": 115,
+    "nativeQuickSearchFrames": 144,
+    "nativeOverlapFrames": 0
+  },
+  {
+    "mode": "entering",
+    "requested": "，",
+    "selected": "，",
+    "firstVisible": 631.3000000119209,
+    "displacement": 0,
+    "maxGap": 56,
+    "overlapFrames": 0,
+    "rivalFrames": 115,
+    "nativeQuickSearchFrames": 144,
+    "nativeOverlapFrames": 0
+  }
+]

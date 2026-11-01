@@ -1,0 +1,26 @@
+[
+  {
+    "mode": "native",
+    "requested": "英语口语",
+    "selected": "英语口语",
+    "firstVisible": 446.60000002384186,
+    "displacement": 0,
+    "maxGap": 10,
+    "overlapFrames": 0,
+    "rivalFrames": 0,
+    "nativeQuickSearchFrames": 139,
+    "nativeOverlapFrames": 0
+  },
+  {
+    "mode": "native",
+    "requested": "，",
+    "selected": "，",
+    "firstVisible": 429.80000001192093,
+    "displacement": 0,
+    "maxGap": 10,
+    "overlapFrames": 0,
+    "rivalFrames": 0,
+    "nativeQuickSearchFrames": 144,
+    "nativeOverlapFrames": 0
+  }
+]

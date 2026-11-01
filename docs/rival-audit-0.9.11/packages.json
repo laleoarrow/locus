@@ -1,0 +1,17 @@
+[
+  {
+    "file": "locus-0.9.11-chrome.zip",
+    "bytes": 254924,
+    "sha256": "6f7c2eeb9408b3dc676f44a6ceedfe4ae3d5f82cd43e5d3747850488bf77921a"
+  },
+  {
+    "file": "locus-0.9.11-edge.zip",
+    "bytes": 254924,
+    "sha256": "6f7c2eeb9408b3dc676f44a6ceedfe4ae3d5f82cd43e5d3747850488bf77921a"
+  },
+  {
+    "file": "locus-0.9.11-edge-store.zip",
+    "bytes": 254579,
+    "sha256": "ba050692d7b5c2405ff9624212359676b490ce74f88fc30b462724aa070206e2"
+  }
+]

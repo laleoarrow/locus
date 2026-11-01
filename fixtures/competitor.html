@@ -29,13 +29,16 @@
     //   ?mode=deep            fixed bar under six static wrappers
     //   ?mode=shadow-open/closed  fixed bar inside a zero-size shadow host
     //   ?mode=moving          slides into the collision after 900ms
+    //   ?mode=entering        starts at 250ms and slides into place over 240ms
+    //   ?mode=late-shadow-open/closed  attaches a shadow to an existing host at 350ms
+    // ?delay=N overrides the rival arrival delay for timing regressions.
     //   ?mode=content-card    selected text belongs to a raised content card
     //   ?mode=giant-overlay   every nearby position intersects a large overlay
     // ?offset=N shifts it horizontally so a single-column probe can miss it.
     const params = new URLSearchParams(location.search);
     const mode = params.get('mode') || 'pointer-events';
     const offset = Number(params.get('offset') || 0);
-    const delay = mode === 'slow' ? 900 : mode === 'late' ? 250 : 0;
+    const delay = Number(params.get('delay') ?? (mode === 'slow' ? 900 : mode === 'late' || mode === 'entering' ? 250 : 0));
 
     if (mode === 'content-card' || mode === 'giant-overlay') {
       document.body.style.marginTop = '80px';
@@ -85,7 +88,8 @@
         (passive ? 'pointer-events:none;' : '');
 
       const inner = document.createElement('div');
-      const zeroHost = mode === 'deep' || mode.startsWith('shadow-');
+      const delayedShadow = mode.startsWith('late-shadow-');
+      const zeroHost = mode === 'deep' || mode.startsWith('shadow-') || delayedShadow;
       if (zeroHost) {
         wrapper.style.cssText = 'width:0;height:0;';
         let parent = wrapper;
@@ -107,7 +111,7 @@
 
       const surface = mode === 'deep'
         ? inner
-        : inner.attachShadow({ mode: mode === 'shadow-closed' ? 'closed' : 'open' });
+        : delayedShadow ? null : inner.attachShadow({ mode: mode === 'shadow-closed' ? 'closed' : 'open' });
       const bar = document.createElement('div');
       bar.setAttribute('data-rival-bar', '');
       bar.style.cssText =
@@ -116,8 +120,19 @@
         (passive ? 'pointer-events:auto;' : '') +
         (zeroHost ? `position:fixed;top:${rect.bottom + 6}px;left:${rect.left + offset}px;z-index:20;` : '');
       bar.textContent = 'Rival extension toolbar';
-      surface.appendChild(bar);
+      if (surface) surface.appendChild(bar);
+      else setTimeout(() => {
+        // attachShadow itself emits no document mutation. The existing host
+        // must be re-probed before the first visible placement is committed.
+        inner.attachShadow({ mode: mode.endsWith('closed') ? 'closed' : 'open' }).appendChild(bar);
+      }, 350);
       bars.push(bar);
+
+      if (mode === 'entering') {
+        wrapper.style.transform = 'translateY(100px)';
+        wrapper.style.transition = 'transform 240ms linear';
+        requestAnimationFrame(() => requestAnimationFrame(() => { wrapper.style.transform = 'translateY(0)'; }));
+      }
 
       if (mode === 'moving') {
         wrapper.style.transform = 'translateY(140px)';

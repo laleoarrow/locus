@@ -1,0 +1,37 @@
+[
+  {
+    "mode": "pointer-events",
+    "firstVisible": 339.30000001192093,
+    "displacement": 0,
+    "maxGap": 10,
+    "overlapFrames": 0
+  },
+  {
+    "mode": "late",
+    "firstVisible": 314,
+    "displacement": 0,
+    "maxGap": 10,
+    "overlapFrames": 0
+  },
+  {
+    "mode": "late&delay=350",
+    "firstVisible": 313.60000002384186,
+    "displacement": 83,
+    "maxGap": 10,
+    "overlapFrames": 18
+  },
+  {
+    "mode": "entering",
+    "firstVisible": 315.4000000357628,
+    "displacement": 83,
+    "maxGap": 10,
+    "overlapFrames": 13
+  },
+  {
+    "mode": "shadow-closed",
+    "firstVisible": 313,
+    "displacement": 0,
+    "maxGap": 10,
+    "overlapFrames": 0
+  }
+]

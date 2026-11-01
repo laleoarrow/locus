@@ -446,6 +446,10 @@ export class LocusUI {
     return event.composedPath().includes(this.host);
   }
 
+  hasFocus(): boolean {
+    return this.shadow.activeElement !== null;
+  }
+
   isToolbarVisible(): boolean {
     return !this.toolbar.classList.contains('hidden') && !this.toolbar.classList.contains('measuring');
   }

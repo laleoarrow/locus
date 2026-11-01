@@ -161,6 +161,50 @@ describe('floating obstacle discovery', () => {
     expect(obstacles.collect()).toEqual([barRect()]);
   });
 
+  it('can probe newly attached shadow roots before reveal without changing idle cadence', () => {
+    let now = 1000;
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const host = element(document.body);
+    const laterHost = element(document.body);
+    obstacles.start();
+    element(host.attachShadow({ mode: 'open' }), 'position:fixed', barRect());
+    now = 1400;
+    expect(obstacles.collect()).toEqual([]);
+    expect(obstacles.collect(undefined, true)).toEqual([barRect()]);
+    const other = new DOMRect(500, 300, 150, 40);
+    element(laterHost.attachShadow({ mode: 'open' }), 'position:fixed', other);
+    now = 1900;
+    expect(obstacles.collect()).toEqual([barRect()]);
+    now = 2400;
+    expect(obstacles.collect()).toEqual([barRect(), other]);
+  });
+
+  it('limits a forced shadow probe to one cached-host pass on a large document', () => {
+    vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const hosts = Array.from({ length: 5000 }, () => element(document.body));
+    let shadow: ShadowRoot | undefined;
+    const probe = vi.fn((node: Element) => node === hosts[0] ? shadow ?? null : null);
+    vi.stubGlobal('chrome', { dom: { openOrClosedShadowRoot: probe } });
+    const style = vi.spyOn(window, 'getComputedStyle');
+    obstacles.start();
+    const startupStyleReads = style.mock.calls.length;
+    probe.mockClear();
+    style.mockClear();
+    shadow = hosts[0]!.attachShadow({ mode: 'closed' });
+    element(shadow, 'position:fixed', barRect());
+    expect(obstacles.collect()).toEqual([]);
+    expect(probe).not.toHaveBeenCalled();
+    expect(obstacles.collect(undefined, true)).toEqual([barRect()]);
+    expect(probe).toHaveBeenCalledTimes(5004);
+    // Host discovery reads no article styles; only the discovered subtree and
+    // the visible bar's ancestors need classification/visibility reads.
+    expect(startupStyleReads).toBe(5002);
+    expect(style).toHaveBeenCalledTimes(8);
+    probe.mockClear();
+    for (let i = 0; i < 10; i++) expect(obstacles.collect()).toEqual([barRect()]);
+    expect(probe).not.toHaveBeenCalled();
+  });
+
   it('invalidates positioning changes without retaining old candidates', async () => {
     const wrapper = element(document.body, '', barRect());
     obstacles.start();
@@ -197,5 +241,49 @@ describe('floating obstacle discovery', () => {
     expect(obstacles.collect(card.firstChild!)).toEqual([]);
     expect(obstacles.collect(card.firstChild!)).toEqual([]);
     expect(style).not.toHaveBeenCalled();
+  });
+
+  it('refreshes responsive floating classification when the viewport changes', () => {
+    const bar = element(document.body, '', barRect());
+    const getStyle = window.getComputedStyle.bind(window);
+    let compact = false;
+    vi.spyOn(window, 'getComputedStyle').mockImplementation((node) => {
+      const style = getStyle(node);
+      if (node === bar) style.position = compact ? 'fixed' : 'static';
+      return style;
+    });
+    obstacles.start();
+    expect(obstacles.collect()).toEqual([]);
+    compact = true;
+    window.dispatchEvent(new Event('resize'));
+    expect(obstacles.collect()).toEqual([barRect()]);
+    compact = false;
+    window.dispatchEvent(new Event('resize'));
+    expect(obstacles.collect()).toEqual([]);
+  });
+
+  it('scans a dirty subtree only once when its descendants changed in the same batch', async () => {
+    const article = element(document.body);
+    for (let i = 0; i < 250; i++) element(article);
+    const style = vi.spyOn(window, 'getComputedStyle');
+    obstacles.start();
+    style.mockClear();
+    article.className = 'changed';
+    for (const child of article.children) child.className = 'changed';
+    await Promise.resolve();
+    expect(obstacles.collect()).toEqual([]);
+    expect(style.mock.calls.filter(([node]) => article.contains(node))).toHaveLength(251);
+  });
+
+  it('retains the floating context of a nested shadow host after its stylesheet changes', async () => {
+    const outer = element(document.body).attachShadow({ mode: 'open' });
+    const host = element(outer, 'position:absolute');
+    const inner = host.attachShadow({ mode: 'open' });
+    element(inner, '', barRect());
+    obstacles.start();
+    expect(obstacles.collect()).toEqual([barRect()]);
+    inner.appendChild(document.createElement('style'));
+    await Promise.resolve();
+    expect(obstacles.collect()).toEqual([barRect()]);
   });
 });
