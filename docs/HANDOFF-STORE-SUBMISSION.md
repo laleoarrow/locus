@@ -9,7 +9,7 @@
 把浏览器扩展 **Locus / 文迹** 提交到 **Microsoft Edge Add-ons** 和 **Chrome Web Store**。
 上架的唯一目的是让用户获得**自动更新**——sideload（开发人员模式加载）的扩展浏览器永远不会自动更新，上架后才会。
 
-仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（当前源码版本 v0.9.8；发布、安装和上传包状态须在继续前核对，不能沿用下方 v0.7.2 的历史记录）
+仓库：`/Users/leoarrow/Project/mypackage/agents/Locus`（当前源码版本 v0.9.9；发布、安装和上传包状态须在继续前核对，不能沿用下方 v0.7.2 的历史记录）
 
 ## 项目背景（够用即止）
 
@@ -27,7 +27,7 @@ AI 设置和 API key 仅保存在本机的 `chrome.storage.local` 中，不进�
 
 ## 当前进度（从这里继续）
 
-v0.9.8 已发布为 [GitHub Latest](https://github.com/laleoarrow/locus/releases/tag/v0.9.8)：保留 0.9.7 的稳健性修复，进一步减少全文索引重建、图片重复扫描/测量/样式赋值、Library 全库按键重绘和无关元数据读取；工具条保留全部 Auto 检查，只跳过不变的 DOM 更新。类型检查、458 项单元测试和完整一次 93 项浏览器回归全部通过。Chrome/Edge 包已核验，远端独立下载散列一致；Edge keyless 商店候选包为 `.output/locus-0.9.8-edge-store.zip`。测试规模、前后工作量与包散列见 [性能记录](PERFORMANCE-0.9.8.md)。
+v0.9.9 已发布为 [GitHub Latest](https://github.com/laleoarrow/locus/releases/tag/v0.9.9)：修复根元素平移/缩放造成的工具条坐标重复换算，以及高容器选区将空白高度当成文字的问题。普通单文本节点保留直接测量；大选区按边界线性遍历。类型检查、469 项单元测试和完整 96 项浏览器回归通过；实际 Edge ZIP 在隔离无头浏览器独立加载，四个复现场景均为 10 px 间距。公开安装包下载核验一致，商店候选包 `.output/locus-0.9.9-edge-store.zip` 未提交。详细证据、性能代价和散列见 [定位验证记录](TOOLBAR-0.9.9.md)；前一轮性能优化仍见 [0.9.8 性能记录](PERFORMANCE-0.9.8.md)。
 
 **本轮用户明确要求不影响正在使用的电脑。** 全部测试是临时 headless profiles 和本地模拟服务，没有调用真实网盘/LLM，没有触碰用户浏览器窗口、真实笔记或稳定安装目录，也没有更新桌面商店上传文件。当前候选包尚未安装或重载；上一次留在稳定安装目录的是 0.9.6 文件，运行版本仍不能推断。后续如要安装，须先核对当时用户工作状态与授权，不能把本轮测试冒充实际安装验证。
 
@@ -87,7 +87,7 @@ node scripts/store-copy.mjs next            # 复制下一项
 
 | 文件 | 用途 |
 |---|---|
-| `1-PACKAGE-edge-上传这个.zip` | 当前版本 Edge 扩展包（keyless，商店上传专用）；本次目标 v0.9.8，上传前必须核验并替换历史包 |
+| `1-PACKAGE-edge-上传这个.zip` | 当前版本 Edge 扩展包（keyless，商店上传专用）；本次目标 v0.9.9，上传前必须核验并替换历史包 |
 | `2-LOGO-300x300.png` | Edge 商店 logo |
 | `4-截图1~5-*.png` | 5 张 1280×800 Edge 截图；历史素材来自 v0.7.2，本次提交前须复核并与最终版本保持一致 |
 

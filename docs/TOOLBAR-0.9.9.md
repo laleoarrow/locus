@@ -55,3 +55,5 @@ Chrome / Edge ZIP 解压内容一致，CRC 校验通过，manifest 均为 0.9.9�
 | locus-0.9.9-chrome.zip | 254262 | `d2a0ee45cf198d4f53557cf1cd879454345c042ee9a3015bbd8e438a1f17d8bb` |
 | locus-0.9.9-edge.zip | 254262 | `cbd9cd9bbb98ae18106a6b8a0d967223ddc248c3cd1c03707f92245e740cd39c` |
 | locus-0.9.9-edge-store.zip | 253917 | `df018a02c285f70e3f2e11d7d05b7e433864da669733cad193f64512f99003bc` |
+
+已发布为 [GitHub Latest v0.9.9](https://github.com/laleoarrow/locus/releases/tag/v0.9.9)，源码提交 `c542570433f7ec55bb2cd093520b54a73da7d961`。两份公开 ZIP 已独立下载，内容与上表核验的本地产物完全一致。稳定安装目录保持 0.9.6 文件、重载待定；未提交商店包。
