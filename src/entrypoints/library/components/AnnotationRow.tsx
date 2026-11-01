@@ -4,7 +4,7 @@ import { highlightParts, type LibraryAnnotation, type LibraryPage } from '@/doma
 import type { CustomColor } from '@/domain/types';
 import { markdownToHtml } from '@/lib/markdown';
 import { requestBg } from '@/messaging/protocol';
-import { useSelection } from './SelectionContext';
+import { useBlankSelection, useSelection } from './SelectionContext';
 
 /** Text with the current search term marked. */
 export function Marked({ text, query }: { text: string; query: string }) {
@@ -36,6 +36,8 @@ export function AnnotationRow({
   const [draft, setDraft] = useState(annotation.note);
   const [status, setStatus] = useState('');
   const selection = useSelection();
+  const blankSelection = useBlankSelection(() => selection.toggle(annotation.id),
+    '.annotation, .annotation > .body, .annotation > .body > .actions', selection.busy);
   const swatch = specFor(annotation.color, customColors).swatch;
   const needle = query.trim().toLowerCase();
   const noteMatches = needle !== '' && annotation.note.toLowerCase().includes(needle);
@@ -65,6 +67,8 @@ export function AnnotationRow({
       data-annotation-id={annotation.id}
       data-color={annotation.color}
       data-selected={selection.enabled && selection.selectedIds.has(annotation.id) || undefined}
+      {...blankSelection}
+      onClick={(event) => { event.stopPropagation(); blankSelection.onClick(event); }}
     >
       {selection.enabled && (
         <input

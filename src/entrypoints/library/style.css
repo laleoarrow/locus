@@ -330,7 +330,7 @@ body {
   padding: 14px 16px;
 }
 .page-card header { margin-bottom: 8px; }
-.page-card-heading { display: flex; align-items: flex-start; gap: 8px; }
+.page-card-heading { display: flex; align-items: flex-start; gap: 8px; padding-right: 32px; }
 .page-card-title { min-width: 0; flex: 1; }
 .page-card[data-selected='full'] { border-color: color-mix(in srgb, var(--locus-accent) 65%, var(--locus-border)); background: color-mix(in srgb, var(--locus-accent) 6%, var(--locus-card)); }
 .page-card[data-selected='partial'] { border-style: dashed; border-color: color-mix(in srgb, var(--locus-accent) 65%, var(--locus-border)); }
@@ -433,7 +433,8 @@ body {
 
 .quote {
   display: block;
-  width: 100%;
+  width: fit-content;
+  max-width: 100%;
   border: 0;
   background: none;
   padding: 0;

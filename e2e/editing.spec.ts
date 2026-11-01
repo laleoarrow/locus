@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from '@playwright/test';
+import type { BrowserContext, Locator, Page } from '@playwright/test';
 import { BASE_URL, expect, highlight, test } from './extension';
 
 const NESTED = `${BASE_URL}/fixtures/nested.html`;
@@ -31,7 +31,16 @@ async function enterSelection(library: Page): Promise<void> {
   await expect(library.locator('.bulk-edit-panel')).toBeVisible();
 }
 
-async function expectPageSelectionGutter(library: Page): Promise<void> {
+async function clickBlank(target: Locator, card = false): Promise<void> {
+  await target.evaluate((element) => element.scrollIntoView({ block: 'end' }));
+  const box = (await target.boundingBox())!;
+  const position = { x: card ? 20 : 3, y: box.height - 3 };
+  expect(await target.evaluate((element, point) => document.elementFromPoint(point.x, point.y) === element,
+    { x: box.x + position.x, y: box.y + position.y })).toBe(true);
+  await target.click({ position });
+}
+
+async function expectPageSelectionInsideRight(library: Page): Promise<void> {
   for (const card of await library.locator('.page-card').all()) {
     await card.locator('[data-page-select]').evaluate((element) => element.scrollIntoView({ block: 'center' }));
     const layout = await card.evaluate((element) => {
@@ -39,25 +48,25 @@ async function expectPageSelectionGutter(library: Page): Promise<void> {
       const label = checkbox.closest<HTMLElement>('.page-select')!;
       const title = element.querySelector('h2')!;
       const box = checkbox.getBoundingClientRect();
-      const original = title.getBoundingClientRect();
+      const titleBox = title.getBoundingClientRect();
+      const target = label.getBoundingClientRect();
+      const cardBox = element.getBoundingClientRect();
       const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
-      // Hiding the out-of-flow control must not give the title more room.
-      const previous = label.style.display;
-      label.style.display = 'none';
-      const withoutControl = title.getBoundingClientRect();
-      label.style.display = previous;
       return {
-        checkboxLeft: box.left, checkboxRight: box.right, titleLeft: original.left, titleRight: original.right,
-        titleShift: Math.abs(original.left - withoutControl.left),
-        titleWidthChange: Math.abs(original.width - withoutControl.width),
+        inside: target.left >= cardBox.left && target.right <= cardBox.right &&
+          target.top >= cardBox.top && target.bottom <= cardBox.bottom &&
+          box.left >= cardBox.left && box.right <= cardBox.right && box.top >= cardBox.top && box.bottom <= cardBox.bottom,
+        rightSide: target.left > cardBox.left + cardBox.width / 2,
+        titleSeparate: titleBox.right <= target.left || titleBox.bottom <= target.top || titleBox.top >= target.bottom,
+        cardLeft: cardBox.left, cardRight: cardBox.right,
         hitControl: hit !== null && label.contains(hit), viewportWidth: innerWidth,
       };
     });
-    expect(layout.checkboxLeft).toBeGreaterThanOrEqual(0);
-    expect(layout.checkboxRight).toBeLessThanOrEqual(layout.titleLeft);
-    expect(layout.titleRight).toBeLessThanOrEqual(layout.viewportWidth);
-    expect(layout.titleShift).toBeLessThan(1);
-    expect(layout.titleWidthChange).toBeLessThan(1);
+    expect(layout.inside).toBe(true);
+    expect(layout.rightSide).toBe(true);
+    expect(layout.titleSeparate).toBe(true);
+    expect(layout.cardLeft).toBeGreaterThanOrEqual(0);
+    expect(layout.cardRight).toBeLessThanOrEqual(layout.viewportWidth);
     expect(layout.hitControl).toBe(true);
   }
   expect(await library.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -215,6 +224,14 @@ test('E55: pending selected edits lock controls and reject a concurrent note cha
   await expect(first.locator('.annotation-select')).toBeDisabled();
   await expect(first.locator('[data-action="delete"]')).toBeDisabled();
   await expect(first.locator('[data-action="edit"]')).toBeDisabled();
+  // Inert content deliberately fails locator actionability; raw pointer clicks
+  // verify that attempts on those blank areas cannot change the selection.
+  for (const [target, x] of [[first, 3], [library.locator('.page-card').filter({ has: first }), 20]] as const) {
+    await target.evaluate((element) => element.scrollIntoView({ block: 'end' }));
+    const box = (await target.boundingBox())!;
+    await library.mouse.click(box.x + x, box.y + box.height - 3);
+  }
+  await expect(library.locator('[data-selection="count"]')).toHaveText('2 selected · 2 pages');
   await other.evaluate((annotationId) => chrome.runtime.sendMessage({
     type: 'annotation:set-comment', id: annotationId, comment: 'Changed in another tab',
   }), id);
@@ -243,7 +260,7 @@ test('E77: visible page checkboxes select collapsed annotations and support part
   await expect(library.locator('[data-page-select]')).toHaveCount(2);
   await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
   await expect(nested.locator('.annotation')).toHaveCount(5);
-  await expectPageSelectionGutter(library);
+  await expectPageSelectionInsideRight(library);
   const styleBefore = await nested.evaluate((element) => {
     const style = getComputedStyle(element);
     return [style.backgroundColor, style.borderColor, style.boxShadow].join('|');
@@ -303,7 +320,7 @@ test('E78: the selection entry respects filters and keeps batch controls usable 
   await library.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
   await expect(library.locator('[data-selection="color"]')).toBeInViewport();
   await library.setViewportSize({ width: 390, height: 650 });
-  await expectPageSelectionGutter(library);
+  await expectPageSelectionInsideRight(library);
   await library.locator('[data-selection="comment"]').click();
   await library.locator('[data-selection="note-text"]').fill('Only the filtered page receives this note.');
   const apply = library.locator('[data-selection="apply"]');
@@ -316,4 +333,86 @@ test('E78: the selection entry respects filters and keeps batch controls usable 
   await library.locator('[data-selection="exit"]').click();
   await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
   await expect(library.locator('[data-page-select]')).toHaveCount(2);
+});
+
+test('E79: blank card clicks select the page while blank annotation clicks toggle only that row', async ({
+  context, serviceWorker, extensionId,
+}) => {
+  await seed(context);
+  const library = await openLibrary(context, extensionId);
+  const first = annotation(library, 'footnote marker');
+  const sibling = annotation(library, 'Deeply nested inline structure');
+  const nested = library.locator('.page-card').filter({ has: first });
+  await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
+  await clickBlank(nested, true);
+  await expect(library.locator('[data-selection="count"]')).toHaveText('2 selected · 1 page');
+  await expect(nested).toHaveAttribute('data-selected', 'full');
+  await clickBlank(nested, true);
+  await expect(library.locator('[data-selection="count"]')).toHaveText('0 selected · 0 pages');
+  await library.locator('[data-selection="exit"]').click();
+
+  await clickBlank(first);
+  await expect(library.locator('[data-selection="count"]')).toHaveText('1 selected · 1 page');
+  await expect(first.locator('.annotation-select')).toBeChecked();
+  await expect(sibling.locator('.annotation-select')).not.toBeChecked();
+  await expect(nested).toHaveAttribute('data-selected', 'partial');
+  await clickBlank(first);
+  await expect(library.locator('[data-selection="count"]')).toHaveText('0 selected · 0 pages');
+  await clickBlank(nested, true);
+  await clickBlank(first);
+  await expect(library.locator('[data-selection="count"]')).toHaveText('1 selected · 1 page');
+  await expect(sibling.locator('.annotation-select')).toBeChecked();
+  await expect(first.locator('.annotation-select')).not.toBeChecked();
+  await expect(annotation(library, 'scoping').locator('.annotation-select')).not.toBeChecked();
+});
+
+test('E80: navigation, note editing and text dragging do not trigger blank-area selection', async ({
+  context, serviceWorker, extensionId,
+}) => {
+  await seed(context);
+  const library = await openLibrary(context, extensionId);
+  const first = annotation(library, 'footnote marker');
+  const linkUrl = `${DEMO}?note-link=selection-guard`;
+  await first.locator('[data-action="edit"]').click();
+  await first.locator('textarea').fill(`[Read fixture](${linkUrl})\n\nDrag this saved note text without selecting annotations.`);
+  await first.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(first.locator('.note')).toContainText('Drag this saved note');
+  await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
+
+  const [revealed] = await Promise.all([
+    context.waitForEvent('page'), first.locator('.quote').click(),
+  ]);
+  await revealed.waitForURL(NESTED);
+  await library.bringToFront();
+  await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
+  const [linked] = await Promise.all([
+    context.waitForEvent('page'), first.locator('.note a').click(),
+  ]);
+  await linked.waitForURL(linkUrl);
+  await library.bringToFront();
+  await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
+
+  const text = first.locator('.note p').last();
+  await text.scrollIntoViewIfNeeded();
+  const line = await text.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const box = range.getClientRects()[0]!;
+    return { left: box.left, right: box.right, y: box.top + box.height / 2 };
+  });
+  await library.mouse.move(line.left + 1, line.y);
+  await library.mouse.down();
+  await library.mouse.move(Math.min(line.right - 1, line.left + 120), line.y, { steps: 12 });
+  await library.mouse.up();
+  expect(await library.evaluate(() => window.getSelection()?.toString().trim().length ?? 0)).toBeGreaterThan(0);
+  await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
+  await library.evaluate(() => window.getSelection()?.removeAllRanges());
+
+  await clickBlank(first);
+  await expect(library.locator('[data-selection="count"]')).toHaveText('1 selected · 1 page');
+  await first.locator('[data-action="edit"]').click();
+  await first.locator('textarea').fill('Editing a selected note keeps the selection.');
+  await first.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(first.locator('.note')).toHaveText('Editing a selected note keeps the selection.');
+  await expect(library.locator('[data-selection="count"]')).toHaveText('1 selected · 1 page');
 });

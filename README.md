@@ -98,8 +98,9 @@ bring them back reliably — even when the page shifts under you.
   deleted. Replace one annotation colour across the whole live library from a
   compact batch menu. Deleted annotations land in a bin you can restore from,
   and any result is one click from the passage it came from.
-- **Edit a selection together.** Check page cards directly, or use **批量选择**
-  to reveal the batch controls. Card selection includes collapsed annotations
+- **Edit a selection together.** Click a card or annotation’s blank area, use the
+  checkbox inside a card’s upper-right corner, or choose **批量选择** to reveal the
+  batch controls. Card selection includes collapsed annotations
   in the current filter; individual rows can be deselected. Change their colour,
   append or replace notes, delete, or restore them as one batch. A stale
   selection is rejected before any row changes. Existing whole-library colour

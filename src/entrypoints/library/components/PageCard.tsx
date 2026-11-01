@@ -4,7 +4,7 @@ import type { CustomColor } from '@/domain/types';
 import { requestBg } from '@/messaging/protocol';
 import { AnnotationRow } from './AnnotationRow';
 import { PageSummary } from './PageSummary';
-import { useSelection } from './SelectionContext';
+import { useBlankSelection, useSelection } from './SelectionContext';
 
 const COMPACT_ANNOTATION_LIMIT = 5;
 
@@ -24,6 +24,8 @@ export function PageCard({
   const selectedCount = ids.filter((id) => selection.selectedIds.has(id)).length;
   const fullySelected = selectedCount > 0 && selectedCount === ids.length;
   const partiallySelected = selectedCount > 0 && !fullySelected;
+  const blankSelection = useBlankSelection(() => selection.toggleMany(ids),
+    '.page-card, .page-card-heading, .page-card-title, .page-card-title > h2, .page-meta, .annotations, .annotation-overflow', selection.busy);
   const [expanded, setExpanded] = useState(false);
   const annotationListId = useId();
   const annotationSetKey = useMemo(
@@ -43,7 +45,11 @@ export function PageCard({
     });
 
   return (
-    <article className="page-card" data-source-id={page.sourceId} data-selected={fullySelected ? 'full' : partiallySelected ? 'partial' : undefined}>
+    <article className="page-card" data-source-id={page.sourceId} data-selected={fullySelected ? 'full' : partiallySelected ? 'partial' : undefined}
+      {...blankSelection} onClick={(event) => {
+        if (!(event.target instanceof Element) || event.target.closest('.annotation')) return;
+        blankSelection.onClick(event);
+      }}>
       <header className="page-card-heading">
         <label className="page-select" title="当前筛选中的标注，含折叠内容">
           <input type="checkbox" data-page-select={page.sourceId} checked={fullySelected} title="当前筛选中的标注，含折叠内容"

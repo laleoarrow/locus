@@ -389,9 +389,10 @@ and `sidepanel/App.tsx` was already carrying the page list, backup and sync.
 - Deleted annotations are reachable behind a *Deleted* filter with a Restore
   action — the rows were always kept, there was simply no way to see them.
 - Selected-row editing is separate from whole-library colour replacement:
-  always-visible page-card checkboxes open the batch toolbar and select all
-  matching annotations, including collapsed rows. Individual rows can then be
-  deselected; filters prune hidden selections. The batch covers colour, note
+  always-visible page-card checkboxes inside the upper-right corner, or a click
+  on card blank space, open the batch toolbar and select all matching annotations,
+  including collapsed rows. Row blank space toggles only that row; controls, text
+  selection and navigation keep their behavior. Individual rows can be deselected; filters prune hidden selections. The batch covers colour, note
   append/replace and delete/restore. Page main content is stored in `pageSummaries`, never copied
   into annotation comments. It can be edited manually or filled from an AI
   draft, with saving as a separate action.
