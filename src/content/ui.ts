@@ -75,7 +75,12 @@ const SHADOW_CSS = `
   gap: 10px;
   padding: 8px 12px;
   border-radius: 999px;
-  animation: locus-in 0.14s ease-out;
+  animation: locus-toolbar-in 0.14s ease-out;
+}
+.toolbar.measuring { visibility: hidden; pointer-events: none; animation: none; }
+@keyframes locus-toolbar-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 @keyframes locus-in {
   from { opacity: 0; transform: translateY(4px) scale(0.96); }
@@ -442,7 +447,7 @@ export class LocusUI {
   }
 
   isToolbarVisible(): boolean {
-    return !this.toolbar.classList.contains('hidden');
+    return !this.toolbar.classList.contains('hidden') && !this.toolbar.classList.contains('measuring');
   }
 
   /**
@@ -464,7 +469,11 @@ export class LocusUI {
       const last = swatch.dataset['color'] === lastColor ? 'true' : 'false';
       if (swatch.dataset['last'] !== last) swatch.dataset['last'] = last;
     }
-    if (!this.isToolbarVisible()) this.toolbar.classList.remove('hidden');
+    const revealing = !this.isToolbarVisible();
+    if (revealing) {
+      this.toolbar.classList.add('measuring');
+      this.toolbar.classList.remove('hidden');
+    }
     const view = this.doc.defaultView;
     // Fixed descendants can share an HTML root's transform or effective zoom.
     // Measure that coordinate system independently of the toolbar's entrance
@@ -489,6 +498,7 @@ export class LocusUI {
     if (this.toolbar.dataset['placement'] !== placement) this.toolbar.dataset['placement'] = placement;
     setPixelStyle(this.toolbar.style, 'left', (box.left - reference.left) / scaleX);
     setPixelStyle(this.toolbar.style, 'top', (box.top - reference.top) / scaleY);
+    if (revealing) this.toolbar.classList.remove('measuring');
   }
 
   hideToolbar(): void {

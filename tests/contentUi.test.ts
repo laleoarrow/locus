@@ -187,6 +187,25 @@ describe('toolbar repeated-update work', () => {
     return { ui, actions, palette, shadow, toolbar, width, height, anchor };
   }
 
+  it('measures a newly opened toolbar while hidden and reveals only after assigning its position', () => {
+    const { ui, toolbar, width, height, anchor } = toolbarSetup();
+    ui.hideToolbar();
+    width.mockImplementation(() => {
+      expect(ui.isToolbarVisible()).toBe(false);
+      expect(toolbar.classList.contains('measuring')).toBe(true);
+      return 180;
+    });
+    height.mockImplementation(() => {
+      expect(ui.isToolbarVisible()).toBe(false);
+      return 44;
+    });
+    ui.showToolbar(anchor, 'yellow', 'below');
+    expect(ui.isToolbarVisible()).toBe(true);
+    expect(toolbar.classList.contains('measuring')).toBe(false);
+    expect(toolbar.style.top).toBe('230px');
+    expect(toolbar.style.left).toBe('200px');
+  });
+
   it('keeps existing focused buttons and the native colour input on identical palette updates', () => {
     const { ui, actions, palette, shadow, toolbar } = toolbarSetup();
     const button = toolbar.querySelector<HTMLButtonElement>('.swatch')!;

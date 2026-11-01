@@ -14,6 +14,7 @@ This file is the coordination board for concurrent work in this repository.
 
 | Task | Owner | Status | Claimed files | Notes |
 | --- | --- | --- | --- | --- |
+| Reveal toolbar directly at its resolved position | Codex `/root` + reveal agents | verified; preparing 0.9.10 release | source worker: src/entrypoints/content.ts, src/content/ui.ts, tests/contentUi.test.ts, tests/contentReveal.test.ts; browser worker: e2e/toolbar-reveal.spec.ts; root: todo.md, package.json, ARCHITECTURE.md, docs/ACCEPTANCE-TEST-PLAN.md, docs/RELEASE-0.9.10.md, docs/TOOLBAR-0.9.10.md, docs/HANDOFF-STORE-SUBMISSION.md, docs/toolbar-0.9.10/*, release | Initial Auto reveals after 300 ms at current resolved geometry; opacity-only entrance. Frame sampling: baseline 87 px hop→0, overlap23/19frames→0/0. Typecheck +481 unit +full101 E2E passed; actual untouched Edge ZIP independently loaded, firstpaint316/344ms and0visible displacement/overlap. Cancellation, keyboard-generation race, text/image shortcuts and explicit preference switch checked. No live Edge/profile/cloud/install edits. |
 | Diagnose remaining distant toolbar on Bing dictionary punctuation | Codex `/root` + toolbar agents | released 0.9.9; files released; live install untouched | root: todo.md, package.json, ARCHITECTURE.md, docs/ACCEPTANCE-TEST-PLAN.md, docs/RELEASE-0.9.9.md, docs/TOOLBAR-0.9.9.md, docs/HANDOFF-STORE-SUBMISSION.md, docs/toolbar-0.9.9/*, release; browser worker: e2e/toolbar-distance.spec.ts, fixtures/dictionary.html, isolated .output diagnostics; UI worker: src/content/ui.ts, tests/contentUi.test.ts; selection worker: src/content/selectionGeometry.ts, src/entrypoints/content.ts, tests/selectionGeometry.test.ts; reviewer: read-only geometry | Reproduced old 0.9.4 card escape and remaining 0.9.8 root-coordinate / element-boundary errors. Actual final ZIP: four scenarios 10 px gap. Linear large-selection traversal replaces quadratic first draft (5000 nodes median 69.46→5.54 ms; native aggregate remains faster but includes container whitespace). Typecheck, 469 unit, full 96 E2E and production ZIP checks pass; GitHub Latest 0.9.9 published and remote downloads match. No live Edge/profile/cloud/install changes. |
 | Browser regression for retained highlight nodes and batched images (0.9.8) | Codex `/root/perf_browser` | done; files released | `e2e/performance.spec.ts`, `fixtures/performance.html` | E98 old 0.9.7 baseline: comment-only edit replaces one ring (retained=false, added=1). E98/E99 source and typecheck ready; no shared rebuild; isolated headless localhost only. |
 | Skip unchanged toolbar DOM updates (0.9.8) | Codex `/root/perf_toolbar` | done; files released | `src/content/ui.ts`, `tests/contentUi.test.ts` | Preserve every Auto measurement/avoidance tick. 20 identical palette updates: child-list mutations 120→0, attributes 100→0; 20 static Auto ticks: attributes 100→0 while width/height remain 20 reads each. Focus, native picker, changed palette/obstacles/viewport and note-only render colors verified; all 15 UI tests + typecheck/diff pass. No browser/build/live data access. |
@@ -61,8 +62,8 @@ server, which the Playwright config starts on port 8137.
 
 ```bash
 pnpm typecheck                          # TS strict
-pnpm test                               # Vitest, currently 458
-pnpm build:e2e && npx playwright test   # Playwright, currently 93
+pnpm test                               # Vitest, currently 481
+pnpm build:e2e && npx playwright test   # Playwright, currently 101
 pnpm build && pnpm build:edge           # Chrome + Edge from one source
 ```
 

@@ -1,0 +1,33 @@
+{
+  "version": "0.9.10",
+  "extensionId": "dfmekdplmdbjbefchginloeehjonjlan",
+  "packageSha256": "56d7e885bf4b3c1a808079dc3ad5b69852677ec7d071d98fe19ac78d30635983",
+  "method": "Unmodified production Edge ZIP loaded in a disposable headless Chromium profile; localhost:8151 fixtures fulfilled by route; RAF samples over 700 ms; visibility requires positive area and opacity above .01.",
+  "cases": [
+    {
+      "rival": "immediate",
+      "firstVisibleMs": 343.6,
+      "visibleFrames": 44,
+      "visibleOverlapFrames": 0,
+      "maxDistanceFromSettledPx": 0,
+      "opacityOnly": true,
+      "firstTop": 112.8125,
+      "settledTop": 112.8125
+    },
+    {
+      "rival": "late",
+      "firstVisibleMs": 315.9,
+      "visibleFrames": 47,
+      "visibleOverlapFrames": 0,
+      "maxDistanceFromSettledPx": 0,
+      "opacityOnly": true,
+      "firstTop": 112.8125,
+      "settledTop": 112.8125
+    }
+  ],
+  "smoke": {
+    "fastTextShortcutWhileHidden": true,
+    "noLateReveal": true,
+    "survivesReload": true
+  }
+}

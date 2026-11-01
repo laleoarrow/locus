@@ -30,6 +30,8 @@ import { requestBg, type AnchorStateReply, type TabMessage } from '@/messaging/p
 
 /** Follow late or animated rivals while the selection toolbar is visible. */
 const PLACEMENT_RECHECK_MS = 200;
+/** Let selection-triggered page/extension controls appear before Auto's first paint. */
+const TOOLBAR_REVEAL_MS = 300;
 const MUTATION_DEBOUNCE_MS = 300;
 const DETACHED_RETRY_MS = 2_000;
 /** Separates an intentional image-selection drag from ordinary click jitter. */
@@ -44,6 +46,11 @@ interface Entry {
 type PendingTarget =
   | { type: 'text'; range: Range }
   | { type: 'image'; image: HTMLImageElement };
+
+function sameRange(first: Range, second: Range): boolean {
+  return first.startContainer === second.startContainer && first.startOffset === second.startOffset &&
+    first.endContainer === second.endContainer && first.endOffset === second.endOffset;
+}
 
 type UndoAction = { action: 'create' | 'delete'; annotationIds: string[] };
 
@@ -88,6 +95,8 @@ export class LocusContent {
   /** Per-tab undo stack for Cmd/Ctrl+Z (creates and note-editor deletes). */
   private readonly undoStack: UndoAction[] = [];
   private placementRecheck: ReturnType<typeof setTimeout> | undefined;
+  private toolbarReveal: ReturnType<typeof setTimeout> | undefined;
+  private toolbarGeneration = 0;
   private imageDrag: ImageDragGesture | null = null;
   private suppressImageClick = false;
   private suppressImageClickTimer: ReturnType<typeof setTimeout> | undefined;
@@ -493,7 +502,10 @@ export class LocusContent {
         // Even an already-ringed image keeps its ordinary click. Image notes
         // reopen through the explicit drag gesture or the side panel.
         if (gesture) return;
-        setTimeout(() => this.handlePointerUp(event), 0);
+        const generation = this.toolbarGeneration;
+        setTimeout(() => {
+          if (this.active && generation === this.toolbarGeneration) this.handlePointerUp(event);
+        }, 0);
       },
       true,
     );
@@ -516,7 +528,21 @@ export class LocusContent {
     this.doc.addEventListener('keyup', (event) => {
       if (!this.active) return;
       if (event.key.startsWith('Arrow') || event.key === 'Shift') {
-        if (!this.ui.containsEvent(event)) setTimeout(() => this.showToolbarForSelection(), 0);
+        if (!this.ui.containsEvent(event)) {
+          const generation = this.toolbarGeneration;
+          setTimeout(() => {
+            if (this.active && generation === this.toolbarGeneration) this.showToolbarForSelection();
+          }, 0);
+        }
+      }
+    });
+    this.doc.addEventListener('selectionchange', () => {
+      if (this.toolbarReveal !== undefined && this.pending?.type === 'text' &&
+        !this.isCurrentSelection(this.pending.range)) {
+        // Retire the old target without discarding a queued keyup that will
+        // capture the new live selection.
+        this.hideToolbar(false);
+        this.pending = null;
       }
     });
   }
@@ -546,8 +572,7 @@ export class LocusContent {
       return;
     }
     this.doc.getSelection()?.removeAllRanges();
-    this.pending = { type: 'image', image };
-    this.presentToolbar(rect);
+    this.prepareToolbar({ type: 'image', image });
   }
 
   private handlePointerUp(event: MouseEvent): void {
@@ -569,16 +594,62 @@ export class LocusContent {
     this.obstacles.stop();
   }
 
-  private hideToolbar(): void {
+  private hideToolbar(invalidateSelectionTasks = true): void {
+    if (invalidateSelectionTasks) this.toolbarGeneration++;
+    clearTimeout(this.toolbarReveal);
+    this.toolbarReveal = undefined;
     this.stopPlacementTracking();
     this.ui.hideToolbar();
   }
 
+  private isCurrentSelection(range: Range): boolean {
+    const selection = this.doc.getSelection();
+    return !!selection && !selection.isCollapsed && selection.rangeCount > 0 &&
+      sameRange(range, selection.getRangeAt(0));
+  }
+
+  private prepareToolbar(target: PendingTarget): void {
+    const same = target.type === 'text' && this.pending?.type === 'text'
+      ? sameRange(target.range, this.pending.range)
+      : target.type === 'image' && this.pending?.type === 'image' && target.image === this.pending.image;
+    if (same && (this.toolbarReveal !== undefined || this.ui.isToolbarVisible())) {
+      this.refreshToolbar();
+      return;
+    }
+    this.hideToolbar();
+    this.pending = target;
+    if (this.prefs.placement !== 'auto') {
+      this.refreshToolbar(true);
+      return;
+    }
+    this.toolbarReveal = setTimeout(() => {
+      this.toolbarReveal = undefined;
+      if (!this.active || this.pending !== target) return;
+      if (target.type === 'text' && !this.isCurrentSelection(target.range)) {
+        this.hideToolbar();
+        this.pending = null;
+        return;
+      }
+      this.refreshToolbar(true);
+    }, TOOLBAR_REVEAL_MS);
+  }
+
   /** Re-measure the target because scrolling and page layout can move it. */
-  private refreshToolbar(): void {
-    if (!this.active || !this.ui.isToolbarVisible() || !this.pending) {
+  private refreshToolbar(reveal = false): void {
+    const waiting = this.toolbarReveal !== undefined;
+    if (!this.active || (!this.ui.isToolbarVisible() && !waiting && !reveal) || !this.pending) {
       this.stopPlacementTracking();
       return;
+    }
+    if (waiting) {
+      if (this.prefs.placement === 'auto') return;
+      clearTimeout(this.toolbarReveal);
+      this.toolbarReveal = undefined;
+      if (this.pending.type === 'text' && !this.isCurrentSelection(this.pending.range)) {
+        this.hideToolbar();
+        this.pending = null;
+        return;
+      }
     }
     const target = this.pending.type === 'text' ? this.pending.range : this.pending.image;
     const connected = target instanceof Range
@@ -633,10 +704,7 @@ export class LocusContent {
       return true;
     }
     if (!this.ui.closeNoteEditor()) return true;
-    this.pending = { type: 'text', range: range.cloneRange() };
-    const rect = selectionTextRect(range);
-    if (rect) this.presentToolbar(rect);
-    else this.hideToolbar();
+    this.prepareToolbar({ type: 'text', range: range.cloneRange() });
     return true;
   }
 
@@ -645,6 +713,12 @@ export class LocusContent {
       'keydown',
       (event) => {
         if (!this.active || this.ui.containsEvent(event) || isEditableKeyEvent(event)) return;
+
+        if (event.key === 'Escape') {
+          this.hideToolbar();
+          this.pending = null;
+          return;
+        }
 
         if (
           !event.repeat &&
@@ -675,7 +749,14 @@ export class LocusContent {
         }
 
         // Digits pick a palette color for the pending selection or image.
-        if (!event.metaKey && !event.ctrlKey && !event.altKey && this.ui.isToolbarVisible()) {
+        if (!event.metaKey && !event.ctrlKey && !event.altKey &&
+          (this.ui.isToolbarVisible() || this.toolbarReveal !== undefined)) {
+          if (this.toolbarReveal !== undefined && this.pending?.type === 'text' &&
+            !this.isCurrentSelection(this.pending.range)) {
+            this.hideToolbar();
+            this.pending = null;
+            return;
+          }
           const color = colorForDigit(Number(event.key), this.palette);
           if (color) {
             event.preventDefault();

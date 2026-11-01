@@ -252,6 +252,16 @@ resolution shares a per-batch resource index, never a long-lived DOM cache.
   after initial traversal. Browser-native or desktop overlays outside the page
   DOM cannot be measured by this mechanism.
 
+  Auto's first reveal waits hidden for 300 ms so common selection-triggered
+  rivals can appear before the first measurement. The one-shot callback reads
+  fresh geometry; explicit Above/Below still reveal immediately. Dimensions and
+  final coordinates are resolved under `visibility: hidden`, then the toolbar
+  fades in without translation or scaling. Digits remain usable during the wait.
+  Cancellation invalidates queued selection work; retiring a stale selection
+  cancels only its reveal so a queued keyup can still show the current selection.
+  E103–E106 check actual visible frames, cancellation, rapid keyboard reselection,
+  scrolling, text/image shortcuts and preference changes during the wait.
+
   Text toolbar geometry measures the selected text subranges, excluding fully
   selected elements' padding and empty height; the original Range remains the
   capture source. A single Text-node selection requires no tree walk. A hidden

@@ -1,0 +1,24 @@
+{
+  "version": "candidate-0.9.10",
+  "method": "requestAnimationFrame samples over 700 ms; visible requires positive area, display and visibility enabled, opacity above .01; disposable headless localhost fixture",
+  "cases": [
+    {
+      "rival": "immediate",
+      "firstVisibleMs": 341.6,
+      "visibleFrames": 44,
+      "visibleOverlapFrames": 0,
+      "maxDistanceFromSettledPx": 0.0,
+      "firstTop": 112.8125,
+      "settledTop": 112.8125
+    },
+    {
+      "rival": "late",
+      "firstVisibleMs": 330.4,
+      "visibleFrames": 46,
+      "visibleOverlapFrames": 0,
+      "maxDistanceFromSettledPx": 0.0,
+      "firstTop": 112.8125,
+      "settledTop": 112.8125
+    }
+  ]
+}
