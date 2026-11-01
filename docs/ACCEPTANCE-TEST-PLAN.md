@@ -124,6 +124,16 @@ for observability without page-world coupling.
 | E79–E80 | blank-area selection | card/row selection without mode entry, isolated row toggles, navigation and editor controls, drag-selected text and pending-action guards |
 | E81–E82 | nearby Auto placement | positioned reading card excluded while its rival bubble remains avoided; delayed giant-overlay fallback stays close and keeps selected text visible |
 
+| E83–E88 | reading audit | synthetic reading flow, same-source image reorder, nested scroll/visibility, IME confirmation, persistent storage failure/retry, native editable controls and 280px note editor |
+| E89–E91 | Library edit safety | current note initialization, cross-window conflict retains draft, batch preview freezes the reviewed versions |
+| E92–E94 | long-lived pages | source/DOM changes after 15 seconds, removed pending image, isolated malformed local anchor with healthy neighbors |
+| E95 | dynamic-page cost | 1000-paragraph page and unrelated ticker: no full restoration or repeated state reports; real excerpt changes still restore, re-enable still notifies |
+| E96–E97 | Library draft lifetime | grouping/filter/live-search unmount preserves draft and expected version; hidden in-flight write failure returns with retryable draft |
+
+All browser contexts explicitly run headless with disposable profiles. Public DNS
+is disabled in this harness; API/WebDAV fixtures use localhost. The audit does not
+write to the installed extension directory or use live cloud/LLM credentials.
+
 ## Manual checklist (pre-release)
 
 - Install/store disclosure clearly requests access to HTTP(S) pages and matches

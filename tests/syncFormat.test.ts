@@ -37,6 +37,16 @@ describe('page sync projection', () => {
     expect(await encoded(a)).toBe(await encoded(b));
   });
 
+  it('projects original text-only records without kind or DOI as their later defaults', async () => {
+    const current = pageFixture();
+    const legacy = structuredClone(current) as unknown as {
+      annotations: Record<string, unknown>[]; documents: Record<string, unknown>[];
+    };
+    delete legacy.annotations[0]!.kind;
+    delete legacy.documents[0]!.doi;
+    expect(await encoded(legacy as unknown as BackupFile)).toBe(await encoded(current));
+  });
+
   it('retains tombstones and cleared summaries even without live notes', async () => {
     const file = pageFixture(); file.annotations[0]!.deletedAt = 15;
     const tombstones = await projectBackup(file);
@@ -107,7 +117,7 @@ describe('page sync projection', () => {
     await expect(validateBlob(body + ' ', hash, 'page', page.sources[0]!.urlKey)).rejects.toThrow('integrity');
     await expect(validateBlob(body, hash, 'page', 'https://wrong.example')).rejects.toThrow('contents');
     const invalid = stableJSON({ ...page, annotations: [...page.annotations, { id: 'invalid' }] });
-    await expect(validateBlob(invalid, await contentHash(invalid), 'page', page.sources[0]!.urlKey)).rejects.toThrow('contents');
+    await expect(validateBlob(invalid, await contentHash(invalid), 'page', page.sources[0]!.urlKey)).rejects.toThrow('fields');
   });
 
   it('rejects a correctly hashed shard missing required annotation or anchor field types', async () => {
@@ -125,5 +135,51 @@ describe('page sync projection', () => {
   it('rejects arbitrary manifest file paths instead of treating them as remote references', () => {
     expect(() => parseManifest(JSON.stringify({ format: 'locus-backup', formatVersion: 4,
       pages: { 'https://example.com': '../../secret' }, settings: 'a'.repeat(64) }))).toThrow('index');
+  });
+
+  it.each([
+    { exact: '' }, { exact: '   ' }, { kind: 'unknown' }, { start: 0.5 }, { end: 0 },
+    { startPoint: { steps: [{ tag: '', index: 0 }], textIndex: 0, offset: 0 } },
+    { startPoint: { steps: [{ tag: 'P', index: -1 }], textIndex: 0, offset: 0 } },
+  ])('rejects correctly hashed shards with invalid text anchor semantics: %j', async (patch) => {
+    const projected = await projectBackup(pageFixture()); const page = [...projected.pages.values()][0]!;
+    const raw = structuredClone(page) as unknown as { anchors: Record<string, unknown>[] };
+    Object.assign(raw.anchors[0]!, patch);
+    const body = stableJSON(raw);
+    await expect(validateBlob(body, await contentHash(body), 'page', page.sources[0]!.urlKey)).rejects.toThrow();
+  });
+
+  it('accepts optional positive image match counts and rejects malformed image anchors', async () => {
+    const original = pageFixture();
+    original.annotations[0]!.kind = 'image'; original.annotations[0]!.exact = 'Figure';
+    original.anchors = [{ id: 'image-anchor', annotationId: 'annotation', kind: 'image',
+      src: 'https://example.com/figure.png', alt: 'Figure', imgIndex: 0, path: [{ tag: 'IMG', index: 0 }] }];
+    const projected = await projectBackup(original); const page = [...projected.pages.values()][0]!;
+    for (const matchCount of [undefined, 1, 2]) {
+      const raw = structuredClone(page);
+      Object.assign(raw.anchors[0]!, { matchCount });
+      const body = stableJSON(raw);
+      await expect(validateBlob(body, await contentHash(body), 'page', page.sources[0]!.urlKey)).resolves.toEqual(raw);
+    }
+    for (const patch of [{ path: undefined }, { path: [{}] }, { src: '' }, { imgIndex: -1 },
+      { matchCount: 0 }, { matchCount: -1 }, { matchCount: 1.5 }, { matchCount: '2' }]) {
+      const raw = structuredClone(page);
+      Object.assign(raw.anchors[0]!, patch);
+      const body = stableJSON(raw);
+      await expect(validateBlob(body, await contentHash(body), 'page', page.sources[0]!.urlKey)).rejects.toThrow();
+    }
+  });
+
+  it.each([
+    ['documents', { title: undefined }], ['documents', { doi: 12 }],
+    ['sources', { title: [] }], ['sources', { url: undefined }], ['sources', { lastSeenAt: -1 }],
+    ['annotations', { exact: null }], ['annotations', { comment: undefined }],
+    ['annotations', { kind: null }], ['annotations', { color: '' }],
+  ] as const)('rejects a hashed shard with malformed %s scalars: %j', async (table, patch) => {
+    const projected = await projectBackup(pageFixture()); const page = [...projected.pages.values()][0]!;
+    const raw = structuredClone(page) as unknown as Record<string, Record<string, unknown>[]>;
+    Object.assign(raw[table]![0]!, patch);
+    const body = stableJSON(raw);
+    await expect(validateBlob(body, await contentHash(body), 'page', page.sources[0]!.urlKey)).rejects.toThrow();
   });
 });

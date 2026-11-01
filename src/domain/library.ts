@@ -1,3 +1,4 @@
+import { effectiveColorUpdatedAt } from './types';
 import type {
   AnchorRecord,
   AnnotationRecord,
@@ -29,6 +30,8 @@ export interface LibraryAnnotation {
   imageSrc: string;
   createdAt: number;
   updatedAt: number;
+  colorUpdatedAt: number;
+  deletedAt: number;
   deleted: boolean;
   /** Last known anchoring state; false unless a content script reported it. */
   detached: boolean;
@@ -178,6 +181,8 @@ export function buildLibrary(input: LibraryInput): LibraryPage[] {
       imageSrc: anchor.kind === 'image' ? anchor.src : '',
       createdAt: annotation.createdAt,
       updatedAt: annotation.updatedAt,
+      colorUpdatedAt: effectiveColorUpdatedAt(annotation),
+      deletedAt: annotation.deletedAt,
       deleted: annotation.deletedAt !== 0,
       detached: input.detached[annotation.id] === true,
     };

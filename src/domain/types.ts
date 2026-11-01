@@ -137,6 +137,8 @@ export interface ImageAnchorData {
   alt: string;
   /** Index among the document's images sharing this src. */
   imgIndex: number;
+  /** Number of images with this src and alt at capture; absent on older anchors. */
+  matchCount?: number;
   /** Element path from <body> to the <img>. */
   path: DomPathStep[];
 }

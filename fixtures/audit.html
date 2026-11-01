@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Fixture: reading workflow audit</title>
+  <style>
+    body { max-width: 840px; margin: 40px auto; padding: 0 24px 80px; font: 17px/1.65 Georgia, serif; color: #26313b; }
+    h1 { font-size: 30px; line-height: 1.2; }
+    h2 { font: 600 17px/1.4 system-ui; margin-top: 28px; }
+    .eyebrow, figcaption { font: 12px/1.5 system-ui; color: #687784; }
+    .figures { display: flex; gap: 32px; flex-wrap: wrap; }
+    figure { margin: 0; }
+    img { display: block; max-width: 100%; }
+    figcaption { margin-top: 6px; }
+    #image-scroll { width: 300px; height: 190px; overflow: auto; border: 2px solid #a6b3be; margin-top: 12px; }
+    #scroll-content { padding: 45px 12px 240px; }
+    label { display: block; margin: 16px 0; font: 14px/1.5 system-ui; }
+    input, textarea, [contenteditable] { display: block; box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #b8c1cb; border-radius: 6px; font: 15px/1.5 system-ui; }
+    @media (max-width: 600px) { body { margin-top: 24px; padding-inline: 16px; } .figures { gap: 20px; } }
+  </style>
+</head>
+<body>
+  <article>
+    <p class="eyebrow">LOCAL TEST MATERIAL · NO PERSONAL DATA</p>
+    <h1>A reading workflow with text and figures</h1>
+    <p id="claim">A useful summary preserves uncertainty and keeps the observation separate from its interpretation. This paragraph is synthetic material for testing annotations.</p>
+    <p id="context">Readers can keep a short note beside the relevant passage and return to the original context later.</p>
+    <h2>Two figures share a file but describe different things</h2>
+    <div class="figures">
+      <figure id="figure-slot-a"><img id="figure-a" width="260" height="130" alt="Alpha study diagram"
+        src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='130'%3E%3Crect width='260' height='130' rx='10' fill='%23dceaf2'/%3E%3Cpath d='M30 95 L85 65 L140 80 L220 35' fill='none' stroke='%23457b9d' stroke-width='5'/%3E%3C/svg%3E" /><figcaption>Figure A · Alpha observations</figcaption></figure>
+      <figure id="figure-slot-b"><img id="figure-b" width="260" height="130" alt="Beta study diagram"
+        src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='130'%3E%3Crect width='260' height='130' rx='10' fill='%23dceaf2'/%3E%3Cpath d='M30 95 L85 65 L140 80 L220 35' fill='none' stroke='%23457b9d' stroke-width='5'/%3E%3C/svg%3E" /><figcaption>Figure B · Beta observations</figcaption></figure>
+    </div>
+    <h2>A figure inside a scrolling panel</h2>
+    <div id="image-scroll"><div id="scroll-content"><img id="scroll-image" width="260" height="130" alt="Scrolling study diagram"
+      src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='130'%3E%3Crect width='260' height='130' rx='10' fill='%23e2ebd7'/%3E%3Cpath d='M30 95 L85 65 L140 80 L220 35' fill='none' stroke='%23647c42' stroke-width='5'/%3E%3C/svg%3E" /></div></div>
+    <h2>Native editing controls</h2>
+    <label>Search terms<input id="native-input" value="" /></label>
+    <label>Page notes<textarea id="native-textarea" rows="3"></textarea></label>
+    <div id="native-editable" contenteditable="true" role="textbox" aria-label="Editable page text">Editable page text</div>
+  </article>
+</body>
+</html>

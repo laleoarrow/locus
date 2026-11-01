@@ -1,9 +1,9 @@
 import type { DomPathStep, ImageAnchorData } from '../types';
+import { isImageAnchorData } from './validate';
 
 /**
- * Image anchoring: an image is identified by its absolute src, its index
- * among same-src images, and a DOM path. Recovery prefers the path (verified
- * against src), then falls back to src matching.
+ * Prefer the displayed resource over a shared srcset fallback. The saved alt
+ * text can distinguish repeated URLs when their position changes.
  */
 
 function buildPath(el: Element, root: Element): DomPathStep[] | null {
@@ -40,27 +40,39 @@ function resolvePath(steps: DomPathStep[], root: Element): Element | null {
   return el;
 }
 
+function imageSource(img: HTMLImageElement): string {
+  return img.currentSrc || (img.getAttribute('src')?.trim() ? img.src : '');
+}
+
 function sameSrcImages(src: string, root: Element): HTMLImageElement[] {
-  return [...root.querySelectorAll('img')].filter((img) => img.src === src);
+  return [...root.querySelectorAll('img')].filter((img) => imageSource(img) === src);
 }
 
 export function captureImageAnchor(img: HTMLImageElement, root: Element): ImageAnchorData | null {
   const path = buildPath(img, root);
-  if (!path) return null;
-  const src = img.src;
+  const src = imageSource(img);
+  if (!path || !src) return null;
+  const candidates = sameSrcImages(src, root);
   return {
     kind: 'image',
     src,
     alt: img.alt,
-    imgIndex: sameSrcImages(src, root).indexOf(img),
+    imgIndex: candidates.indexOf(img),
+    matchCount: candidates.filter((candidate) => candidate.alt === img.alt).length,
     path,
   };
 }
 
 export function resolveImageAnchor(anchor: ImageAnchorData, root: Element): HTMLImageElement | null {
-  const byPath = resolvePath(anchor.path, root);
-  if (byPath instanceof HTMLImageElement && byPath.src === anchor.src) return byPath;
+  if (!isImageAnchorData(anchor)) return null;
   const candidates = sameSrcImages(anchor.src, root);
-  if (candidates.length === 0) return null;
-  return candidates[Math.min(Math.max(anchor.imgIndex, 0), candidates.length - 1)] ?? null;
+  const withAlt = candidates.filter((image) => image.alt === anchor.alt);
+  if (anchor.matchCount !== undefined && anchor.matchCount !== withAlt.length) return null;
+  if (withAlt.length === 1 && (anchor.alt || anchor.matchCount === 1 ||
+    (candidates.length === 1 && anchor.imgIndex === 0))) return withAlt[0]!;
+  const byPath = resolvePath(anchor.path, root);
+  if (byPath instanceof HTMLImageElement && byPath.alt === anchor.alt &&
+    candidates[anchor.imgIndex] === byPath) return byPath;
+  // An index alone is not identity once a repeated image's path is gone.
+  return null;
 }

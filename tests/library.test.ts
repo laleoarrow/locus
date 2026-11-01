@@ -125,6 +125,18 @@ describe('originOf / siteLabel (U27)', () => {
 });
 
 describe('buildLibrary (U28)', () => {
+  it('preserves note, colour and deletion clocks for edit-session conflict checks', () => {
+    const input = library();
+    input.annotations[0]!.colorUpdatedAt = T0 + 30;
+    const annotations = buildLibrary(input).flatMap((page) => page.annotations);
+    expect(annotations.find((entry) => entry.id === 'a1')).toMatchObject({
+      updatedAt: T0, colorUpdatedAt: T0 + 30, deletedAt: 0,
+    });
+    expect(annotations.find((entry) => entry.id === 'a5')).toMatchObject({
+      updatedAt: T0 + 5000, colorUpdatedAt: T0 + 2000, deletedAt: T0 + 5000,
+    });
+  });
+
   it('groups annotations under their page, newest page first', () => {
     const pages = buildLibrary(library());
     expect(pages.map((p) => p.sourceId)).toEqual(['s3', 's2', 's1']);

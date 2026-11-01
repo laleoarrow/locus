@@ -3,6 +3,41 @@ import type { ColorKey } from '@/domain/types';
 
 const STYLE_ID = 'locus-style';
 
+/** Viewport geometry shared by image rings and hit testing. */
+export function imageGeometry(image: HTMLImageElement, doc: Document) {
+  const view = doc.defaultView;
+  if (!view || !image.isConnected || image.ownerDocument !== doc) return null;
+  const rect = image.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return null;
+  const clip = { left: 0, top: 0,
+    right: doc.documentElement.clientWidth || view.innerWidth,
+    bottom: doc.documentElement.clientHeight || view.innerHeight };
+  for (let element: Element | null = image; element;) {
+    const style = view.getComputedStyle(element);
+    if (style.display === 'none' || (element === image &&
+      (style.visibility === 'hidden' || style.visibility === 'collapse')) ||
+      style.opacity === '0' || style.contentVisibility === 'hidden') return null;
+    // Root scrolling already clips to the viewport above; its moving document
+    // rect must not be combined with its viewport-sized clientHeight again.
+    if (element !== image && element !== doc.documentElement && element !== doc.scrollingElement) {
+      const clipsX = /^(auto|scroll|hidden|clip)$/.test(style.overflowX || style.overflow);
+      const clipsY = /^(auto|scroll|hidden|clip)$/.test(style.overflowY || style.overflow);
+      if (clipsX || clipsY) {
+        const bounds = element.getBoundingClientRect();
+        const left = bounds.left + element.clientLeft;
+        const top = bounds.top + element.clientTop;
+        if (clipsX) { clip.left = Math.max(clip.left, left); clip.right = Math.min(clip.right, left + element.clientWidth); }
+        if (clipsY) { clip.top = Math.max(clip.top, top); clip.bottom = Math.min(clip.bottom, top + element.clientHeight); }
+      }
+    }
+    const root = element.getRootNode();
+    element = element.assignedSlot ?? element.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
+  }
+  if (Math.max(rect.left, clip.left) >= Math.min(rect.right, clip.right) ||
+    Math.max(rect.top, clip.top) >= Math.min(rect.bottom, clip.bottom)) return null;
+  return { rect, clip };
+}
+
 export function supportsCustomHighlights(): boolean {
   return (
     typeof CSS !== 'undefined' &&
@@ -76,6 +111,7 @@ export class HighlightRenderer {
   private readonly style: HTMLStyleElement;
   /** Shadow layer holding image rings, isolated from page CSS. */
   private readonly ringLayer: ShadowRoot;
+  private imageResizeObserver: ResizeObserver | null = null;
   /** Observers can ignore mutations we caused ourselves (fallback mode). */
   private selfMutationUntil = 0;
 
@@ -175,19 +211,42 @@ export class HighlightRenderer {
     this.ringLayer.appendChild(ring);
     const entry: Entry = { color, range: null, marks: [], image, ring };
     this.entries.set(id, entry);
+    if (image.isConnected && typeof ResizeObserver !== 'undefined') {
+      this.imageResizeObserver ??= new ResizeObserver((records) => {
+        const changed = new Set(records.map((record) => record.target));
+        for (const current of this.entries.values()) {
+          if (current.image && changed.has(current.image)) this.positionRing(current);
+        }
+      });
+      this.imageResizeObserver.observe(image);
+    }
     this.positionRing(entry);
+  }
+
+  private unobserveImage(image: HTMLImageElement): void {
+    this.imageResizeObserver?.unobserve(image);
+    if (![...this.entries.values()].some((entry) => entry.image?.isConnected)) {
+      this.imageResizeObserver?.disconnect();
+      this.imageResizeObserver = null;
+    }
   }
 
   private positionRing(entry: Entry): void {
     if (!entry.image || !entry.ring) return;
     const view = this.doc.defaultView;
     if (!view) return;
-    const rect = entry.image.getBoundingClientRect();
+    const geometry = imageGeometry(entry.image, this.doc);
+    entry.ring.style.display = geometry ? '' : 'none';
+    if (!entry.image.isConnected) this.unobserveImage(entry.image);
+    if (!geometry) return;
+    const { rect, clip } = geometry;
     entry.ring.style.left = `${rect.left + view.scrollX - 4}px`;
     entry.ring.style.top = `${rect.top + view.scrollY - 4}px`;
     entry.ring.style.width = `${rect.width + 2}px`;
     entry.ring.style.height = `${rect.height + 2}px`;
-    entry.ring.style.display = rect.width === 0 && rect.height === 0 ? 'none' : '';
+    // Clip the existing outline, rather than inventing a new image edge at a
+    // scroller's boundary. Negative insets preserve the glow on visible sides.
+    entry.ring.style.clipPath = `inset(${clip.top - rect.top + 4}px ${rect.right + 4 - clip.right}px ${rect.bottom + 4 - clip.bottom}px ${clip.left - rect.left + 4}px)`;
   }
 
   /** Re-align rings with their images (after layout/DOM changes). */
@@ -197,7 +256,8 @@ export class HighlightRenderer {
 
   /** The image element an annotation is ringed around, if any. */
   getImage(id: string): HTMLImageElement | null {
-    return this.entries.get(id)?.image ?? null;
+    const image = this.entries.get(id)?.image;
+    return image?.isConnected ? image : null;
   }
 
   clear(id: string): void {
@@ -205,6 +265,9 @@ export class HighlightRenderer {
     if (!entry) return;
     this.entries.delete(id);
     entry.ring?.remove();
+    if (entry.image && ![...this.entries.values()].some((current) => current.image === entry.image)) {
+      this.unobserveImage(entry.image);
+    }
     if (entry.range) {
       this.highlights.get(entry.color)?.delete(entry.range);
       return;
@@ -229,13 +292,14 @@ export class HighlightRenderer {
     if (!entry) return null;
     if (entry.range) return entry.range;
     if (entry.image) {
+      if (!entry.image.isConnected || !entry.image.parentNode) return null;
       const range = this.doc.createRange();
       range.selectNode(entry.image);
       return range;
     }
     const first = entry.marks[0];
     const last = entry.marks[entry.marks.length - 1];
-    if (!first || !last) return null;
+    if (!first?.isConnected || !last?.isConnected) return null;
     const range = this.doc.createRange();
     range.setStartBefore(first);
     range.setEndAfter(last);
@@ -256,6 +320,14 @@ export class HighlightRenderer {
   /** Hit-test a viewport point against all rendered annotations. */
   annotationAtPoint(x: number, y: number): string | null {
     for (const [id, entry] of this.entries) {
+      if (entry.image) {
+        const geometry = imageGeometry(entry.image, this.doc);
+        if (geometry && x >= Math.max(geometry.rect.left, geometry.clip.left) &&
+          x <= Math.min(geometry.rect.right, geometry.clip.right) &&
+          y >= Math.max(geometry.rect.top, geometry.clip.top) &&
+          y <= Math.min(geometry.rect.bottom, geometry.clip.bottom)) return id;
+        continue;
+      }
       const range = this.getRange(id);
       if (!range) continue;
       for (const rect of range.getClientRects()) {

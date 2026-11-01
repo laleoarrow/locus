@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureAnchor } from '@/domain/anchor/capture';
 import { resolveAnchor } from '@/domain/anchor/resolve';
 import { buildTextIndex, offsetsToRange, rangeToOffsets } from '@/domain/anchor/textIndex';
@@ -61,6 +61,33 @@ describe('capture (U3)', () => {
 });
 
 describe('resolve strategies', () => {
+  it('rejects an empty quote before attempting quote search', () => {
+    setBody('<p>Some intact page text.</p>');
+    const { anchor } = rangeFor('intact');
+    const indexOf = String.prototype.indexOf;
+    const search = vi.spyOn(String.prototype, 'indexOf').mockImplementation(function (this: string, value, at) {
+      if (value === '') throw new Error('Empty quote reached an unbounded search');
+      return indexOf.call(this, value, at);
+    });
+    try {
+      expect(resolveNow({ ...anchor, exact: '', start: 1000, end: 1001,
+        startPoint: { steps: [], textIndex: Number.MAX_SAFE_INTEGER, offset: 0 },
+        endPoint: { steps: [], textIndex: Number.MAX_SAFE_INTEGER, offset: 0 } })).toBeNull();
+    } finally { search.mockRestore(); }
+  });
+
+  it.each([
+    { startPoint: undefined }, { endPoint: null }, { prefix: undefined }, { kind: 'unknown' },
+    { exact: '   ' }, { start: -1 }, { start: 0.5 }, { end: Infinity }, { start: 20, end: 10 },
+    { startPoint: { steps: [{ tag: 'P', index: -1 }], textIndex: 0, offset: 0 } },
+    { startPoint: { steps: Array(1), textIndex: 0, offset: 0 } },
+    { startPoint: { steps: [], textIndex: 0, offset: -1 } },
+  ])('returns detached for malformed anchor data without touching DOM paths: %j', (patch) => {
+    setBody('<p>Some intact page text.</p>');
+    const { anchor } = rangeFor('intact');
+    expect(resolveNow({ ...anchor, ...patch } as AnchorData)).toBeNull();
+  });
+
   it('re-anchors via DOM path on an unchanged page (U4)', () => {
     setBody('<article><p>Alpha beta gamma delta.</p></article>');
     const { anchor } = rangeFor('beta gamma');

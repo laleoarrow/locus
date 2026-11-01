@@ -1,7 +1,8 @@
 import { defineContentScript } from 'wxt/utils/define-content-script';
-import { HighlightRenderer } from '@/content/highlights';
+import { HighlightRenderer, imageGeometry } from '@/content/highlights';
 import { LocusUI } from '@/content/ui';
 import { FloatingObstacles } from '@/content/obstacles';
+import { mutationAnchorWork } from '@/content/mutations';
 import { captureAnchor } from '@/domain/anchor/capture';
 import { captureImageAnchor, resolveImageAnchor } from '@/domain/anchor/image';
 import { resolveAnchor } from '@/domain/anchor/resolve';
@@ -15,6 +16,8 @@ import {
   DEFAULT_COLOR,
   type PaletteEntry,
 } from '@/domain/colors';
+import { effectiveColorUpdatedAt } from '@/domain/types';
+import type { AnnotationEditAction } from '@/domain/editing';
 import type {
   AnchorPayload,
   AnchorState,
@@ -24,11 +27,10 @@ import type {
 } from '@/domain/types';
 import { requestBg, type AnchorStateReply, type TabMessage } from '@/messaging/protocol';
 
-/** How long after load we keep retrying detached anchors on DOM mutations. */
-const MUTATION_WATCH_MS = 15_000;
 /** Follow late or animated rivals while the selection toolbar is visible. */
 const PLACEMENT_RECHECK_MS = 200;
 const MUTATION_DEBOUNCE_MS = 300;
+const DETACHED_RETRY_MS = 2_000;
 /** Separates an intentional image-selection drag from ordinary click jitter. */
 const IMAGE_DRAG_THRESHOLD_PX = 8;
 
@@ -88,6 +90,7 @@ class LocusContent {
   private imageDrag: ImageDragGesture | null = null;
   private suppressImageClick = false;
   private suppressImageClickTimer: ReturnType<typeof setTimeout> | undefined;
+  private reportedAnchorStates: string | undefined;
 
   constructor() {
     this.ui = new LocusUI(this.doc, {
@@ -119,12 +122,13 @@ class LocusContent {
 
   private deactivate(): void {
     this.active = false;
+    this.reportedAnchorStates = undefined;
     this.pending = null;
     this.imageDrag = null;
     this.clearSuppressedImageClick();
     this.renderer.clearAll();
     this.hideToolbar();
-    this.ui.closeNoteEditor();
+    this.ui.closeNoteEditor(true);
     this.ui.hideVersionToast();
     const html = this.doc.documentElement;
     html.setAttribute('data-locus-disabled', '1');
@@ -197,7 +201,14 @@ class LocusContent {
       clearTimeout(resizeTimer);
       resizeTimer = setTimeout(() => this.renderer.repositionRings(), 150);
     });
-    this.doc.addEventListener('scroll', () => this.refreshToolbar(), true);
+    let scrollFrame = 0;
+    this.doc.addEventListener('scroll', () => {
+      this.refreshToolbar();
+      if (!scrollFrame) scrollFrame = requestAnimationFrame(() => {
+        scrollFrame = 0;
+        if (this.active) this.renderer.repositionRings();
+      });
+    }, true);
   }
 
   private setItems(items: AnnotationWithAnchor[]): void {
@@ -217,13 +228,26 @@ class LocusContent {
     let anchored = 0;
     let detached = 0;
     for (const [id, entry] of this.entries) {
-      if (this.anchorOne(id, entry)) anchored++;
-      else detached++;
+      try {
+        if (this.anchorOne(id, entry)) anchored++;
+        else detached++;
+      } catch {
+        // One damaged legacy anchor must not prevent the other notes loading.
+        this.renderer.clear(id);
+        entry.state = 'detached';
+        detached++;
+      }
     }
     // Mirror state onto <html> attributes: observable by tests and tools
     // without page-world coupling; not part of the article content.
     this.doc.documentElement.setAttribute('data-locus-anchored', String(anchored));
     this.doc.documentElement.setAttribute('data-locus-detached', String(detached));
+    const states = [...this.entries].map(([id, entry]) => ({
+      annotationId: id, detached: entry.state === 'detached',
+    })).sort((first, second) => first.annotationId.localeCompare(second.annotationId));
+    const snapshot = JSON.stringify(states);
+    if (snapshot === this.reportedAnchorStates) return;
+    this.reportedAnchorStates = snapshot;
     chrome.runtime
       .sendMessage({ type: 'anchor-state:changed', urlKey: this.urlKey })
       .catch(() => undefined);
@@ -232,11 +256,12 @@ class LocusContent {
     // The background only writes rows whose state actually changed.
     void requestBg({
       type: 'anchor-state:report',
-      states: [...this.entries].map(([id, entry]) => ({
-        annotationId: id,
-        detached: entry.state === 'detached',
-      })),
-    }).catch(() => undefined);
+      states,
+    }).then((result) => {
+      if (!result?.ok && this.reportedAnchorStates === snapshot) this.reportedAnchorStates = undefined;
+    }, () => {
+      if (this.reportedAnchorStates === snapshot) this.reportedAnchorStates = undefined;
+    });
   }
 
   private anchorOne(id: string, entry: Entry): boolean {
@@ -337,18 +362,25 @@ class LocusContent {
     const entry = this.entries.get(id);
     if (!entry) return;
     this.hideToolbar();
+    const annotation = entry.item.annotation;
+    const expected = {
+      id, updatedAt: annotation.updatedAt, deletedAt: annotation.deletedAt,
+      colorUpdatedAt: effectiveColorUpdatedAt(annotation),
+    };
+    const edit = async (action: AnnotationEditAction) => {
+      const result = await requestBg({ type: 'annotations:edit', expected: [expected], action });
+      if (!result || result.error) throw new Error(result?.error ?? 'Could not save the note. Try again.');
+      if (action.type === 'delete') this.undoStack.push({ action: 'delete', annotationIds: [id] });
+      // Persistence already succeeded; a refresh failure must not invite a
+      // duplicate save against the now-outdated snapshot.
+      void this.refresh().catch(() => undefined);
+    };
     this.ui.openNoteEditor({
       rect: at,
-      color: entry.item.annotation.color,
-      initial: entry.item.annotation.comment,
-      onSave: (text) => {
-        void requestBg({ type: 'annotation:set-comment', id, comment: text }).then(() =>
-          this.refresh(),
-        );
-      },
-      onDelete: () => {
-        void this.deleteAnnotations([id]);
-      },
+      color: annotation.color,
+      initial: annotation.comment,
+      onSave: (text) => edit({ type: 'comment', mode: 'replace', comment: text }),
+      onDelete: () => edit({ type: 'delete' }),
     });
   }
 
@@ -472,6 +504,7 @@ class LocusContent {
   }
 
   private presentImageSelection(image: HTMLImageElement): void {
+    if (!this.ui.closeNoteEditor()) return;
     const rect = image.getBoundingClientRect();
     const existing = [...this.entries].find(
       ([id, entry]) =>
@@ -520,7 +553,7 @@ class LocusContent {
     const connected = target instanceof Range
       ? target.commonAncestorContainer.isConnected && !target.collapsed
       : target.isConnected;
-    if (!connected) {
+    if (!connected || (this.pending.type === 'image' && !imageGeometry(this.pending.image, this.doc))) {
       this.hideToolbar();
       return;
     }
@@ -568,6 +601,7 @@ class LocusContent {
       this.presentImageSelection(image);
       return true;
     }
+    if (!this.ui.closeNoteEditor()) return true;
     this.pending = { type: 'text', range: range.cloneRange() };
     const rect = range.getBoundingClientRect();
     this.presentToolbar(rect);
@@ -681,20 +715,55 @@ class LocusContent {
   }
 
   private watchMutations(): void {
-    const startedAt = Date.now();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const observer = new MutationObserver(() => {
-      if (!this.active || this.renderer.isSelfMutation()) return;
-      if (Date.now() - startedAt > MUTATION_WATCH_MS) {
-        observer.disconnect();
-        return;
-      }
-      clearTimeout(timer);
-      timer = setTimeout(() => this.anchorAll(), MUTATION_DEBOUNCE_MS);
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let lastDetachedRetry = -Infinity;
+    let mutations: MutationRecord[] = [];
+    let imageLoaded = false;
+    const retryDetached = () => {
+      retryTimer = undefined;
+      if (!this.active || ![...this.entries.values()].some((entry) => entry.state === 'detached')) return;
+      lastDetachedRetry = performance.now();
+      this.anchorAll();
+    };
+    const schedule = (records: MutationRecord[] = [], loaded = false) => {
+      if (!this.active || this.entries.size === 0 || this.renderer.isSelfMutation()) return;
+      mutations.push(...records);
+      imageLoaded ||= loaded;
+      // A bounded coalescing window still runs on continuously updating pages.
+      if (timer) return;
+      timer = setTimeout(() => {
+        timer = undefined;
+        if (this.active && this.entries.size > 0) {
+          const work = mutationAnchorWork(mutations, [...this.entries].map(([id, entry]) => ({
+            anchor: entry.item.anchor, detached: entry.state === 'detached',
+            range: entry.item.anchor.kind === 'image' ? null : this.renderer.getRange(id),
+            image: this.renderer.getImage(id),
+          })), this.doc.body, imageLoaded);
+          if (work === 'reanchor') this.anchorAll();
+          else if (work === 'retry' && !retryTimer) {
+            const delay = Math.max(0, lastDetachedRetry + DETACHED_RETRY_MS - performance.now());
+            if (delay === 0) retryDetached();
+            else retryTimer = setTimeout(retryDetached, delay);
+          }
+          this.renderer.repositionRings();
+          this.refreshToolbar();
+        }
+        mutations = [];
+        imageLoaded = false;
+      }, MUTATION_DEBOUNCE_MS);
+    };
+    const observer = new MutationObserver((records) => schedule(records));
+    observer.observe(this.doc.body, {
+      childList: true, subtree: true, characterData: true, attributes: true,
+      attributeFilter: ['src', 'srcset', 'sizes', 'alt', 'media', 'type', 'class', 'style', 'hidden'],
     });
-    observer.observe(this.doc.body, { childList: true, subtree: true, characterData: true });
-    setTimeout(() => observer.disconnect(), MUTATION_WATCH_MS + 1000);
+    // Lazy image loads can change currentSrc without changing an attribute.
+    this.doc.addEventListener('load', (event) => {
+      if (event.target instanceof HTMLImageElement) schedule([], true);
+    }, true);
   }
+
 }
 
 export default defineContentScript({

@@ -342,9 +342,12 @@ describe('repo (U8–U10)', () => {
       swatch: hex,
       bg: 'rgba(68, 1, 1, 0.45)',
     }));
-    for (const color of colors) {
+    for (const [index, color] of colors.entries()) {
       await repo.addCustomColor(color);
-      await createOne(color.key);
+      const item = await createOne(color.key);
+      // This expectation depends on creation order; real calls can share a
+      // millisecond and then IndexedDB's UUID order is intentionally unspecified.
+      await db.annotations.update(item.annotation.id, { createdAt: 1_000 + index });
     }
 
     expect(await repo.getPageColorKeys(URL_A)).toEqual([

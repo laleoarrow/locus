@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AnnotationEditAction } from '@/domain/editing';
+import type { AnnotationEditAction, AnnotationEditExpectation } from '@/domain/editing';
 import type { LLMConfigView } from '@/domain/llm';
 import { loadLibrary } from '@/db/library';
 import { getLibraryMode, getPrefs } from '@/db/repo';
@@ -22,6 +22,7 @@ import { requestBg } from '@/messaging/protocol';
 import { BulkColorActions } from './components/BulkColorActions';
 import { BulkEditActions } from './components/BulkEditActions';
 import { SelectionProvider } from './components/SelectionContext';
+import { NoteDraftProvider } from './components/NoteDraftContext';
 import { LLMSettings } from './components/LLMSettings';
 import { ConnectionStatus } from './components/ConnectionStatus';
 import { SummaryActions } from './components/PageSummary';
@@ -117,6 +118,10 @@ export function App() {
     });
   }, [visibleIds]);
   const visibleSelectedIds = useMemo(() => new Set([...selectedIds].filter((id) => visibleIds.has(id))), [selectedIds, visibleIds]);
+  const selectedAnnotations = useMemo(() => (input?.annotations ?? [])
+    .filter((row) => visibleSelectedIds.has(row.id))
+    .map((row) => ({ id: row.id, updatedAt: row.updatedAt, deletedAt: row.deletedAt, colorUpdatedAt: effectiveColorUpdatedAt(row) })),
+  [input, visibleSelectedIds]);
   const selectedPageIds = pages.filter((page) => page.annotations.some((entry) => visibleSelectedIds.has(entry.id))).map((page) => page.sourceId);
   const toggleMany = (ids: string[]) => {
     if (busy || ids.length === 0) return;
@@ -128,9 +133,7 @@ export function App() {
       return next;
     });
   };
-  const applySelected = async (action: AnnotationEditAction): Promise<number> => {
-    const expected = (input?.annotations ?? []).filter((row) => selectedIds.has(row.id) && visibleIds.has(row.id))
-      .map((row) => ({ id: row.id, updatedAt: row.updatedAt, deletedAt: row.deletedAt, colorUpdatedAt: effectiveColorUpdatedAt(row) }));
+  const applySelected = async (action: AnnotationEditAction, expected: AnnotationEditExpectation[]): Promise<number> => {
     setBulkBusy(true);
     try {
       const result = await requestBg({ type: 'annotations:edit', expected, action });
@@ -261,6 +264,7 @@ export function App() {
   const yesterday = dayKey(now - 86_400_000);
 
   return (
+    <NoteDraftProvider>
     <SelectionProvider value={{ selectedIds: visibleSelectedIds, enabled: selecting, busy, toggle: (id) => toggleMany([id]), toggleMany }}>
     <SummaryActions.Provider value={{ enabled: llmConfig?.enabled ?? false, busy, generate: (ids) => void generate(ids), configure: () => setSettingsOpen(true) }}>
     <div className="library">
@@ -386,7 +390,7 @@ export function App() {
             onReplace={replaceColors}
           />
         </div>
-        {selecting && <BulkEditActions count={visibleSelectedIds.size} pageCount={selectedPageIds.length}
+        {selecting && <BulkEditActions count={visibleSelectedIds.size} pageCount={selectedPageIds.length} selected={selectedAnnotations}
           palette={bulkPalette} deletedOnly={filters.deletedOnly} busy={busy}
           onSelectAll={() => setSelectedIds(new Set(visibleIds))} onClear={() => setSelectedIds(new Set())}
           onExit={() => { setSelecting(false); setSelectedIds(new Set()); }}
@@ -444,5 +448,6 @@ export function App() {
     </div>
     </SummaryActions.Provider>
     </SelectionProvider>
+    </NoteDraftProvider>
   );
 }

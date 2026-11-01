@@ -20,8 +20,8 @@ export interface NoteEditorOptions {
   rect: DOMRect;
   color: ColorKey;
   initial: string;
-  onSave(text: string): void;
-  onDelete(): void;
+  onSave(text: string): void | Promise<void>;
+  onDelete(): void | Promise<void>;
 }
 
 /** macOS-style liquid-glass surfaces; light/dark aware. */
@@ -197,11 +197,13 @@ const SHADOW_CSS = `
 
 .note-card {
   width: 300px;
+  max-width: calc(100vw - 16px);
   border-radius: 16px;
   padding: 12px;
   animation: locus-in 0.14s ease-out;
   /* Never taller than the viewport, so the actions stay reachable. */
   max-height: calc(100vh - 24px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
 }
@@ -267,7 +269,7 @@ const SHADOW_CSS = `
 .note-preview pre code { background: none; padding: 0; }
 .note-preview a { color: #0a84ff; }
 
-.note-actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.note-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
 .note-actions .spacer { flex: 1; }
 .note-actions button {
   border: none;
@@ -283,6 +285,10 @@ const SHADOW_CSS = `
 .note-actions button:hover { filter: brightness(1.06); }
 .note-actions button.save { background: #0a84ff; color: #fff; }
 .note-actions button.remove { background: none; color: #ff453a; padding-left: 0; }
+.note-actions button:disabled { cursor: default; opacity: 0.55; }
+.note-status { margin: 8px 0 0; color: #d93025; font-size: 12px; }
+.note-status:empty { display: none; }
+@media (prefers-color-scheme: dark) { .note-status { color: #ff6961; } }
 
 .pulse {
   position: fixed;
@@ -318,6 +324,9 @@ export class LocusUI {
   /** The side actually chosen last time. */
   private lastPlacement: 'below' | 'above' = 'below';
   private lastColorShown: ColorKey = 'yellow';
+  private noteBusy = false;
+  private stopNotePositioning: (() => void) | undefined;
+  private allowNoteClose: (() => boolean) | undefined;
 
   constructor(
     private readonly doc: Document,
@@ -499,7 +508,8 @@ export class LocusUI {
   }
 
   /** Markdown note editor with live preview (open on highlight click). */
-  openNoteEditor(options: NoteEditorOptions): void {
+  openNoteEditor(options: NoteEditorOptions): boolean {
+    if (this.isNoteOpen() && !this.closeNoteEditor()) return false;
     const { doc } = this;
     this.noteCard.textContent = '';
     this.noteCard.style.setProperty('--c', specFor(options.color, this.customColors).swatch);
@@ -513,6 +523,7 @@ export class LocusUI {
     head.append(dot, title);
 
     const textarea = doc.createElement('textarea');
+    textarea.setAttribute('aria-label', 'Note text');
     textarea.placeholder = 'Write a note… Markdown · Enter to save';
     textarea.title = 'Enter: save · Shift+Enter: newline · Delete (empty) or ⌘Delete: remove highlight';
     textarea.value = options.initial;
@@ -526,17 +537,23 @@ export class LocusUI {
     };
     renderPreview();
     textarea.addEventListener('input', renderPreview);
+    let composing = false;
+    textarea.addEventListener('compositionstart', () => { composing = true; });
+    textarea.addEventListener('compositionend', () => { composing = false; });
     textarea.addEventListener('keydown', (event) => {
-      const removeHighlight = () => {
-        this.closeNoteEditor();
-        options.onDelete();
-      };
+      event.stopPropagation();
+      if (composing || event.isComposing || event.keyCode === 229) return;
+      if (this.noteBusy) {
+        event.preventDefault();
+        return;
+      }
       if (event.key === 'Escape') {
+        event.preventDefault();
         this.closeNoteEditor();
       } else if (event.key === 'Enter' && !event.shiftKey) {
         // Enter confirms the note; Shift+Enter inserts a newline.
         event.preventDefault();
-        save();
+        void commit('save');
       } else if (
         (event.key === 'Backspace' || event.key === 'Delete') &&
         (event.metaKey || event.ctrlKey || textarea.value === '')
@@ -544,9 +561,8 @@ export class LocusUI {
         // Delete removes the highlight when the note is empty; ⌘/Ctrl+Delete
         // removes it regardless of note content.
         event.preventDefault();
-        removeHighlight();
+        void commit('delete');
       }
-      event.stopPropagation();
     });
 
     const actions = doc.createElement('div');
@@ -555,30 +571,72 @@ export class LocusUI {
     remove.className = 'remove';
     remove.textContent = 'Remove highlight';
     remove.setAttribute('data-locus-note-delete', '');
-    remove.addEventListener('click', () => {
-      this.closeNoteEditor();
-      options.onDelete();
-    });
+    remove.addEventListener('click', () => { void commit('delete'); });
     const spacer = doc.createElement('div');
     spacer.className = 'spacer';
     const cancel = doc.createElement('button');
     cancel.textContent = 'Cancel';
-    cancel.addEventListener('click', () => this.closeNoteEditor());
+    cancel.addEventListener('click', () => this.closeNoteEditor(true));
     const saveBtn = doc.createElement('button');
     saveBtn.className = 'save';
     saveBtn.textContent = 'Save';
     saveBtn.setAttribute('data-locus-note-save', '');
-    const save = () => {
-      this.closeNoteEditor();
-      options.onSave(textarea.value.trim());
+    const status = doc.createElement('p');
+    status.className = 'note-status';
+    status.setAttribute('role', 'alert');
+    this.allowNoteClose = () => {
+      if (textarea.value === options.initial) return true;
+      status.textContent = 'Unsaved note · Save or Cancel';
+      this.positionNoteCard(options.rect);
+      textarea.focus();
+      return false;
     };
-    saveBtn.addEventListener('click', save);
+    const commit = async (action: 'save' | 'delete') => {
+      if (this.noteBusy || composing) return;
+      this.noteBusy = true;
+      status.textContent = '';
+      this.noteCard.setAttribute('aria-busy', 'true');
+      textarea.readOnly = true;
+      for (const button of [remove, cancel, saveBtn]) button.disabled = true;
+      if (action === 'save') saveBtn.textContent = 'Saving…';
+      else remove.textContent = 'Removing…';
+      try {
+        if (action === 'save') await options.onSave(textarea.value.trim());
+        else await options.onDelete();
+        this.noteBusy = false;
+        this.closeNoteEditor(true);
+      } catch (error) {
+        status.textContent = error instanceof Error ? error.message : 'Could not save changes. Try again.';
+        this.positionNoteCard(options.rect);
+        textarea.focus();
+      } finally {
+        this.noteBusy = false;
+        this.noteCard.removeAttribute('aria-busy');
+        textarea.readOnly = false;
+        for (const button of [remove, cancel, saveBtn]) button.disabled = false;
+        saveBtn.textContent = 'Save';
+        remove.textContent = 'Remove highlight';
+      }
+    };
+    saveBtn.addEventListener('click', () => { void commit('save'); });
     actions.append(remove, spacer, cancel, saveBtn);
 
-    this.noteCard.append(head, textarea, preview, actions);
+    this.noteCard.append(head, textarea, preview, status, actions);
+    this.noteCard.setAttribute('role', 'dialog');
+    this.noteCard.setAttribute('aria-label', 'Note');
     this.noteCard.classList.remove('hidden');
     this.positionNoteCard(options.rect);
+    const view = this.doc.defaultView;
+    const reposition = () => this.positionNoteCard(options.rect);
+    view?.addEventListener('resize', reposition);
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(reposition);
+    observer?.observe(this.noteCard);
+    this.stopNotePositioning = () => {
+      view?.removeEventListener('resize', reposition);
+      observer?.disconnect();
+    };
     textarea.focus();
+    return true;
   }
 
   /**
@@ -598,9 +656,14 @@ export class LocusUI {
     this.noteCard.style.top = `${clamp(wanted, 8, Math.max(8, viewHeight - cardHeight - 8))}px`;
   }
 
-  closeNoteEditor(): void {
+  closeNoteEditor(discard = false): boolean {
+    if (this.noteBusy || (!discard && this.allowNoteClose && !this.allowNoteClose())) return false;
+    this.allowNoteClose = undefined;
+    this.stopNotePositioning?.();
+    this.stopNotePositioning = undefined;
     this.noteCard.classList.add('hidden');
     this.noteCard.textContent = '';
+    return true;
   }
 
   /** Flash overlay boxes over the given viewport rects (reveal pulse). */

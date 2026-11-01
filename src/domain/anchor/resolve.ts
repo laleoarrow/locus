@@ -1,6 +1,7 @@
 import type { AnchorData } from '../types';
 import { resolveDomPoint } from './domPath';
 import { offsetsToRange, type TextIndex } from './textIndex';
+import { isAnchorData } from './validate';
 
 export type ResolveStrategy = 'dom-path' | 'position' | 'quote';
 
@@ -64,6 +65,7 @@ function findByQuote(anchor: AnchorData, index: TextIndex): number | null {
  * Returns null when nothing verifies — the annotation is then *detached*.
  */
 export function resolveAnchor(anchor: AnchorData, index: TextIndex, root: Element): ResolvedAnchor | null {
+  if (!isAnchorData(anchor)) return null;
   const doc = root.ownerDocument;
   if (!doc) return null;
 

@@ -5,6 +5,7 @@ import type { CustomColor } from '@/domain/types';
 import { markdownToHtml } from '@/lib/markdown';
 import { requestBg } from '@/messaging/protocol';
 import { useBlankSelection, useSelection } from './SelectionContext';
+import { useNoteDrafts } from './NoteDraftContext';
 
 /** Text with the current search term marked. */
 export function Marked({ text, query }: { text: string; query: string }) {
@@ -32,12 +33,14 @@ export function AnnotationRow({
   query: string;
   customColors: CustomColor[];
 }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(annotation.note);
   const [status, setStatus] = useState('');
+  const notes = useNoteDrafts();
+  const draft = notes.drafts.get(annotation.id);
+  const editing = draft !== undefined;
   const selection = useSelection();
+  const busy = selection.busy || (draft?.busy ?? false);
   const blankSelection = useBlankSelection(() => selection.toggle(annotation.id),
-    '.annotation, .annotation > .body, .annotation > .body > .actions', selection.busy);
+    '.annotation, .annotation > .body, .annotation > .body > .actions', busy);
   const swatch = specFor(annotation.color, customColors).swatch;
   const needle = query.trim().toLowerCase();
   const noteMatches = needle !== '' && annotation.note.toLowerCase().includes(needle);
@@ -56,16 +59,12 @@ export function AnnotationRow({
     }
   };
 
-  const saveNote = async () => {
-    await requestBg({ type: 'annotation:set-comment', id: annotation.id, comment: draft.trim() });
-    setEditing(false);
-  };
-
   return (
     <li
       className={`annotation${annotation.detached ? ' detached' : ''}`}
       data-annotation-id={annotation.id}
       data-color={annotation.color}
+      aria-busy={draft?.busy ?? false}
       data-selected={selection.enabled && selection.selectedIds.has(annotation.id) || undefined}
       {...blankSelection}
       onClick={(event) => { event.stopPropagation(); blankSelection.onClick(event); }}
@@ -76,13 +75,13 @@ export function AnnotationRow({
           type="checkbox"
           aria-label={`Select annotation: ${annotation.quote || (annotation.isImage ? 'Figure' : 'Note')}`}
           checked={selection.selectedIds.has(annotation.id)}
-          disabled={selection.busy}
+          disabled={busy}
           onChange={() => selection.toggle(annotation.id)}
         />
       )}
       <span className="dot" style={{ background: swatch }} aria-hidden="true" />
       <div className="body">
-        <button className="quote" onClick={() => void open()} title="Open this page and scroll to it">
+        <button className="quote" disabled={busy} onClick={() => void open()} title="Open this page and scroll to it">
           {annotation.isImage && annotation.imageSrc ? (
             <img className="thumb" src={annotation.imageSrc} alt={annotation.quote || 'figure'} />
           ) : null}
@@ -110,18 +109,18 @@ export function AnnotationRow({
           )
         )}
 
-        {editing ? (
+        {draft ? (
           <div className="note-editor">
             <textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
+              value={draft.text}
+              onChange={(event) => notes.change(annotation.id, event.target.value)}
               placeholder="Markdown supported"
-              disabled={selection.busy}
+              disabled={busy}
               autoFocus
             />
             <div className="row">
-              <button disabled={selection.busy} onClick={() => { setDraft(annotation.note); setEditing(false); }}>Cancel</button>
-              <button className="primary" disabled={selection.busy} onClick={() => void saveNote()}>Save</button>
+              <button disabled={busy} onClick={() => { notes.cancel(annotation.id); setStatus(''); }}>Cancel</button>
+              <button className="primary" disabled={busy} onClick={() => { if (!busy) void notes.save(annotation.id); }}>{draft.busy ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
         ) : (
@@ -129,20 +128,23 @@ export function AnnotationRow({
             {annotation.deleted ? (
               <button
                 data-action="restore"
-                disabled={selection.busy}
+                disabled={busy}
                 onClick={() => void requestBg({ type: 'annotation:undelete', id: annotation.id })}
               >
                 Restore
               </button>
             ) : (
               <>
-                <button data-action="edit" disabled={selection.busy} onClick={() => setEditing(true)}>
+                <button data-action="edit" disabled={busy} onClick={() => {
+                  setStatus('');
+                  notes.begin(annotation);
+                }}>
                   {annotation.note ? 'Edit note' : 'Add note'}
                 </button>
                 <button
                   className="danger"
                   data-action="delete"
-                  disabled={selection.busy}
+                  disabled={busy}
                   onClick={() => void requestBg({ type: 'annotation:delete', id: annotation.id })}
                 >
                   Delete
@@ -151,7 +153,7 @@ export function AnnotationRow({
             )}
           </div>
         )}
-        {status && <p className="row-status">{status}</p>}
+        {(draft?.status || status) && <p className="row-status" role="alert">{draft?.status || status}</p>}
       </div>
     </li>
   );

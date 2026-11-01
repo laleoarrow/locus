@@ -8,6 +8,7 @@ import {
   type LibraryPage,
 } from '@/domain/library';
 import { PageCard } from '@/entrypoints/library/components/PageCard';
+import { NoteDraftProvider } from '@/entrypoints/library/components/NoteDraftContext';
 
 function annotation(index: number): LibraryAnnotation {
   return {
@@ -21,6 +22,8 @@ function annotation(index: number): LibraryAnnotation {
     imageSrc: '',
     createdAt: index,
     updatedAt: index,
+    colorUpdatedAt: index,
+    deletedAt: 0,
     deleted: false,
     detached: false,
   };
@@ -42,7 +45,7 @@ function pageWith(count: number): LibraryPage {
 
 function renderCard(page: LibraryPage, query = ''): void {
   document.body.innerHTML = renderToStaticMarkup(
-    createElement(PageCard, { page, query, customColors: [] }),
+    createElement(NoteDraftProvider, { children: createElement(PageCard, { page, query, customColors: [] }) }),
   );
 }
 

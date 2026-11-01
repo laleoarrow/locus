@@ -383,28 +383,36 @@ test('E80: navigation, note editing and text dragging do not trigger blank-area 
     context.waitForEvent('page'), first.locator('.quote').click(),
   ]);
   await revealed.waitForURL(NESTED);
+  await revealed.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
   await library.bringToFront();
   await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
   const [linked] = await Promise.all([
     context.waitForEvent('page'), first.locator('.note a').click(),
   ]);
   await linked.waitForURL(linkUrl);
+  await linked.locator('html[data-locus-anchored]').waitFor({ state: 'attached' });
   await library.bringToFront();
   await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);
 
   const text = first.locator('.note p').last();
-  const line = await text.evaluate((element) => {
-    // Navigation can refresh the live-query rows. Scroll and measure the
-    // currently attached text in one DOM operation, without a stale handle.
-    element.scrollIntoView({ block: 'center' });
-    const range = document.createRange();
-    range.selectNodeContents(element);
-    const box = range.getClientRects()[0]!;
-    return { left: box.left, right: box.right, y: box.top + box.height / 2 };
-  });
-  await library.mouse.move(line.left + 1, line.y);
+  let line: { left: number; right: number; y: number } | null = null;
+  await expect.poll(async () => {
+    line = await text.evaluate((element) => {
+      // A live-query replacement may detach the resolved element before this
+      // call runs. Retry the locator until a currently rendered line exists.
+      element.scrollIntoView({ block: 'center' });
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const box = range.getClientRects()[0];
+      return box ? { left: box.left, right: box.right, y: box.top + box.height / 2 } : null;
+    });
+    return line !== null;
+  }).toBe(true);
+  if (!line) throw new Error('note text has no rendered line');
+  const measured = line as { left: number; right: number; y: number };
+  await library.mouse.move(measured.left + 1, measured.y);
   await library.mouse.down();
-  await library.mouse.move(Math.min(line.right - 1, line.left + 120), line.y, { steps: 12 });
+  await library.mouse.move(Math.min(measured.right - 1, measured.left + 120), measured.y, { steps: 12 });
   await library.mouse.up();
   expect(await library.evaluate(() => window.getSelection()?.toString().trim().length ?? 0)).toBeGreaterThan(0);
   await expect(library.locator('.bulk-edit-panel')).toHaveCount(0);

@@ -76,7 +76,7 @@ Defined in `src/domain/types.ts`. All timestamps are epoch milliseconds.
 | `SourceRecord` | A concrete URL where the document lives | `id`, `documentId`, `urlKey`, `url`, `title`, `firstSeenAt`, `lastSeenAt` |
 | `PageSummaryRecord` | Editable main content for one source, separate from its annotation notes | `sourceId`, `content`, `updatedAt` |
 | `AnnotationRecord` | One highlight (`kind: text \| image`) + optional Markdown note | `id`, `documentId`, `sourceId`, `kind`, `color`, `colorUpdatedAt`, `comment`, `exact`, `createdAt`, `updatedAt`, `deletedAt` |
-| `AnchorRecord` | Everything needed to re-locate the annotation | text: `exact`, `prefix`, `suffix`, `start`, `end`, `startPoint`, `endPoint` · image: `src`, `alt`, `imgIndex`, `path` |
+| `AnchorRecord` | Everything needed to re-locate the annotation | text: `exact`, `prefix`, `suffix`, `start`, `end`, `startPoint`, `endPoint` · image: `src`, `alt`, `imgIndex`, `path`, optional `matchCount` |
 | `SettingRecord` | Key/value app state (e.g. `lastUsedColor`) | `key`, `value` |
 
 Notes are Markdown source strings rendered by `src/lib/markdown.ts` — a
@@ -168,17 +168,21 @@ means: the resolved range's text equals `exact`.
    with a detached badge, and is never deleted by the system.
 
 **Image anchors** (`src/domain/anchor/image.ts`) follow the same shape with
-two strategies: DOM path (verified against `src`), then `src` + index among
-same-src images; otherwise detached. A deliberate primary-button drag across
+the displayed resource (`currentSrc`), corroborating alt text and verified DOM
+path/index. New captures also record the number of indistinguishable matching
+images. Changed duplicate counts or ambiguous lost paths detach instead of
+clamping an old index onto another image. A deliberate primary-button drag across
 an image, or a native image-only DOM selection dragged from just before it to
 just after it, is the selection gesture. Both work for images wrapped in links;
 ordinary clicks and modifier-assisted gestures always remain with the page so
 links, lightboxes and publisher controls keep their native behaviour.
 
-Re-anchoring is retried for detached annotations on DOM mutations
-(MutationObserver, debounced 300 ms) for the first 15 seconds after load,
-which covers late-hydrating readers (MathJax-style typesetting, dynamic
-fixtures) without a permanent observer cost.
+DOM changes are observed throughout reading in 300 ms coalescing windows.
+Healthy live ranges and image identities are checked before rebuilding the text
+index; unrelated tickers do not trigger full restoration. Detached text retries
+require a matching changed subtree and are limited to once per two seconds.
+Status snapshots are reported only when changed (or a failed report needs retry).
+Malformed anchors are validated before resolution and isolated per entry.
 
 ### 5.3 Rendering
 
@@ -191,7 +195,10 @@ fixtures) without a permanent observer cost.
   so no layout shift occurs. Marks are unwrapped on removal.
 - **Image rings:** an image annotation renders as a glowing ring in a
   dedicated shadow overlay layer, absolutely positioned in document
-  coordinates over the `<img>` (repositioned on resize and re-anchor).
+  coordinates over the `<img>`. Nested scrolling, layout changes and scoped
+  image ResizeObservers update its position; viewport and overflow clipping
+  hide unavailable parts without inventing a new image border. Hidden or
+  removed images have no hit target. Observers are released when cleared.
   The image element itself is never touched.
 - **Reveal/pulse:** side-panel click sends `annotation:reveal`; the content
   script scrolls the range to center and flashes absolutely-positioned
@@ -254,6 +261,10 @@ fixtures) without a permanent observer cost.
   editor with live preview. **Enter** saves (Shift+Enter inserts a newline);
   **Delete** with an empty note — or **⌘/Ctrl+Delete** anytime — removes the
   highlight, as does the *Remove highlight* button. All removals tombstone.
+  IME composition does not invoke these shortcuts. Save/remove awaits the
+  background result and preserves a failed draft; dirty implicit dismissal is
+  refused. Note edits use snapshot checks; content senders may edit only one
+  annotation from their own top-level page.
 - **Cmd+Z (macOS) / Ctrl+Z (Windows)** undoes the most recent Locus action
   in the tab (create → tombstone, note-editor delete → restore), via a
   per-tab action stack. The shortcut is ignored inside editable page
@@ -403,6 +414,12 @@ and `sidepanel/App.tsx` was already carrying the page list, backup and sync.
   append/replace and delete/restore. Page main content is stored in `pageSummaries`, never copied
   into annotation comments. It can be edited manually or filled from an AI
   draft, with saving as a separate action.
+- Single-note drafts live in an App-level in-memory provider keyed by annotation
+  ID, so grouping, filtering and folding rows do not discard edits or pending
+  save results. Successful Save or explicit Cancel ends the session; reloading
+  the whole Library does not preserve unsaved drafts. Single-note and selected
+  batch edits freeze expected versions when editing/preview begins and reject
+  stale writes atomically.
 - Detached state is knowledge only a running content script has, so the content
   script reports it and the background stores it in an `anchorStates` table
   (schema v3). It is written **only when the state changes**, and it never

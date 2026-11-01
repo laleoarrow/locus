@@ -17,7 +17,7 @@ let onMessage: (message: BgRequest, sender: chrome.runtime.MessageSender, respon
 let onStartup: () => void;
 let onAlarm: (alarm: chrome.alarms.Alarm) => void;
 const sourceUrl = 'https://example.test/paper';
-const create: BgRequest = { type: 'annotation:create', url: sourceUrl, title: 'Paper', color: 'yellow', comment: 'note', anchor: {
+const create: Extract<BgRequest, { type: 'annotation:create' }> = { type: 'annotation:create', url: sourceUrl, title: 'Paper', color: 'yellow', comment: 'note', anchor: {
   exact: 'quote', prefix: '', suffix: '', start: 0, end: 5,
   startPoint: { steps: [], textIndex: 0, offset: 0 }, endPoint: { steps: [], textIndex: 0, offset: 5 },
 } };
@@ -99,5 +99,39 @@ describe('background scheduling entry points', () => {
     await manual; await vi.advanceTimersByTimeAsync(10_000);
     expect(runSync).toHaveBeenCalledOnce();
     expect(await db.annotations.count()).toBe(1);
+  });
+});
+
+
+describe('content note edit authorization', () => {
+  async function contentEdit(message: BgRequest, url = sourceUrl, frameId = 0) {
+    return new Promise<{ updated?: number; error?: string }>((resolve) => onMessage(message,
+      { url, frameId, tab: { id: 7 } as chrome.tabs.Tab }, (value) => resolve(value as { updated?: number; error?: string })));
+  }
+  async function prepare() {
+    const result = await send(create);
+    const row = result.item.annotation;
+    return { id: row.id, updatedAt: row.updatedAt, deletedAt: row.deletedAt, colorUpdatedAt: row.colorUpdatedAt ?? row.createdAt };
+  }
+  it('allows a top-frame content script to save and delete its own note', async () => {
+    const expected = await prepare();
+    expect(await contentEdit({ type: 'annotations:edit', expected: [expected], action: { type: 'comment', comment: 'edited', mode: 'replace' } })).toEqual({ updated: 1 });
+    const row = (await db.annotations.get(expected.id))!;
+    expect(row.comment).toBe('edited');
+    expect(await contentEdit({ type: 'annotations:edit', expected: [{ ...expected, updatedAt: row.updatedAt }], action: { type: 'delete' } })).toEqual({ updated: 1 });
+    expect((await db.annotations.get(row.id))!.deletedAt).toBeGreaterThan(0);
+  });
+  it('rejects another page, subframe, batch, and colour edits without changing notes', async () => {
+    const expected = await prepare();
+    const message: BgRequest = { type: 'annotations:edit', expected: [expected], action: { type: 'comment', comment: 'wrong', mode: 'replace' } };
+    expect((await contentEdit(message, 'https://other.test/paper')).error).toBeTruthy();
+    expect((await contentEdit(message, sourceUrl, 1)).error).toBeTruthy();
+    expect((await contentEdit({ ...message, expected: [expected, expected] })).error).toBeTruthy();
+    expect((await contentEdit({ ...message, action: { type: 'color', color: 'teal' } })).error).toBeTruthy();
+    expect((await db.annotations.get(expected.id))!.comment).toBe('note');
+  });
+  it('keeps LLM and summary operations restricted to extension pages', async () => {
+    expect((await contentEdit({ type: 'llm:status' })).error).toBeTruthy();
+    expect((await contentEdit({ type: 'summary:save', changes: [] })).error).toBeTruthy();
   });
 });

@@ -57,6 +57,7 @@ async function readSnapshot(client: WebDavClient, scope: string, ensureCurrent: 
   if (raw.formatVersion !== 4) {
     const parsed = parseBackup(raw);
     if ('error' in parsed) throw new SyncDataError('Remote backup is invalid or needs a newer Locus.');
+    if (parsed.invalidRowsDropped) throw new SyncDataError('Remote backup contains invalid records. No data was uploaded.');
     // Preserve the exact old file locally before the migration can publish v4.
     await preserveLegacyRoot(scope, body);
     return { projection: await projectBackup(parsed.file), etag, exists: true, body };

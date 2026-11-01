@@ -237,8 +237,8 @@ async function broadcastChange(urlKey: string): Promise<void> {
   );
 }
 
-async function handleRequest<T extends BgRequest>(message: T): Promise<BgResponseFor<T>>;
-async function handleRequest(message: BgRequest): Promise<unknown> {
+async function handleRequest<T extends BgRequest>(message: T, sender: chrome.runtime.MessageSender): Promise<BgResponseFor<T>>;
+async function handleRequest(message: BgRequest, sender: chrome.runtime.MessageSender): Promise<unknown> {
   switch (message.type) {
     case 'source:bootstrap': {
       const source = await repo.ensureSource(message.url, message.title);
@@ -299,6 +299,21 @@ async function handleRequest(message: BgRequest): Promise<unknown> {
     }
     case 'annotations:edit': {
       try {
+        if (!sender.url?.startsWith(chrome.runtime.getURL(''))) {
+          // Reading pages may edit one of their own notes; Library keeps the
+          // cross-page batch capability. Do not expose bulk edits to content.
+          const expected = message.expected?.[0];
+          if (sender.tab?.id === undefined || sender.frameId !== 0 || !sender.url ||
+            message.expected?.length !== 1 || !expected ||
+            !['comment', 'delete'].includes(message.action?.type)) {
+            throw new Error('Open the Locus library to use this action.');
+          }
+          const annotation = await db.annotations.get(expected.id);
+          const source = annotation && await db.sources.get(annotation.sourceId);
+          if (!source || source.urlKey !== toUrlKey(sender.url)) {
+            throw new Error('This note belongs to another page. Open it in the Locus library.');
+          }
+        }
         const result = await editAnnotations(message.expected, message.action);
         if (result.updated > 0) {
           await bestEffortBroadcastForAnnotations(result.annotationIds, message.action.type === 'color');
@@ -610,12 +625,12 @@ export default defineBackground(() => {
 
   chrome.runtime.onMessage.addListener((message: BgRequest, sender, sendResponse) => {
     if (!message || typeof message.type !== 'string') return false;
-    if ((message.type.startsWith('llm:') || message.type === 'summary:save' || message.type === 'annotations:edit') &&
+    if ((message.type.startsWith('llm:') || message.type === 'summary:save') &&
       !sender.url?.startsWith(chrome.runtime.getURL(''))) {
       sendResponse({ error: 'Open the Locus library to use this action.' });
       return false;
     }
-    handleRequest(message).then(sendResponse, (error: unknown) => {
+    handleRequest(message, sender).then(sendResponse, (error: unknown) => {
       console.error('[locus] background request failed', message.type, error);
       sendResponse(undefined);
     });

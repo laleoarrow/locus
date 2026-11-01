@@ -22,7 +22,10 @@ export async function launchSeparateProfile(): Promise<{
 }> {
   const context = await chromium.launchPersistentContext('', {
     channel: 'chromium',
+    headless: true,
     args: [
+      '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1',
+      '--no-proxy-server',
       `--disable-extensions-except=${EXTENSION_PATH}`,
       `--load-extension=${EXTENSION_PATH}`,
     ],
@@ -53,7 +56,10 @@ export const test = base.extend<ExtensionFixtures>({
   context: async ({}, use) => {
     const context = await chromium.launchPersistentContext('', {
       channel: 'chromium',
+      headless: true,
       args: [
+        '--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1',
+        '--no-proxy-server',
         `--disable-extensions-except=${EXTENSION_PATH}`,
         `--load-extension=${EXTENSION_PATH}`,
       ],

@@ -1,4 +1,5 @@
 import { BACKUP_FORMAT, parseBackup, type BackupFile } from './backup';
+import { isAnchorRecord } from './anchor/validate';
 import { effectiveColorUpdatedAt, type AnnotationRecord, type PageSummaryRecord, type SettingRecord } from './types';
 
 export const SYNC_DIRECTORY = 'locus-v4/';
@@ -61,7 +62,8 @@ export async function projectBackup(file: BackupFile): Promise<SyncProjection> {
     const documentId = `document:${pageId}`;
     const page = emptyBackup();
     page.annotations = byId(file.annotations.filter((row) => ids.has(row.sourceId)).map((row) => ({
-      ...row, sourceId, documentId, colorUpdatedAt: effectiveColorUpdatedAt(row),
+      ...row, sourceId, documentId, kind: row.kind === undefined ? 'text' : row.kind,
+      colorUpdatedAt: effectiveColorUpdatedAt(row),
     })));
     page.pageSummaries = (file.pageSummaries ?? []).filter((row) => ids.has(row.sourceId))
       .map((row) => ({ ...row, sourceId })).reduce<PageSummaryRecord[]>((rows, row) =>
@@ -176,29 +178,26 @@ export function blobPath(kind: 'page' | 'settings', hash: string): string {
 function validWireRows(file: BackupFile): boolean {
   const clock = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0;
   const strings = (row: object, keys: string[]) => keys.every((key) => typeof (row as Record<string, unknown>)[key] === 'string');
-  const steps = (value: unknown): boolean => Array.isArray(value) && value.every((step) => step &&
-    typeof step.tag === 'string' && Number.isInteger(step.index) && step.index >= 0);
-  const point = (value: unknown): boolean => Boolean(value && typeof value === 'object' &&
-    steps((value as { steps?: unknown }).steps) &&
-    Number.isInteger((value as { textIndex?: number }).textIndex) && ((value as { textIndex: number }).textIndex >= 0) &&
-    Number.isInteger((value as { offset?: number }).offset) && ((value as { offset: number }).offset >= 0));
   return file.documents.every((row) => strings(row, ['id', 'title', 'doi']) && clock(row.createdAt) && clock(row.updatedAt)) &&
     file.sources.every((row) => strings(row, ['id', 'documentId', 'urlKey', 'url', 'title']) && clock(row.firstSeenAt) && clock(row.lastSeenAt)) &&
     file.annotations.every((row) => strings(row, ['id', 'sourceId', 'documentId', 'color', 'comment', 'exact']) &&
       (row.kind === 'text' || row.kind === 'image') && Boolean(row.color) &&
       clock(row.createdAt) && clock(row.updatedAt) && clock(row.colorUpdatedAt) && clock(row.deletedAt)) &&
     file.settings.every((row) => Boolean(row.key) && Object.hasOwn(row, 'value')) &&
-    file.anchors.every((row) => strings(row, ['id', 'annotationId']) && (row.kind === 'image'
-      ? strings(row, ['src', 'alt']) && Number.isInteger(row.imgIndex) && row.imgIndex >= 0 && steps(row.path)
-      : strings(row, ['exact', 'prefix', 'suffix']) && clock(row.start) && clock(row.end) && point(row.startPoint) && point(row.endPoint)));
+    file.anchors.every(isAnchorRecord);
 }
 
 export async function validateBlob(body: string, hash: string, kind: 'page' | 'settings', urlKey?: string): Promise<BackupFile> {
   if (byteLength(body) > MAX_SYNC_BLOB_BYTES || await contentHash(body) !== hash) throw new SyncDataError('Sync file failed its integrity check.');
-  const parsed = parseBackup(JSON.parse(body));
+  const raw = JSON.parse(body);
+  const parsed = parseBackup(raw);
   if ('error' in parsed || parsed.file.formatVersion !== 3) throw new SyncDataError('Invalid sync file.');
   const file = parsed.file;
-  if (!validWireRows(file)) throw new SyncDataError('Invalid sync file fields.');
+  // Manual backups can salvage valid rows; an immutable sync shard must be
+  // accepted in full, never silently strip malformed rows from its hash.
+  if (!validWireRows(file) || parsed.invalidRowsDropped) {
+    throw new SyncDataError('Invalid sync file fields.');
+  }
   const projection = await projectBackup(file);
   const expected = kind === 'settings' ? projection.settings : projection.pages.get(urlKey ?? '');
   // Exact canonical form rejects dropped invalid rows, foreign pages and dangling references.

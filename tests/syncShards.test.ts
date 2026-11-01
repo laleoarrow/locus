@@ -101,6 +101,23 @@ describe('page-sharded WebDAV sync', () => {
     expect(dav.puts().some((call) => call.name === root)).toBe(false);
   });
 
+  it('migrates valid original text-only backups without later optional fields', async () => {
+    const annotation = await addPage('https://example.test/original');
+    const file = await repo.exportBackup('0.1.0');
+    file.formatVersion = 1;
+    delete (file.documents[0] as unknown as Record<string, unknown>).doi;
+    delete (file.annotations[0] as unknown as Record<string, unknown>).kind;
+    delete file.annotations[0]!.colorUpdatedAt;
+    delete file.pageSummaries;
+    dav.write(root, JSON.stringify(file));
+    await Promise.all(db.tables.map((table) => table.clear()));
+    expect((await runSync(config, EMPTY_SYNC_STATE, '0.9.7')).result.ok).toBe(true);
+    expect(await remoteNotes()).toEqual([expect.objectContaining({
+      id: annotation.id, kind: 'text', comment: 'note', colorUpdatedAt: annotation.createdAt,
+    })]);
+    expect(await db.annotations.get(annotation.id)).toMatchObject({ kind: 'text', comment: 'note' });
+  });
+
   it.each(['legacy', 'local'])('never publishes malformed %s records as unreadable new shards', async (where) => {
     const annotation = await addPage('https://example.test/a');
     if (where === 'legacy') {

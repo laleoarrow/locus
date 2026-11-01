@@ -6,6 +6,7 @@ import type {
   SettingRecord,
   SourceRecord,
 } from './types';
+import { isAnchorRecord } from './anchor/validate';
 
 /**
  * Backup file format: the portable form of a Locus library. Used for manual
@@ -63,12 +64,20 @@ function isNumberField(row: Record<string, unknown>, field: string): boolean {
   return typeof row[field] === 'number' && Number.isFinite(row[field] as number);
 }
 
+function hasText(row: Record<string, unknown>, field: string): boolean {
+  return typeof row[field] === 'string' && (row[field] as string).trim().length > 0;
+}
+
+function isClock(row: Record<string, unknown>, field: string): boolean {
+  return isNumberField(row, field) && (row[field] as number) >= 0;
+}
+
 /**
  * Validate a parsed backup file. Import runs on a user-supplied file, so every
  * row is checked before it reaches the database; malformed rows are dropped
  * rather than trusted, and a file with the wrong shape is rejected outright.
  */
-export function parseBackup(raw: unknown): { file: BackupFile } | { error: string } {
+export function parseBackup(raw: unknown): { file: BackupFile; invalidRowsDropped: boolean } | { error: string } {
   if (!isObject(raw)) return { error: 'Not a Locus backup file.' };
   if (raw['format'] !== BACKUP_FORMAT) return { error: 'Not a Locus backup file.' };
   const formatVersion = raw['formatVersion'];
@@ -85,24 +94,29 @@ export function parseBackup(raw: unknown): { file: BackupFile } | { error: strin
   };
 
   const documents = rows('documents').filter(
-    (d) => isStringField(d, 'id') && isNumberField(d, 'updatedAt'),
-  ) as unknown as DocumentRecord[];
+    (d) => hasText(d, 'id') && isStringField(d, 'title') &&
+      (d['doi'] === undefined || isStringField(d, 'doi')) && isClock(d, 'createdAt') && isClock(d, 'updatedAt'),
+  ).map((d) => ({ ...d, doi: d['doi'] ?? '' })) as unknown as DocumentRecord[];
   const sources = rows('sources').filter(
-    (s) => isStringField(s, 'id') && isStringField(s, 'documentId') && isStringField(s, 'urlKey'),
+    (s) => ['id', 'documentId', 'urlKey', 'url'].every((field) => hasText(s, field)) &&
+      isStringField(s, 'title') && isClock(s, 'firstSeenAt') && isClock(s, 'lastSeenAt'),
   ) as unknown as SourceRecord[];
   const annotations = rows('annotations').filter(
     (a) =>
-      isStringField(a, 'id') &&
-      isStringField(a, 'sourceId') &&
-      isStringField(a, 'documentId') &&
-      isNumberField(a, 'createdAt') &&
-      isNumberField(a, 'updatedAt') &&
-      (a['colorUpdatedAt'] === undefined || isNumberField(a, 'colorUpdatedAt')) &&
-      isNumberField(a, 'deletedAt'),
-  ) as unknown as AnnotationRecord[];
+      ['id', 'sourceId', 'documentId', 'color'].every((field) => hasText(a, field)) &&
+      (a['kind'] === undefined || a['kind'] === 'text' || a['kind'] === 'image') &&
+      isStringField(a, 'comment') && isStringField(a, 'exact') &&
+      (a['kind'] === 'image' || hasText(a, 'exact')) &&
+      isClock(a, 'createdAt') && isClock(a, 'updatedAt') &&
+      (a['colorUpdatedAt'] === undefined || isClock(a, 'colorUpdatedAt')) && isClock(a, 'deletedAt'),
+  // Original text-only libraries predate annotation.kind; DOI and the colour
+  // clock are the other historically optional fields. Do not guess other data.
+  ).map((a) => ({ ...a, kind: a['kind'] ?? 'text' })) as unknown as AnnotationRecord[];
+  const annotationKinds = new Map(annotations.map((annotation) => [annotation.id, annotation.kind]));
   const anchors = rows('anchors').filter(
-    (a) => isStringField(a, 'id') && isStringField(a, 'annotationId'),
-  ) as unknown as AnchorRecord[];
+    (row): row is Record<string, unknown> & AnchorRecord => isAnchorRecord(row) &&
+      annotationKinds.get(row.annotationId) === (row.kind ?? 'text'),
+  );
   const pageSummaries = rows('pageSummaries').filter(
     (s) => isStringField(s, 'sourceId') && Boolean(s['sourceId']) &&
       isStringField(s, 'content') && isNumberField(s, 'updatedAt') && (s['updatedAt'] as number) > 0,
@@ -112,10 +126,16 @@ export function parseBackup(raw: unknown): { file: BackupFile } | { error: strin
     updatedAt: s['updatedAt'] as number,
   }));
   const settings = rows('settings').filter(
-    (s) => isStringField(s, 'key') && !UNPORTABLE_SETTING_KEYS.has(s['key'] as string),
+    (s) => hasText(s, 'key') && Object.hasOwn(s, 'value') && !UNPORTABLE_SETTING_KEYS.has(s['key'] as string),
   ) as unknown as SettingRecord[];
+  // Manual imports salvage valid rows. Sync must detect that salvage before
+  // replacing a remote snapshot, while intentional private-setting removal is safe.
+  const invalidRowsDropped = Object.entries({ documents, sources, annotations, anchors, pageSummaries })
+    .some(([key, accepted]) => raw[key] !== undefined &&
+      (!Array.isArray(raw[key]) || raw[key].length !== accepted.length));
 
   return {
+    invalidRowsDropped,
     file: {
       format: BACKUP_FORMAT,
       formatVersion,

@@ -1,23 +1,24 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PaletteEntry } from '@/domain/colors';
-import type { AnnotationEditAction } from '@/domain/editing';
+import type { AnnotationEditAction, AnnotationEditExpectation } from '@/domain/editing';
 import './bulk-edit.css';
 
 interface BulkEditActionsProps {
   count: number;
   pageCount: number;
+  selected: AnnotationEditExpectation[];
   palette: PaletteEntry[];
   deletedOnly: boolean;
   busy: boolean;
   onSelectAll(): void;
   onClear(): void;
   onExit(): void;
-  onApply(action: AnnotationEditAction): Promise<number>;
+  onApply(action: AnnotationEditAction, expected: AnnotationEditExpectation[]): Promise<number>;
   onSummarize(): void;
 }
 
 export function BulkEditActions({
-  count, pageCount, palette, deletedOnly, busy,
+  count, pageCount, selected, palette, deletedOnly, busy,
   onSelectAll, onClear, onExit, onApply, onSummarize,
 }: BulkEditActionsProps) {
   const [action, setAction] = useState<AnnotationEditAction['type'] | null>(null);
@@ -25,26 +26,31 @@ export function BulkEditActions({
   const [comment, setComment] = useState('');
   const [noteMode, setNoteMode] = useState<'append' | 'replace'>('append');
   const [pending, setPending] = useState(false);
+  const pendingRef = useRef(false);
+  const [expected, setExpected] = useState<AnnotationEditExpectation[]>([]);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const locked = busy || pending;
   const target = palette.find((entry) => entry.key === color) ?? palette[0];
   const annotations = `${count} annotation${count === 1 ? '' : 's'}`;
+  const selectionKey = JSON.stringify(selected.map((entry) => entry.id).sort());
+  const sameSelection = selectionKey === JSON.stringify(expected.map((entry) => entry.id).sort());
 
   useEffect(() => {
     setAction(null);
     setError('');
-    setStatus('');
-  }, [deletedOnly]);
+  }, [deletedOnly, selectionKey]);
+  useEffect(() => { setStatus(''); }, [deletedOnly]);
 
   const choose = (next: AnnotationEditAction['type']) => {
+    setExpected(selected.map((entry) => ({ ...entry })));
     setAction(next);
     setError('');
     setStatus('');
   };
 
   const apply = async () => {
-    if (locked || count === 0 || !action) return;
+    if (locked || pendingRef.current || count === 0 || !action || !sameSelection) return;
     let edit: AnnotationEditAction;
     if (action === 'color') {
       if (!target) return;
@@ -55,10 +61,11 @@ export function BulkEditActions({
     } else {
       edit = { type: action };
     }
+    pendingRef.current = true;
     setPending(true);
     setError('');
     try {
-      const updated = await onApply(edit);
+      const updated = await onApply(edit, expected);
       setStatus(updated > 0
         ? `${updated} annotation${updated === 1 ? '' : 's'} updated.`
         : 'No annotations needed changing.');
@@ -66,11 +73,12 @@ export function BulkEditActions({
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not update the selected annotations.');
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
   };
 
-  const canApply = !locked && count > 0 && action !== null &&
+  const canApply = !locked && count > 0 && action !== null && sameSelection &&
     (action !== 'color' || target !== undefined) &&
     (action !== 'comment' || noteMode === 'replace' || comment.trim() !== '');
   const applyLabel = action === 'color' ? `Set colour on ${annotations}`
