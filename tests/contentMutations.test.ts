@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mutationAnchorWork, type MutationAnchor } from '@/content/mutations';
 import { captureAnchor } from '@/domain/anchor/capture';
 import { captureImageAnchor } from '@/domain/anchor/image';
@@ -23,7 +23,7 @@ function changes(edit: () => void): MutationRecord[] {
   observer.disconnect();
   return records;
 }
-afterEach(() => { document.body.textContent = ''; });
+afterEach(() => { document.body.textContent = ''; vi.restoreAllMocks(); });
 
 describe('mutation-triggered anchor recovery', () => {
   it('keeps healthy ranges through unrelated ticker updates and insertions before the text', () => {
@@ -81,4 +81,18 @@ describe('mutation-triggered anchor recovery', () => {
     Object.defineProperty(target.image, 'currentSrc', { value: 'https://example.test/b.png' });
     expect(mutationAnchorWork([], [target], document.body, true)).toBe('reanchor');
   });
+
+  it('shares one image index across an image-change check without caching later changes', () => {
+    document.body.innerHTML = Array.from({ length: 30 }, (_, i) => `<img src="https://example.test/${i}.png" alt="Figure ${i}">`).join('');
+    const targets: MutationAnchor[] = [...document.querySelectorAll('img')].map((image) => ({
+      anchor: captureImageAnchor(image, document.body)!, detached: false, range: null, image,
+    }));
+    const queries = vi.spyOn(document.body, 'querySelectorAll');
+    expect(mutationAnchorWork([], targets, document.body, true)).toBeNull();
+    expect(queries.mock.calls.filter(([selector]) => selector === 'img')).toHaveLength(1);
+    targets[29]!.image!.src = 'https://example.test/replaced.png';
+    expect(mutationAnchorWork([], targets, document.body, true)).toBe('reanchor');
+    expect(queries.mock.calls.filter(([selector]) => selector === 'img')).toHaveLength(2);
+  });
+
 });

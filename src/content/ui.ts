@@ -315,7 +315,7 @@ export class LocusUI {
   private readonly toolbar: HTMLDivElement;
   private readonly noteCard: HTMLDivElement;
   private readonly colorInput: HTMLInputElement;
-  private palette: PaletteEntry[] = [];
+  private paletteSignature: string | undefined;
   private customColors: PaletteEntry[] = [];
   private lastAnchor: DOMRect | null = null;
   /** What the user asked for ('auto' included) — replayed on palette changes. */
@@ -374,8 +374,10 @@ export class LocusUI {
    * cards for annotations that are not offered in this page's toolbar.
    */
   setPalette(palette: PaletteEntry[], renderPalette: PaletteEntry[] = palette): void {
-    this.palette = palette;
     this.customColors = renderPalette.slice(3);
+    const signature = JSON.stringify(palette.map(({ key, label, swatch }) => [key, label, swatch]));
+    if (signature === this.paletteSignature) return;
+    this.paletteSignature = signature;
     this.toolbar.textContent = '';
     palette.forEach((entry, i) => {
       const swatch = this.doc.createElement('button');
@@ -436,9 +438,10 @@ export class LocusUI {
     this.lastObstacles = obstacles;
     this.lastColorShown = lastColor;
     for (const swatch of this.toolbar.querySelectorAll<HTMLButtonElement>('.swatch')) {
-      swatch.dataset['last'] = swatch.dataset['color'] === lastColor ? 'true' : 'false';
+      const last = swatch.dataset['color'] === lastColor ? 'true' : 'false';
+      if (swatch.dataset['last'] !== last) swatch.dataset['last'] = last;
     }
-    this.toolbar.classList.remove('hidden');
+    if (!this.isToolbarVisible()) this.toolbar.classList.remove('hidden');
     const view = this.doc.defaultView;
     const width = this.toolbar.offsetWidth;
     const height = this.toolbar.offsetHeight;
@@ -453,9 +456,11 @@ export class LocusUI {
       margin: 8,
     });
     this.lastPlacement = placement;
-    this.toolbar.dataset['placement'] = placement;
-    this.toolbar.style.left = `${box.left}px`;
-    this.toolbar.style.top = `${box.top}px`;
+    if (this.toolbar.dataset['placement'] !== placement) this.toolbar.dataset['placement'] = placement;
+    const left = `${box.left}px`;
+    const top = `${box.top}px`;
+    if (this.toolbar.style.left !== left) this.toolbar.style.left = left;
+    if (this.toolbar.style.top !== top) this.toolbar.style.top = top;
   }
 
   hideToolbar(): void {

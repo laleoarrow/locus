@@ -1,4 +1,4 @@
-import { createContext, useContext, useRef, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { AnnotationEditExpectation } from '@/domain/editing';
 import type { LibraryAnnotation } from '@/domain/library';
 import { requestBg } from '@/messaging/protocol';
@@ -10,30 +10,29 @@ interface NoteDraft {
   busy: boolean;
 }
 
-interface NoteDraftState {
-  drafts: ReadonlyMap<string, NoteDraft>;
+interface NoteDraftStore {
+  get(id: string): NoteDraft | undefined;
+  subscribe(id: string, listener: () => void): () => void;
   begin(annotation: LibraryAnnotation): void;
   change(id: string, text: string): void;
   cancel(id: string): void;
   save(id: string): Promise<void>;
 }
 
-const NoteDraftContext = createContext<NoteDraftState | null>(null);
+const NoteDraftContext = createContext<NoteDraftStore | null>(null);
 
-/** In-memory edit sessions outlive filtered, collapsed and regrouped rows. */
-export function NoteDraftProvider({ children }: { children: ReactNode }) {
-  const current = useRef(new Map<string, NoteDraft>());
-  const [drafts, setDrafts] = useState(current.current);
+/** Keep notifications local to the edited annotation, including hidden drafts. */
+function createNoteDraftStore(): NoteDraftStore {
+  const drafts = new Map<string, NoteDraft>();
+  const listeners = new Map<string, Set<() => void>>();
   const replace = (id: string, draft?: NoteDraft) => {
-    const next = new Map(current.current);
-    if (draft) next.set(id, draft);
-    else next.delete(id);
-    current.current = next;
-    setDrafts(next);
+    if (draft) drafts.set(id, draft);
+    else drafts.delete(id);
+    listeners.get(id)?.forEach((listener) => listener());
   };
 
   const begin = (annotation: LibraryAnnotation) => {
-    if (current.current.has(annotation.id)) return;
+    if (drafts.has(annotation.id)) return;
     replace(annotation.id, {
       text: annotation.note, status: '', busy: false,
       expected: { id: annotation.id, updatedAt: annotation.updatedAt,
@@ -41,14 +40,14 @@ export function NoteDraftProvider({ children }: { children: ReactNode }) {
     });
   };
   const change = (id: string, text: string) => {
-    const draft = current.current.get(id);
+    const draft = drafts.get(id);
     if (draft && !draft.busy) replace(id, { ...draft, text });
   };
   const cancel = (id: string) => {
-    if (!current.current.get(id)?.busy) replace(id);
+    if (!drafts.get(id)?.busy) replace(id);
   };
   const save = async (id: string) => {
-    const draft = current.current.get(id);
+    const draft = drafts.get(id);
     if (!draft || draft.busy) return;
     replace(id, { ...draft, busy: true, status: '' });
     try {
@@ -64,13 +63,31 @@ export function NoteDraftProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  return <NoteDraftContext.Provider value={{ drafts, begin, change, cancel, save }}>
-    {children}
-  </NoteDraftContext.Provider>;
+  return {
+    get: (id) => drafts.get(id), begin, change, cancel, save,
+    subscribe: (id, listener) => {
+      let subscriptions = listeners.get(id);
+      if (!subscriptions) listeners.set(id, subscriptions = new Set());
+      subscriptions.add(listener);
+      return () => {
+        subscriptions.delete(listener);
+        if (subscriptions.size === 0) listeners.delete(id);
+      };
+    },
+  };
 }
 
-export function useNoteDrafts(): NoteDraftState {
-  const context = useContext(NoteDraftContext);
-  if (!context) throw new Error('NoteDraftProvider is missing.');
-  return context;
+/** In-memory edit sessions outlive filtered, collapsed and regrouped rows. */
+export function NoteDraftProvider({ children }: { children: ReactNode }) {
+  const [store] = useState(createNoteDraftStore);
+  return <NoteDraftContext.Provider value={store}>{children}</NoteDraftContext.Provider>;
+}
+
+export function useNoteDraft(id: string) {
+  const store = useContext(NoteDraftContext);
+  if (!store) throw new Error('NoteDraftProvider is missing.');
+  const subscribe = useCallback((listener: () => void) => store.subscribe(id, listener), [store, id]);
+  const getSnapshot = useCallback(() => store.get(id), [store, id]);
+  const draft = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return { draft, begin: store.begin, change: store.change, cancel: store.cancel, save: store.save };
 }

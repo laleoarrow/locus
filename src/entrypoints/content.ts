@@ -4,7 +4,7 @@ import { LocusUI } from '@/content/ui';
 import { FloatingObstacles } from '@/content/obstacles';
 import { mutationAnchorWork } from '@/content/mutations';
 import { captureAnchor } from '@/domain/anchor/capture';
-import { captureImageAnchor, resolveImageAnchor } from '@/domain/anchor/image';
+import { buildImageIndex, captureImageAnchor, resolveImageAnchor, type ImageIndex } from '@/domain/anchor/image';
 import { resolveAnchor } from '@/domain/anchor/resolve';
 import { buildTextIndex, type TextIndex } from '@/domain/anchor/textIndex';
 import { extractDoi } from '@/domain/doi';
@@ -37,6 +37,7 @@ const IMAGE_DRAG_THRESHOLD_PX = 8;
 interface Entry {
   item: AnnotationWithAnchor;
   state: AnchorState;
+  anchorKey: string;
 }
 
 type PendingTarget =
@@ -62,13 +63,12 @@ function isEditableKeyEvent(event: KeyboardEvent): boolean {
   });
 }
 
-class LocusContent {
+export class LocusContent {
   private readonly doc = document;
   private readonly renderer = new HighlightRenderer(document);
   private readonly obstacles = new FloatingObstacles(document);
   private readonly ui: LocusUI;
   private entries = new Map<string, Entry>();
-  private index: TextIndex = buildTextIndex(document.body);
   private lastColor: ColorKey = DEFAULT_COLOR;
   private urlKey = '';
   private pending: PendingTarget | null = null;
@@ -91,6 +91,8 @@ class LocusContent {
   private suppressImageClick = false;
   private suppressImageClickTimer: ReturnType<typeof setTimeout> | undefined;
   private reportedAnchorStates: string | undefined;
+  private refreshTask: Promise<void> | undefined;
+  private refreshAgain = false;
 
   constructor() {
     this.ui = new LocusUI(this.doc, {
@@ -108,6 +110,9 @@ class LocusContent {
     ];
     const renderPalette = buildPaletteForKeys(renderKeys, this.prefs.customColors);
     this.renderer.setPalette(renderPalette);
+    for (const [id, entry] of this.entries) {
+      this.renderer.recolor(id, this.renderer.effectiveColor(entry.item.annotation.color));
+    }
     this.ui.setPalette(this.palette, renderPalette);
     this.refreshToolbar();
   }
@@ -211,33 +216,44 @@ class LocusContent {
     }, true);
   }
 
-  private setItems(items: AnnotationWithAnchor[]): void {
+  private setItems(items: AnnotationWithAnchor[]): Set<string> {
     const previous = this.entries;
-    this.entries = new Map(
-      items.map((item) => [
-        item.annotation.id,
-        { item, state: previous.get(item.annotation.id)?.state ?? 'detached' } satisfies Entry,
-      ]),
-    );
+    const changed = new Set<string>();
+    this.entries = new Map(items.map((item) => {
+      const id = item.annotation.id;
+      const before = previous.get(id);
+      const anchorKey = JSON.stringify(item.anchor);
+      if (!before || before.anchorKey !== anchorKey) changed.add(id);
+      return [id, { item, anchorKey, state: before?.state ?? 'detached' } satisfies Entry];
+    }));
+    for (const id of previous.keys()) {
+      if (!this.entries.has(id)) this.renderer.clear(id);
+    }
     this.syncPalettes();
+    return changed;
   }
 
-  /** Re-anchor and re-render everything against a fresh text index. */
-  private anchorAll(): void {
-    this.index = buildTextIndex(this.doc.body);
-    let anchored = 0;
-    let detached = 0;
-    for (const [id, entry] of this.entries) {
+  /** Resolve only the requested records; indexes live for this batch, not the page lifetime. */
+  private anchorAll(ids: Iterable<string> = this.entries.keys()): void {
+    const targets = [...ids];
+    let index: TextIndex | undefined;
+    const textIndex = () => index ??= buildTextIndex(this.doc.body);
+    const imageCount = targets.filter((id) => this.entries.get(id)?.item.anchor?.kind === 'image').length;
+    const images = imageCount > 1 ? buildImageIndex(this.doc.body) : undefined;
+    for (const id of targets) {
+      const entry = this.entries.get(id);
+      if (!entry) continue;
       try {
-        if (this.anchorOne(id, entry)) anchored++;
-        else detached++;
+        this.anchorOne(id, entry, textIndex, images);
       } catch {
         // One damaged legacy anchor must not prevent the other notes loading.
         this.renderer.clear(id);
         entry.state = 'detached';
-        detached++;
       }
     }
+    if (imageCount > 0) this.renderer.repositionRings();
+    const anchored = [...this.entries.values()].filter((entry) => entry.state === 'anchored').length;
+    const detached = this.entries.size - anchored;
     // Mirror state onto <html> attributes: observable by tests and tools
     // without page-world coupling; not part of the article content.
     this.doc.documentElement.setAttribute('data-locus-anchored', String(anchored));
@@ -264,19 +280,19 @@ class LocusContent {
     });
   }
 
-  private anchorOne(id: string, entry: Entry): boolean {
+  private anchorOne(id: string, entry: Entry, textIndex: () => TextIndex, images?: ImageIndex): boolean {
     const { anchor } = entry.item;
     const color = entry.item.annotation.color;
     const renderColor = this.renderer.effectiveColor(color);
     if (anchor.kind === 'image') {
-      const image = resolveImageAnchor(anchor, this.doc.body);
+      const image = resolveImageAnchor(anchor, this.doc.body, images);
       if (image) {
-        this.renderer.setImage(id, renderColor, image);
+        this.renderer.setImage(id, renderColor, image, true);
         entry.state = 'anchored';
         return true;
       }
     } else {
-      const resolved = resolveAnchor(anchor, this.index, this.doc.body);
+      const resolved = resolveAnchor(anchor, textIndex(), this.doc.body);
       if (resolved) {
         this.renderer.set(id, renderColor, resolved.range);
         entry.state = 'anchored';
@@ -292,22 +308,36 @@ class LocusContent {
     return Object.fromEntries([...this.entries].map(([id, e]) => [id, e.state]));
   }
 
-  private async refresh(): Promise<void> {
-    const result = await requestBg({ type: 'annotations:list', url: location.href });
-    if (!result) return;
-    const keep = new Set(result.items.map((i) => i.annotation.id));
-    for (const id of this.entries.keys()) {
-      if (!keep.has(id)) this.renderer.clear(id);
-    }
-    this.setItems(result.items);
-    this.anchorAll();
+  private refresh(): Promise<void> {
+    this.refreshAgain = true;
+    if (this.refreshTask) return this.refreshTask;
+    this.refreshTask = Promise.resolve().then(async () => {
+      try {
+        do {
+          this.refreshAgain = false;
+          try {
+            const result = await requestBg({ type: 'annotations:list', url: location.href });
+            if (!result) continue;
+            const changed = this.setItems(result.items);
+            if (this.active) this.anchorAll(changed);
+          } catch (error) {
+            // A failed earlier read must not consume a newer notification.
+            // Only drain work already requested; do not retry on our own.
+            if (!this.refreshAgain) throw error;
+          }
+        } while (this.refreshAgain);
+      } finally {
+        // Clear before resolving: a later notification starts a fresh read.
+        this.refreshTask = undefined;
+      }
+    });
+    return this.refreshTask;
   }
 
   private captureFromPending(): AnchorPayload | null {
     if (!this.pending) return null;
     if (this.pending.type === 'image') return captureImageAnchor(this.pending.image, this.doc.body);
-    this.index = buildTextIndex(this.doc.body);
-    return captureAnchor(this.pending.range, this.index, this.doc.body);
+    return captureAnchor(this.pending.range, buildTextIndex(this.doc.body), this.doc.body);
   }
 
   private async createFromPending(color: ColorKey): Promise<void> {
@@ -699,13 +729,11 @@ class LocusContent {
             return false;
           case 'prefs:changed':
             this.applyPrefs(message.prefs);
-            if (this.active) this.anchorAll();
             return false;
           case 'page-colors:changed':
             if (message.urlKey !== this.urlKey) return false;
             this.pageColors = message.colors;
             this.syncPalettes();
-            if (this.active) this.anchorAll();
             return false;
           default:
             return false;

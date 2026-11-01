@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { LocusUI, type NoteEditorOptions } from '@/content/ui';
 import { LOCUS_HOST_ID } from '@/domain/anchor/textIndex';
+import { buildPalette, type PaletteEntry } from '@/domain/colors';
 
 const editors: LocusUI[] = [];
 
@@ -167,5 +168,98 @@ describe('in-page note editor', () => {
     ui.openNoteEditor(options);
     ui.closeNoteEditor();
     expect(ui.isNoteOpen()).toBe(false);
+  });
+});
+
+describe('toolbar repeated-update work', () => {
+  function toolbarSetup() {
+    const actions = { onHighlight: vi.fn(), onAddColor: vi.fn(), onDisableSite: vi.fn() };
+    const ui = new LocusUI(document, actions);
+    editors.push(ui);
+    const palette = buildPalette([]);
+    ui.setPalette(palette);
+    const shadow = document.getElementById(LOCUS_HOST_ID)!.shadowRoot!;
+    const toolbar = shadow.querySelector<HTMLElement>('[data-locus-toolbar]')!;
+    const width = vi.spyOn(toolbar, 'offsetWidth', 'get').mockReturnValue(180);
+    const height = vi.spyOn(toolbar, 'offsetHeight', 'get').mockReturnValue(44);
+    const anchor = new DOMRect(240, 200, 100, 20);
+    ui.showToolbar(anchor, 'yellow', 'auto');
+    return { ui, actions, palette, shadow, toolbar, width, height, anchor };
+  }
+
+  it('keeps existing focused buttons and the native colour input on identical palette updates', () => {
+    const { ui, actions, palette, shadow, toolbar } = toolbarSetup();
+    const button = toolbar.querySelector<HTMLButtonElement>('.swatch')!;
+    const input = toolbar.querySelector<HTMLInputElement>('input[type="color"]')!;
+    input.value = '#123456';
+    button.focus();
+    const observer = new MutationObserver(() => {});
+    observer.observe(toolbar, { childList: true, attributes: true, subtree: true });
+    for (let i = 0; i < 20; i++) ui.setPalette(palette.map((entry) => ({ ...entry })));
+    const records = observer.takeRecords();
+    observer.disconnect();
+    expect({ childLists: records.filter((record) => record.type === 'childList').length,
+      attributes: records.filter((record) => record.type === 'attributes').length }).toEqual({ childLists: 0, attributes: 0 });
+    expect(toolbar.querySelector('.swatch')).toBe(button);
+    expect(shadow.activeElement).toBe(button);
+    expect(toolbar.querySelector('input[type="color"]')).toBe(input);
+    expect(input.value).toBe('#123456');
+    input.dispatchEvent(new Event('change'));
+    expect(actions.onAddColor).toHaveBeenCalledWith('#123456');
+    button.click();
+    expect(actions.onHighlight).toHaveBeenCalledWith('yellow');
+  });
+
+  it('measures every static Auto tick without repeatedly writing unchanged DOM attributes', () => {
+    const { ui, toolbar, width, height, anchor } = toolbarSetup();
+    width.mockClear(); height.mockClear();
+    const leftWrites = vi.spyOn(toolbar.style, 'left', 'set');
+    const topWrites = vi.spyOn(toolbar.style, 'top', 'set');
+    const observer = new MutationObserver(() => {});
+    observer.observe(toolbar, { attributes: true, subtree: true });
+    for (let i = 0; i < 20; i++) ui.showToolbar(anchor, 'yellow', 'auto');
+    const records = observer.takeRecords();
+    observer.disconnect();
+    expect({ attributeWrites: records.length, widthReads: width.mock.calls.length,
+      heightReads: height.mock.calls.length, positionWrites: leftWrites.mock.calls.length + topWrites.mock.calls.length })
+      .toEqual({ attributeWrites: 0, widthReads: 20, heightReads: 20, positionWrites: 0 });
+  });
+
+  it('applies changed last colour, obstacles, viewport, dimensions and palette immediately', () => {
+    const { ui, actions, palette, toolbar, width, anchor } = toolbarSetup();
+    const below = { left: 0, top: 225, right: 1000, bottom: 300 };
+    ui.showToolbar(anchor, 'teal', 'auto', [below]);
+    expect(toolbar.dataset['placement']).toBe('above');
+    expect(toolbar.querySelector<HTMLElement>('[data-color="teal"]')!.dataset['last']).toBe('true');
+    expect(toolbar.querySelector<HTMLElement>('[data-color="yellow"]')!.dataset['last']).toBe('false');
+    vi.stubGlobal('innerWidth', 240);
+    width.mockReturnValue(220);
+    ui.showToolbar(anchor, 'pink', 'below');
+    expect(Number.parseFloat(toolbar.style.left)).toBe(12);
+    expect(toolbar.dataset['placement']).toBe('below');
+    const custom: PaletteEntry = { key: 'c123456', label: 'Custom blue', swatch: '#123456', bg: '#12345680' };
+    ui.setPalette([...palette, custom]);
+    const customButton = toolbar.querySelector<HTMLButtonElement>('[data-color="c123456"]')!;
+    expect(customButton.title).toBe('Custom blue — press 4');
+    expect(customButton.dataset['shortcut']).toBe('4');
+    expect(customButton.style.getPropertyValue('--c')).toBe('#123456');
+    customButton.click();
+    expect(actions.onHighlight).toHaveBeenCalledWith('c123456');
+    ui.setPalette([{ ...palette[0]!, label: 'Renamed', swatch: '#fedcba' }, ...palette.slice(1)]);
+    expect(toolbar.querySelector<HTMLButtonElement>('.swatch')!.title).toBe('Renamed — press 1');
+    expect(toolbar.querySelector<HTMLElement>('.swatch')!.style.getPropertyValue('--c')).toBe('#fedcba');
+    ui.hideToolbar();
+    ui.showToolbar(anchor, 'yellow', 'auto');
+    expect(ui.isToolbarVisible()).toBe(true);
+  });
+
+  it('refreshes note-only render colours even when toolbar choices are unchanged', () => {
+    const { ui, palette, shadow, toolbar } = toolbarSetup();
+    const button = toolbar.querySelector('.swatch');
+    const custom: PaletteEntry = { key: 'c123456', label: 'Old annotation colour', swatch: '#abcdef', bg: '#abcdef80' };
+    ui.setPalette(palette, [...palette, custom]);
+    expect(toolbar.querySelector('.swatch')).toBe(button);
+    ui.openNoteEditor({ rect: new DOMRect(100, 100, 40, 20), color: custom.key, initial: '', onSave: vi.fn(), onDelete: vi.fn() });
+    expect(shadow.querySelector<HTMLElement>('[data-locus-note]')!.style.getPropertyValue('--c')).toBe('#abcdef');
   });
 });

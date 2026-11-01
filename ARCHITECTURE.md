@@ -184,6 +184,14 @@ require a matching changed subtree and are limited to once per two seconds.
 Status snapshots are reported only when changed (or a failed report needs retry).
 Malformed anchors are validated before resolution and isolated per entry.
 
+The content controller constructs text indexes lazily and only for a resolution
+batch or an explicit capture; empty/image-only pages do not scan article text.
+Annotation refreshes compare anchor payloads: note/timestamp changes update the
+record, colour changes update the existing presentation, and only new/changed
+anchors resolve again. Concurrent reads are serialized with a trailing reread;
+a failed earlier read does not discard an already queued notification. Multi-image
+resolution shares a per-batch resource index, never a long-lived DOM cache.
+
 ### 5.3 Rendering
 
 - **Primary:** CSS Custom Highlight API. One `Highlight` object per color
@@ -199,6 +207,10 @@ Malformed anchors are validated before resolution and isolated per entry.
   image ResizeObservers update its position; viewport and overflow clipping
   hide unavailable parts without inventing a new image border. Hidden or
   removed images have no hit target. Observers are released when cleared.
+  Shared ancestor geometry/styles are read once per synchronous batch, before
+  any ring positions are written. Unchanged styles are not assigned again;
+  recolouring retains ranges, fallback marks and rings. All geometry caches end
+  with the batch, so the next layout update measures fresh state.
   The image element itself is never touched.
 - **Reveal/pulse:** side-panel click sends `annotation:reveal`; the content
   script scrolls the range to center and flashes absolutely-positioned
@@ -242,7 +254,9 @@ Malformed anchors are validated before resolution and isolated per entry.
 
   Scrolling/resizing remeasures the pending Range or image. Preference and
   palette changes retain current avoidance information; hiding the toolbar
-  stops tracking. Long palettes scroll within the viewport. E26, E50–E52 and E81–E82
+  stops tracking. Repeated identical palettes preserve their controls and focus;
+  unchanged placement attributes/styles are skipped without reducing measurement
+  or obstacle-check frequency. Long palettes scroll within the viewport. E26, E50–E52 and E81–E82
   cover late/animated/nested/shadow controls, live preference changes, resize,
   and obstacles on both sides.
 - **⌘/Ctrl-hover** on the toolbar's right edge slides out a ✕ zone that
@@ -392,10 +406,12 @@ and `sidepanel/App.tsx` was already carrying the page list, backup and sync.
   grouping, filtering, search and sorting. The three display modes — by page, by
   site, timeline — are three projections of one dataset, which is why supporting
   all three costs almost nothing.
-- `src/db/library.ts` loads the whole library in one pass. Cross-dimension
-  filtering (site × colour × time × keyword) does not map onto IndexedDB's
-  single-index model, so a paged version would still finish in memory. The scale
-  ceiling and its remedy are recorded in the design doc.
+- `src/db/library.ts` reads all annotations/anchors/states and only the associated
+  sources/documents in one read-only transaction. Visit-only metadata does not
+  enter this query's live dependencies. Cross-dimension filtering still has the
+  complete annotation set; no display/search cap is introduced. Grouping and
+  counts are memoized by their actual data dependencies; static Markdown is
+  parsed only when its text changes.
 - The page reads through `liveQuery`, so a sync pull, a backup import or an edit
   in the side panel is reflected without a refresh. **Every mutation still goes
   through the existing background messages**, so no second write path exists to
@@ -416,7 +432,8 @@ and `sidepanel/App.tsx` was already carrying the page list, backup and sync.
   draft, with saving as a separate action.
 - Single-note drafts live in an App-level in-memory provider keyed by annotation
   ID, so grouping, filtering and folding rows do not discard edits or pending
-  save results. Successful Save or explicit Cancel ends the session; reloading
+  save results. A stable store notifies only subscribers of the edited ID, so
+  typing into one row does not rerender every other annotation. Successful Save or explicit Cancel ends the session; reloading
   the whole Library does not preserve unsaved drafts. Single-note and selected
   batch edits freeze expected versions when editing/preview begins and reject
   stale writes atomically.

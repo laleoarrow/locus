@@ -1,4 +1,4 @@
-import { resolveImageAnchor } from '@/domain/anchor/image';
+import { buildImageIndex, resolveImageAnchor, type ImageIndex } from '@/domain/anchor/image';
 import type { AnchorPayload } from '@/domain/types';
 
 export interface MutationAnchor {
@@ -22,10 +22,13 @@ export function mutationAnchorWork(
     ? ['src', 'srcset', 'sizes', 'alt', 'media', 'type'].includes(record.attributeName ?? '')
     : record.type === 'childList' && [...record.addedNodes, ...record.removedNodes].some(hasImage));
 
+  const shareImageIndex = imagesChanged && targets.reduce((count, target) => count + Number(target.anchor.kind === 'image'), 0) > 1;
+  let imageIndex: ImageIndex | undefined;
   for (const target of targets) {
     if (target.anchor.kind === 'image') {
       if (imagesChanged) {
-        const resolved = resolveImageAnchor(target.anchor, root);
+        if (shareImageIndex) imageIndex ??= buildImageIndex(root);
+        const resolved = resolveImageAnchor(target.anchor, root, imageIndex);
         if (resolved !== target.image || (!resolved && !target.detached)) return 'reanchor';
       }
     } else if (textChanged && !target.detached) {

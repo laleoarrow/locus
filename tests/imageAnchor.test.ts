@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { captureImageAnchor, resolveImageAnchor } from '@/domain/anchor/image';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildImageIndex, captureImageAnchor, resolveImageAnchor } from '@/domain/anchor/image';
 
 const SRC_A = 'https://example.com/a.png';
 const SRC_B = 'https://example.com/b.png';
@@ -9,6 +9,8 @@ function img(id: string): HTMLImageElement {
   if (!(el instanceof HTMLImageElement)) throw new Error(`no img #${id}`);
   return el;
 }
+
+afterEach(() => vi.restoreAllMocks());
 
 beforeEach(() => {
   document.body.innerHTML = '';
@@ -109,5 +111,20 @@ describe('image anchors (U13)', () => {
     const valid = captureImageAnchor(img('one'), document.body)!;
     const anchor = invalid == null ? invalid : { ...valid, ...invalid };
     expect(resolveImageAnchor(anchor as typeof valid, document.body)).toBeNull();
+  });
+});
+
+
+describe('image resolution work', () => {
+  it('enumerates images once for a synchronous batch of thirty anchors', () => {
+    document.body.innerHTML = Array.from({ length: 100 }, (_, i) => `<img id="figure-${i}" src="https://example.com/${i}.png" alt="Figure ${i}">`).join('');
+    const images = [...document.querySelectorAll('img')];
+    const anchors = images.slice(0, 30).map((image) => captureImageAnchor(image, document.body)!);
+    const queries = vi.spyOn(document.body, 'querySelectorAll');
+    const index = buildImageIndex(document.body);
+    for (const [i, anchor] of anchors.entries()) expect(resolveImageAnchor(anchor, document.body, index)).toBe(images[i]);
+    expect(queries.mock.calls.filter(([selector]) => selector === 'img')).toHaveLength(1);
+    images[0]!.src = SRC_B;
+    expect(resolveImageAnchor(anchors[0]!, document.body, buildImageIndex(document.body))).toBeNull();
   });
 });

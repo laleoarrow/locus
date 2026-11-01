@@ -130,6 +130,8 @@ for observability without page-world coupling.
 | E95 | dynamic-page cost | 1000-paragraph page and unrelated ticker: no full restoration or repeated state reports; real excerpt changes still restore, re-enable still notifies |
 | E96–E97 | Library draft lifetime | grouping/filter/live-search unmount preserves draft and expected version; hidden in-flight write failure returns with retryable draft |
 
+| E98–E99 | performance without feature loss | note/preferences/colour updates retain image-ring identity; 16-image batch restoration, live layout, visibility, clipping, nested scrolling and reload remain correct |
+
 All browser contexts explicitly run headless with disposable profiles. Public DNS
 is disabled in this harness; API/WebDAV fixtures use localhost. The audit does not
 write to the installed extension directory or use live cloud/LLM credentials.

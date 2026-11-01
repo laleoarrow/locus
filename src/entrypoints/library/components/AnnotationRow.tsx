@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { specFor } from '@/domain/colors';
 import { highlightParts, type LibraryAnnotation, type LibraryPage } from '@/domain/library';
 import type { CustomColor } from '@/domain/types';
 import { markdownToHtml } from '@/lib/markdown';
 import { requestBg } from '@/messaging/protocol';
 import { useBlankSelection, useSelection } from './SelectionContext';
-import { useNoteDrafts } from './NoteDraftContext';
+import { useNoteDraft } from './NoteDraftContext';
 
 /** Text with the current search term marked. */
 export function Marked({ text, query }: { text: string; query: string }) {
@@ -34,8 +34,8 @@ export function AnnotationRow({
   customColors: CustomColor[];
 }) {
   const [status, setStatus] = useState('');
-  const notes = useNoteDrafts();
-  const draft = notes.drafts.get(annotation.id);
+  const notes = useNoteDraft(annotation.id);
+  const draft = notes.draft;
   const editing = draft !== undefined;
   const selection = useSelection();
   const busy = selection.busy || (draft?.busy ?? false);
@@ -44,6 +44,7 @@ export function AnnotationRow({
   const swatch = specFor(annotation.color, customColors).swatch;
   const needle = query.trim().toLowerCase();
   const noteMatches = needle !== '' && annotation.note.toLowerCase().includes(needle);
+  const noteHtml = useMemo(() => annotation.note ? markdownToHtml(annotation.note) : '', [annotation.note]);
 
   const open = async () => {
     setStatus('');
@@ -104,7 +105,7 @@ export function AnnotationRow({
             <div
               className="note md"
               // Safe: markdownToHtml escapes all source text (see lib/markdown.ts).
-              dangerouslySetInnerHTML={{ __html: markdownToHtml(annotation.note) }}
+              dangerouslySetInnerHTML={{ __html: noteHtml }}
             />
           )
         )}

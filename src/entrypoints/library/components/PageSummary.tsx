@@ -1,4 +1,4 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useMemo, useState } from 'react';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { getPageSummary } from '@/db/editing';
 import { markdownToHtml } from '@/lib/markdown';
@@ -19,6 +19,7 @@ export function PageSummary({ sourceId }: { sourceId: string }) {
   const [expectedUpdatedAt, setExpectedUpdatedAt] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const summaryHtml = useMemo(() => summary?.content ? markdownToHtml(summary.content) : '', [summary?.content]);
   const edit = () => {
     setDraft(summary?.content ?? ''); setExpectedUpdatedAt(summary?.updatedAt ?? 0);
     setEditing(true); setError('');
@@ -51,7 +52,7 @@ export function PageSummary({ sourceId }: { sourceId: string }) {
           <button type="button" disabled={busy} onClick={() => setEditing(false)}>Cancel</button>
           <button type="button" className="primary" data-summary="save" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</button>
         </div>
-      </div> : summary?.content ? <div className="summary-content md" dangerouslySetInnerHTML={{ __html: markdownToHtml(summary.content) }} />
+      </div> : summary?.content ? <div className="summary-content md" dangerouslySetInnerHTML={{ __html: summaryHtml }} />
         : <p className="summary-empty">Add the main ideas from this page’s notes.</p>}
       {error && <p role="alert" className="dialog-error">{error}</p>}
     </section>

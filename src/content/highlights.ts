@@ -3,39 +3,67 @@ import type { ColorKey } from '@/domain/types';
 
 const STYLE_ID = 'locus-style';
 
-/** Viewport geometry shared by image rings and hit testing. */
-export function imageGeometry(image: HTMLImageElement, doc: Document) {
+interface ImageGeometry {
+  rect: DOMRect;
+  clip: { left: number; top: number; right: number; bottom: number };
+}
+
+/** All caches live for this synchronous read phase, never across layout changes. */
+function imageGeometryReader(doc: Document): (image: HTMLImageElement) => ImageGeometry | null {
   const view = doc.defaultView;
-  if (!view || !image.isConnected || image.ownerDocument !== doc) return null;
-  const rect = image.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) return null;
-  const clip = { left: 0, top: 0,
+  if (!view) return () => null;
+  const viewport = { left: 0, top: 0,
     right: doc.documentElement.clientWidth || view.innerWidth,
     bottom: doc.documentElement.clientHeight || view.innerHeight };
-  for (let element: Element | null = image; element;) {
-    const style = view.getComputedStyle(element);
-    if (style.display === 'none' || (element === image &&
-      (style.visibility === 'hidden' || style.visibility === 'collapse')) ||
-      style.opacity === '0' || style.contentVisibility === 'hidden') return null;
-    // Root scrolling already clips to the viewport above; its moving document
-    // rect must not be combined with its viewport-sized clientHeight again.
-    if (element !== image && element !== doc.documentElement && element !== doc.scrollingElement) {
-      const clipsX = /^(auto|scroll|hidden|clip)$/.test(style.overflowX || style.overflow);
-      const clipsY = /^(auto|scroll|hidden|clip)$/.test(style.overflowY || style.overflow);
-      if (clipsX || clipsY) {
-        const bounds = element.getBoundingClientRect();
-        const left = bounds.left + element.clientLeft;
-        const top = bounds.top + element.clientTop;
-        if (clipsX) { clip.left = Math.max(clip.left, left); clip.right = Math.min(clip.right, left + element.clientWidth); }
-        if (clipsY) { clip.top = Math.max(clip.top, top); clip.bottom = Math.min(clip.bottom, top + element.clientHeight); }
+  const styles = new Map<Element, CSSStyleDeclaration>();
+  const bounds = new Map<Element, { left: number; top: number; right: number; bottom: number }>();
+  const images = new Map<HTMLImageElement, ImageGeometry | null>();
+  return (image) => {
+    if (images.has(image)) return images.get(image)!;
+    images.set(image, null);
+    if (!image.isConnected || image.ownerDocument !== doc) return null;
+    const rect = image.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0 || rect.right <= 0 || rect.bottom <= 0 ||
+      rect.left >= viewport.right || rect.top >= viewport.bottom) return null;
+    const clip = { ...viewport };
+    for (let element: Element | null = image; element;) {
+      let style = styles.get(element);
+      if (!style) { style = view.getComputedStyle(element); styles.set(element, style); }
+      if (style.display === 'none' || (element === image &&
+        (style.visibility === 'hidden' || style.visibility === 'collapse')) ||
+        style.opacity === '0' || style.contentVisibility === 'hidden') return null;
+      // Root scrolling already clips to the viewport above; its moving document
+      // rect must not be combined with its viewport-sized clientHeight again.
+      if (element !== image && element !== doc.documentElement && element !== doc.scrollingElement) {
+        const clipsX = /^(auto|scroll|hidden|clip)$/.test(style.overflowX || style.overflow);
+        const clipsY = /^(auto|scroll|hidden|clip)$/.test(style.overflowY || style.overflow);
+        if (clipsX || clipsY) {
+          let box = bounds.get(element);
+          if (!box) {
+            const rect = element.getBoundingClientRect();
+            const left = rect.left + element.clientLeft;
+            const top = rect.top + element.clientTop;
+            box = { left, top, right: left + element.clientWidth, bottom: top + element.clientHeight };
+            bounds.set(element, box);
+          }
+          if (clipsX) { clip.left = Math.max(clip.left, box.left); clip.right = Math.min(clip.right, box.right); }
+          if (clipsY) { clip.top = Math.max(clip.top, box.top); clip.bottom = Math.min(clip.bottom, box.bottom); }
+        }
       }
+      const root = element.getRootNode();
+      element = element.assignedSlot ?? element.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
     }
-    const root = element.getRootNode();
-    element = element.assignedSlot ?? element.parentElement ?? (root instanceof ShadowRoot ? root.host : null);
-  }
-  if (Math.max(rect.left, clip.left) >= Math.min(rect.right, clip.right) ||
-    Math.max(rect.top, clip.top) >= Math.min(rect.bottom, clip.bottom)) return null;
-  return { rect, clip };
+    if (Math.max(rect.left, clip.left) >= Math.min(rect.right, clip.right) ||
+      Math.max(rect.top, clip.top) >= Math.min(rect.bottom, clip.bottom)) return null;
+    const geometry = { rect, clip };
+    images.set(image, geometry);
+    return geometry;
+  };
+}
+
+/** Viewport geometry shared by image rings and hit testing. */
+export function imageGeometry(image: HTMLImageElement, doc: Document): ImageGeometry | null {
+  return imageGeometryReader(doc)(image);
 }
 
 export function supportsCustomHighlights(): boolean {
@@ -135,7 +163,13 @@ export class HighlightRenderer {
 
   /** Sync rules and Highlight registrations with the current palette. */
   setPalette(entries: PaletteEntry[]): void {
-    this.palette = new Map(entries.map((entry) => [entry.key, entry]));
+    const previous = [...this.palette.values()];
+    if (previous.length === entries.length && entries.every((entry, index) => {
+      const current = previous[index]!;
+      return current.key === entry.key && current.label === entry.label &&
+        current.swatch === entry.swatch && current.bg === entry.bg;
+    })) return;
+    this.palette = new Map(entries.map((entry) => [entry.key, { ...entry }]));
     const rules = entries.map(
       (entry) => `::highlight(locus-${entry.key}) { background-color: ${entry.bg}; }`,
     );
@@ -200,8 +234,28 @@ export class HighlightRenderer {
     this.entries.set(id, { color, range: null, marks, image: null, ring: null });
   }
 
+  /** Change presentation without discarding a live range, marks or image ring. */
+  recolor(id: string, color: ColorKey): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    const next = this.effectiveColor(color);
+    if (entry.range && entry.color !== next) {
+      this.highlights.get(entry.color)?.delete(entry.range);
+      this.highlights.get(next)?.add(entry.range);
+    }
+    for (const mark of entry.marks) {
+      if (mark.dataset['locusColor'] !== next) mark.dataset['locusColor'] = next;
+    }
+    if (entry.ring) {
+      const swatch = this.palette.get(next)?.swatch ?? '#ffe600';
+      if (entry.ring.style.getPropertyValue('--ring-color') !== swatch) entry.ring.style.setProperty('--ring-color', swatch);
+    }
+    entry.color = next;
+    return true;
+  }
+
   /** Render an image annotation as a glowing ring overlay around the img. */
-  setImage(id: string, color: ColorKey, image: HTMLImageElement): void {
+  setImage(id: string, color: ColorKey, image: HTMLImageElement, deferPosition = false): void {
     this.clear(id);
     const spec = this.palette.get(this.effectiveColor(color));
     const ring = this.doc.createElement('div');
@@ -214,13 +268,11 @@ export class HighlightRenderer {
     if (image.isConnected && typeof ResizeObserver !== 'undefined') {
       this.imageResizeObserver ??= new ResizeObserver((records) => {
         const changed = new Set(records.map((record) => record.target));
-        for (const current of this.entries.values()) {
-          if (current.image && changed.has(current.image)) this.positionRing(current);
-        }
+        this.positionRings([...this.entries.values()].filter((current) => current.image && changed.has(current.image)));
       });
       this.imageResizeObserver.observe(image);
     }
-    this.positionRing(entry);
+    if (!deferPosition) this.positionRings([entry]);
   }
 
   private unobserveImage(image: HTMLImageElement): void {
@@ -231,27 +283,40 @@ export class HighlightRenderer {
     }
   }
 
-  private positionRing(entry: Entry): void {
-    if (!entry.image || !entry.ring) return;
+  private positionRings(entries: Iterable<Entry>): void {
+    const targets = [...entries].filter((entry) => entry.image && entry.ring);
+    if (targets.length === 0) return;
     const view = this.doc.defaultView;
     if (!view) return;
-    const geometry = imageGeometry(entry.image, this.doc);
-    entry.ring.style.display = geometry ? '' : 'none';
-    if (!entry.image.isConnected) this.unobserveImage(entry.image);
-    if (!geometry) return;
-    const { rect, clip } = geometry;
-    entry.ring.style.left = `${rect.left + view.scrollX - 4}px`;
-    entry.ring.style.top = `${rect.top + view.scrollY - 4}px`;
-    entry.ring.style.width = `${rect.width + 2}px`;
-    entry.ring.style.height = `${rect.height + 2}px`;
-    // Clip the existing outline, rather than inventing a new image edge at a
-    // scroller's boundary. Negative insets preserve the glow on visible sides.
-    entry.ring.style.clipPath = `inset(${clip.top - rect.top + 4}px ${rect.right + 4 - clip.right}px ${rect.bottom + 4 - clip.bottom}px ${clip.left - rect.left + 4}px)`;
+    const read = imageGeometryReader(this.doc);
+    const scrollX = view.scrollX;
+    const scrollY = view.scrollY;
+    // Finish every layout read before applying any ring styles.
+    const measured = targets.map((entry) => ({ entry, geometry: read(entry.image!) }));
+    for (const { entry, geometry } of measured) {
+      const style = entry.ring!.style;
+      const display = geometry ? '' : 'none';
+      if (style.display !== display) style.display = display;
+      if (!entry.image!.isConnected) this.unobserveImage(entry.image!);
+      if (!geometry) continue;
+      const { rect, clip } = geometry;
+      const values = {
+        left: `${rect.left + scrollX - 4}px`,
+        top: `${rect.top + scrollY - 4}px`,
+        width: `${rect.width + 2}px`,
+        height: `${rect.height + 2}px`,
+        // Clip the original outline, not an invented border at a scroller edge.
+        clipPath: `inset(${clip.top - rect.top + 4}px ${rect.right + 4 - clip.right}px ${rect.bottom + 4 - clip.bottom}px ${clip.left - rect.left + 4}px)`,
+      };
+      for (const key of Object.keys(values) as (keyof typeof values)[]) {
+        if (style[key] !== values[key]) style[key] = values[key];
+      }
+    }
   }
 
   /** Re-align rings with their images (after layout/DOM changes). */
   repositionRings(): void {
-    for (const entry of this.entries.values()) this.positionRing(entry);
+    this.positionRings(this.entries.values());
   }
 
   /** The image element an annotation is ringed around, if any. */
@@ -319,9 +384,11 @@ export class HighlightRenderer {
 
   /** Hit-test a viewport point against all rendered annotations. */
   annotationAtPoint(x: number, y: number): string | null {
+    let readImage: ReturnType<typeof imageGeometryReader> | undefined;
     for (const [id, entry] of this.entries) {
       if (entry.image) {
-        const geometry = imageGeometry(entry.image, this.doc);
+        readImage ??= imageGeometryReader(this.doc);
+        const geometry = readImage(entry.image);
         if (geometry && x >= Math.max(geometry.rect.left, geometry.clip.left) &&
           x <= Math.min(geometry.rect.right, geometry.clip.right) &&
           y >= Math.max(geometry.rect.top, geometry.clip.top) &&

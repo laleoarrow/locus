@@ -110,6 +110,8 @@ export function App() {
   );
   const origins = useMemo(() => availableOrigins(collectionPages), [collectionPages]);
   const pages = useMemo(() => filterLibrary(allPages, filters), [allPages, filters]);
+  const sites = useMemo(() => mode === 'site' ? groupBySite(pages) : [], [pages, mode]);
+  const timeline = useMemo(() => mode === 'timeline' ? toTimeline(pages) : [], [pages, mode]);
   const visibleIds = useMemo(() => new Set(pages.flatMap((page) => page.annotations.map((entry) => entry.id))), [pages]);
   useEffect(() => {
     setSelectedIds((current) => {
@@ -122,7 +124,8 @@ export function App() {
     .filter((row) => visibleSelectedIds.has(row.id))
     .map((row) => ({ id: row.id, updatedAt: row.updatedAt, deletedAt: row.deletedAt, colorUpdatedAt: effectiveColorUpdatedAt(row) })),
   [input, visibleSelectedIds]);
-  const selectedPageIds = pages.filter((page) => page.annotations.some((entry) => visibleSelectedIds.has(entry.id))).map((page) => page.sourceId);
+  const selectedPageIds = useMemo(() => pages.filter((page) => page.annotations.some((entry) => visibleSelectedIds.has(entry.id)))
+    .map((page) => page.sourceId), [pages, visibleSelectedIds]);
   const toggleMany = (ids: string[]) => {
     if (busy || ids.length === 0) return;
     setSelecting(true);
@@ -193,9 +196,9 @@ export function App() {
     });
   }, [availableColorKeys, availableOriginKeys]);
 
-  const libraryTotal = countAnnotations(allPages);
-  const total = countAnnotations(collectionPages);
-  const shown = countAnnotations(pages);
+  const libraryTotal = useMemo(() => countAnnotations(allPages), [allPages]);
+  const total = useMemo(() => countAnnotations(collectionPages), [collectionPages]);
+  const shown = useMemo(() => countAnnotations(pages), [pages]);
 
   const patch = (next: Partial<LibraryFilters>) => setFilters((prev) => ({ ...prev, ...next }));
   const toggleColor = (color: ColorKey) =>
@@ -413,7 +416,7 @@ export function App() {
             </p>
           </div>
         ) : mode === 'site' ? (
-          groupBySite(pages).map((site) => (
+          sites.map((site) => (
             <SiteGroup
               key={site.origin || 'unknown'}
               site={site}
@@ -423,7 +426,7 @@ export function App() {
           ))
         ) : mode === 'timeline' ? (
           <Timeline
-            days={toTimeline(pages)}
+            days={timeline}
             query={filters.query}
             customColors={customColors}
             today={today}
