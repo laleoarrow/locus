@@ -54,3 +54,5 @@ ZIP CRC通过；manifest版本均为0.9.8。Chrome/Edge同源包的解压文件�
 | locus-0.9.8-edge-store.zip | 253445 | `c8fab35cee3fda3c3552ed4c04cb0843de3c2a395eebcb8a2b990fb81ddebd29` |
 
 当前安装目录没有修改；商店候选包未提交。
+
+已发布为 [GitHub Latest v0.9.8](https://github.com/laleoarrow/locus/releases/tag/v0.9.8)，源码提交 `c2d92262a4d372d41564e2a0f03992448f0c0357`。两个公开 ZIP 已独立下载，SHA-256 与上表一致。
