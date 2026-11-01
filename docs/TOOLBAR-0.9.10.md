@@ -42,3 +42,5 @@ E103 使用同一页面的立即出现浮栏与延迟 250 ms 浮栏，连续采�
 | locus-0.9.10-edge-store.zip | 254301 | `e4a420a7af316afd4bd836a3957637e253e0be947176c3725b853205e23398c2` |
 
 未修改的最终 Edge ZIP 已解压并在临时无头 Chromium 中独立加载：即时 / 250 ms 浮栏首次可见约 344 / 316 ms，全部可见帧的重叠与位移均为 0；等待中按数字标注、保存后不迟到弹出及重载恢复通过。见 [发行包验证](toolbar-0.9.10/production-summary.json)。安装目录和实际用户窗口未修改。
+
+已发布为 [GitHub Latest v0.9.10](https://github.com/laleoarrow/locus/releases/tag/v0.9.10)，源码提交 `6c13f896ac19f228ff724b24350cf4d1d343f3f8`。两份公开安装包已独立下载，内容与本地校验产物一致。用户 Edge 仍在运行，稳定安装目录未替换、工作窗口未重载。
